@@ -7,6 +7,48 @@ const StockBody = t.Object({
 });
 
 export const productRoutes = new Elysia({ prefix: "/products" })
+  .post(
+    "/stock/update",
+    async ({ body, set }) => {
+      try {
+        const source = body.source ?? "system";
+        const result = await productController.patchStockByGroupId(body.group_id, body.stock, source);
+        return result;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Unknown error";
+        if (msg.includes("not found")) {
+          set.status = 404;
+          return { error: msg };
+        }
+        if (msg.toLowerCase().includes("invalid stock")) {
+          set.status = 400;
+          return { error: msg };
+        }
+        set.status = 500;
+        return { error: msg };
+      }
+    },
+    {
+      body: t.Object({
+        group_id: t.Number(),
+        stock: t.Number({ minimum: 0, maximum: 10_000, multipleOf: 1 }),
+        source: t.Optional(t.Union([t.Literal("manual"), t.Literal("system"), t.Literal("shopee")])),
+      }),
+    }
+  )
+  .get("/stock/:groupId", async ({ params, set }) => {
+    const groupId = Number(params.groupId);
+    if (!Number.isFinite(groupId)) {
+      set.status = 400;
+      return { error: "Invalid group id" };
+    }
+    const result = await productController.getGroupStatus(groupId);
+    if (!result) {
+      set.status = 404;
+      return { error: "Product group not found" };
+    }
+    return result;
+  })
   .patch(
     "/:id/stock",
     async ({ params, body, request, set }) => {

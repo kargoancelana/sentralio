@@ -1,7 +1,9 @@
 import { eq } from "drizzle-orm";
 import { db } from "../../db/client";
-import { products } from "../../db/schema";
+import { products, productGroups } from "../../db/schema";
 import { updateStockOnShopee } from "../../services/shopee.service";
+import { delay } from "../../utils/delay";
+import { env } from "../../config/env";
 import type { StockSource } from "./product.controller";
 
 const STOCK_MAX = 10_000;
@@ -46,56 +48,125 @@ export async function syncStockByShopeeItemId(input: {
   });
 }
 
-async function syncStockForGroup(input: { groupId: number; newStock: number; source: StockSource }) {
+export async function syncStockForGroup(input: { groupId: number; newStock: number; source: StockSource }) {
   if (input.newStock < 0 || input.newStock > STOCK_MAX) {
     throw new Error(`Invalid stock: must be between 0 and ${STOCK_MAX}`);
   }
 
-  const t0 = Date.now();
-  const groupProducts = await db.select().from(products).where(eq(products.groupId, input.groupId));
-  if (groupProducts.length === 0) {
-    console.warn(`[sync] warning: group has no listings group_id=${input.groupId}`);
-    return { groupId: input.groupId, updatedCount: 0, shopee: [] as { productId: number; ok: boolean }[] };
+  // 1. Fetch current group
+  const groupRows = await db.select().from(productGroups).where(eq(productGroups.id, input.groupId)).limit(1);
+  const groupRow = groupRows[0];
+  if (!groupRow) {
+    throw new Error("Product group not found");
   }
 
-  const now = new Date();
-  const result = await db
-    .update(products)
-    .set({ stock: input.newStock, updatedAt: now })
-    .where(eq(products.groupId, input.groupId));
+  // 2. Optimize: Skip if stock identical
+  if (groupRow.stock === input.newStock) {
+    console.log(`[sync] No change detected, skipping sync for group_id=${input.groupId}`);
+    return { groupId: input.groupId, total: 0, success: 0, failed: 0 };
+  }
 
-  const updatedRows =
-    typeof (result as unknown as { affectedRows?: number }).affectedRows === "number"
-      ? (result as unknown as { affectedRows: number }).affectedRows
-      : undefined;
-  const durationMs = Date.now() - t0;
+  // 3. Update master stock
+  await db.update(productGroups).set({ stock: input.newStock }).where(eq(productGroups.id, input.groupId));
 
-  console.log(
-    `[sync] db_update group_id=${input.groupId} requested_stock=${input.newStock} source=${input.source} listings=${groupProducts.length}` +
-      (updatedRows !== undefined ? ` affected_rows=${updatedRows}` : "") +
-      ` duration_ms=${durationMs}`,
-  );
+  // 4. Fetch associated listings
+  const groupProducts = await db.select().from(products).where(eq(products.groupId, input.groupId));
+  
+  if (groupProducts.length === 0) {
+    console.warn(`[sync] warning: group has no listings group_id=${input.groupId}`);
+    return { groupId: input.groupId, total: 0, success: 0, failed: 0 };
+  }
 
-  const shopee: { productId: number; ok: boolean }[] = [];
+  let successCount = 0;
+  let failedCount = 0;
+
   for (const p of groupProducts) {
+    await db.update(products).set({ syncStatus: "pending" }).where(eq(products.id, p.id));
+
+    let isSuccess = false;
+    let lastErrorMsg: string | null = null;
+
+    // Attempt 1
     try {
-      await updateStockOnShopee(p.shopeeItemId, p.shopeeModelId, input.newStock);
-      console.log(
-        `[sync] shopee_update status=success product_id=${p.id} shopee_item_id=${p.shopeeItemId} shopee_model_id=${p.shopeeModelId}`,
-      );
-      shopee.push({ productId: p.id, ok: true });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(
-        `[sync] shopee_update status=fail product_id=${p.id} shopee_item_id=${p.shopeeItemId} shopee_model_id=${p.shopeeModelId} error=${msg}`,
-      );
-      shopee.push({ productId: p.id, ok: false });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), env.syncTimeoutMs);
+      await updateStockOnShopee(p.shopeeItemId, p.shopeeModelId, input.newStock, controller.signal);
+      clearTimeout(timeoutId);
+      isSuccess = true;
+    } catch (err: any) {
+      // Attempt 2 (Retry x1)
+      try {
+        console.warn(`[sync] shopee_update failed for product_id=${p.id}, retrying... error: ${err.message}`);
+        const controller2 = new AbortController();
+        const timeoutId2 = setTimeout(() => controller2.abort(), env.syncTimeoutMs);
+        await updateStockOnShopee(p.shopeeItemId, p.shopeeModelId, input.newStock, controller2.signal);
+        clearTimeout(timeoutId2);
+        isSuccess = true;
+      } catch (retryErr: any) {
+        lastErrorMsg = retryErr.message || String(retryErr);
+        if (lastErrorMsg?.toLowerCase().includes("timeout") || retryErr.name === "AbortError") {
+          console.error("SYNC_TIMEOUT", {
+            groupId: input.groupId,
+            itemId: p.shopeeItemId,
+            modelId: p.shopeeModelId,
+          });
+        }
+        console.error("SYNC_FAILED", {
+          groupId: input.groupId,
+          itemId: p.shopeeItemId,
+          modelId: p.shopeeModelId,
+          error: lastErrorMsg
+        });
+      }
     }
+
+    // 5. Finalize listing status
+    if (isSuccess) {
+      console.log("SYNC_SUCCESS", {
+        groupId: input.groupId,
+        itemId: p.shopeeItemId,
+        modelId: p.shopeeModelId,
+        stock: input.newStock
+      });
+      await db
+        .update(products)
+        .set({ syncStatus: "success", lastError: null, updatedAt: new Date() })
+        .where(eq(products.id, p.id));
+      successCount++;
+    } else {
+      await db
+        .update(products)
+        .set({ syncStatus: "failed", lastError: lastErrorMsg, updatedAt: new Date() })
+        .where(eq(products.id, p.id));
+      failedCount++;
+    }
+
+    await delay(env.syncDelayMs);
   }
 
   return {
     groupId: input.groupId,
-    updatedCount: groupProducts.length,
-    shopee,
+    total: groupProducts.length,
+    success: successCount,
+    failed: failedCount
+  };
+}
+
+export async function getGroupStatus(groupId: number) {
+  const groupRows = await db.select().from(productGroups).where(eq(productGroups.id, groupId)).limit(1);
+  const groupRow = groupRows[0];
+  if (!groupRow) return null;
+
+  const groupProducts = await db.select().from(products).where(eq(products.groupId, groupId));
+
+  return {
+    group_id: groupRow.id,
+    stock: groupRow.stock,
+    listings: groupProducts.map(p => ({
+      item_id: p.shopeeItemId,
+      model_id: p.shopeeModelId,
+      sync_status: p.syncStatus,
+      last_error: p.lastError
+    }))
   };
 }

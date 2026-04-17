@@ -5,9 +5,17 @@ export async function updateStockOnShopee(
   shopeeItemId: string,
   shopeeModelId: string,
   stock: number,
+  signal?: AbortSignal,
 ): Promise<{ ok: true; mocked: true }> {
-  console.log(
-    `[shopee:dummy] updateStock item=${shopeeItemId} model=${shopeeModelId} stock=${stock}`,
-  );
-  return { ok: true, mocked: true };
+  try {
+    console.log(
+      `[shopee:dummy] updateStock item=${shopeeItemId} model=${shopeeModelId} stock=${stock}`,
+    );
+    return { ok: true, mocked: true };
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      throw new Error("Request timeout");
+    }
+    throw err;
+  }
 }
