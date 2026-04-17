@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import { env } from "./config/env";
 import { productRoutes } from "./modules/product/product.route";
 import { healthRoutes } from "./routes/health";
+import { getShopInfoRaw } from "./services/shopee-raw";
 
 const app = new Elysia()
   .onError(({ code, error, set }) => {
@@ -17,6 +18,9 @@ const app = new Elysia()
   .get("/", () => ({
     message: "wms-sync API is running",
   }))
+  .get("/test-raw", async () => {
+    return await getShopInfoRaw();
+  })
   .use(healthRoutes)
   .use(productRoutes)
   .listen(env.appPort);
