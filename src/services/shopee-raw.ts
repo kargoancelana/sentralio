@@ -8,8 +8,8 @@ const access_token = "***REMOVED_ACCESS_TOKEN***";
 
 /**
  * Reusable Shopee API request wrapper.
- * Copied directly from getShopInfoRaw logic — no abstraction beyond this function.
- * No retry, no token manager.
+ * Includes timeout (5s) and retry (3 attempts, 300ms delay).
+ * Retries only on network errors, timeouts, or 5xx responses.
  */
 export async function shopeeRequest(input: { method: string; path: string }) {
   const timestamp = Math.floor(Date.now() / 1000);
@@ -21,16 +21,53 @@ export async function shopeeRequest(input: { method: string; path: string }) {
 
   console.log(`[shopeeRequest] ${input.method} ${input.path}`);
 
-  const res = await fetch(url, {
-    method: input.method,
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY_MS = 300;
+  const TIMEOUT_MS = 5000;
 
-  const data = await res.json();
-  console.log(`[shopeeRequest] Response:`, JSON.stringify(data, null, 2));
-  return data;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+      const res = await fetch(url, {
+        method: input.method,
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      // Do NOT retry on 4xx
+      if (res.status >= 400 && res.status < 500) {
+        const data = await res.json();
+        console.error(`[shopeeRequest] Client error ${res.status}:`, JSON.stringify(data, null, 2));
+        return data;
+      }
+
+      // Retry on 5xx
+      if (res.status >= 500) {
+        console.warn(`[shopeeRequest] Server error ${res.status}, attempt ${attempt}/${MAX_RETRIES}`);
+        if (attempt === MAX_RETRIES) {
+          const data = await res.json();
+          return data;
+        }
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+        continue;
+      }
+
+      const data = await res.json();
+      console.log(`[shopeeRequest] Response:`, JSON.stringify(data, null, 2));
+      return data;
+    } catch (err: any) {
+      const isTimeout = err.name === "AbortError";
+      console.warn(
+        `[shopeeRequest] ${isTimeout ? "Timeout" : "Network error"} on attempt ${attempt}/${MAX_RETRIES}: ${err.message}`,
+      );
+      if (attempt === MAX_RETRIES) throw err;
+      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+    }
+  }
 }
 
 /**
