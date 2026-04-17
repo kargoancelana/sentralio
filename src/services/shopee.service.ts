@@ -1,3 +1,5 @@
+import { shopeeRequest } from "./shopee-raw";
+
 /**
  * Shopee API integration (dummy). Replace body with real HTTP calls later.
  */
@@ -18,4 +20,11 @@ export async function updateStockOnShopee(
     }
     throw err;
   }
+}
+
+/**
+ * Fetch shop info using the shopeeRequest wrapper.
+ */
+export async function getShopInfo() {
+  return shopeeRequest({ method: "GET", path: "/api/v2/shop/get_shop_info" });
 }

@@ -3,6 +3,7 @@ import { env } from "./config/env";
 import { productRoutes } from "./modules/product/product.route";
 import { healthRoutes } from "./routes/health";
 import { getShopInfoRaw } from "./services/shopee-raw";
+import { getShopInfo } from "./services/shopee.service";
 
 const app = new Elysia()
   .onError(({ code, error, set }) => {
@@ -20,6 +21,9 @@ const app = new Elysia()
   }))
   .get("/test-raw", async () => {
     return await getShopInfoRaw();
+  })
+  .get("/test-shop", async () => {
+    return await getShopInfo();
   })
   .use(healthRoutes)
   .use(productRoutes)
