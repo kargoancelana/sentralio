@@ -8,6 +8,13 @@
       "when": 1776298263355,
       "tag": "0000_breezy_abomination",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1776494008926,
+      "tag": "0001_living_zeigeist",
+      "breakpoints": true
     }
   ]
 }

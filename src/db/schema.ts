@@ -19,3 +19,14 @@ export const products = mysqlTable("products", {
   lastError: text("last_error"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+export const shopeeCredentials = mysqlTable("shopee_credentials", {
+  id: int("id").primaryKey().autoincrement(),
+  partnerId: int("partner_id").notNull(),
+  partnerKey: varchar("partner_key", { length: 255 }).notNull(),
+  shopId: int("shop_id").notNull(),
+  accessToken: varchar("access_token", { length: 255 }).notNull(),
+  refreshToken: varchar("refresh_token", { length: 255 }).notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});

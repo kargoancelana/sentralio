@@ -36,4 +36,5 @@ export const env = {
   shopeeRefreshToken: process.env.REFRESH_TOKEN as string,
   syncDelayMs: Number(process.env.SYNC_DELAY_MS ?? 300),
   syncTimeoutMs: Number(process.env.SYNC_TIMEOUT_MS ?? 10000),
+  mockShopeeApi: process.env.MOCK_SHOPEE_API === "true",
 };

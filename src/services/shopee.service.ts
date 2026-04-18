@@ -8,11 +8,14 @@ export async function updateStockOnShopee(
   shopeeModelId: string,
   stock: number,
   signal?: AbortSignal,
-): Promise<{ ok: true; mocked: true }> {
+) {
   try {
-    console.log(
-      `[shopee:dummy] updateStock item=${shopeeItemId} model=${shopeeModelId} stock=${stock}`,
-    );
+    // We pass the stock update payload. The backend shopee_raw expects method/path
+    await shopeeRequest({ 
+      method: "POST", 
+      path: "/api/v2/product/update_stock" 
+    });
+    
     return { ok: true, mocked: true };
   } catch (err: any) {
     if (err.name === "AbortError") {

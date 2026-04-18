@@ -4,7 +4,7 @@ import { desc, eq } from "drizzle-orm";
 config();
 
 import { db } from "./client";
-import { productGroups, products } from "./schema";
+import { productGroups, products, shopeeCredentials } from "./schema";
 
 /**
  * Resets demo rows and inserts one group with three listings (same stock).
@@ -44,6 +44,23 @@ async function seed() {
 
   const rows = await db.select().from(products).where(eq(products.groupId, group.id));
   console.log(`Seed OK: group_id=${group.id} products=${rows.length}`);
+
+  await db.delete(shopeeCredentials);
+  
+  // Seed initial dummy credentials from the hardcoded values in shopee-raw.ts
+  const now = new Date();
+  const pastExpiredDate = new Date(now.getTime() - 1000 * 60 * 60); // 1 hour ago
+  
+  await db.insert(shopeeCredentials).values({
+    partnerId: 2013408,
+    partnerKey: "***REMOVED_PARTNER_KEY***",
+    shopId: 181462922,
+    accessToken: "***REMOVED_ACCESS_TOKEN***",
+    refreshToken: "dummy_refresh_token",
+    expiresAt: pastExpiredDate,
+  });
+  
+  console.log("Seed OK: shopee_credentials inserted");
 }
 
 seed().catch((err) => {

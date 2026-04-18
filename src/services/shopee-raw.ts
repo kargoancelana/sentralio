@@ -1,72 +1,103 @@
 import * as crypto from 'crypto';
-
-// Hardcoded credentials (will be replaced by token manager later)
-const partner_id = 2013408;
-const partner_key = "***REMOVED_PARTNER_KEY***";
-const shop_id = 181462922;
-const access_token = "***REMOVED_ACCESS_TOKEN***";
+import { env } from '../config/env';
+import { getValidToken, refreshAccessToken } from './shopee-auth';
 
 /**
  * Reusable Shopee API request wrapper.
  * Includes timeout (5s) and retry (3 attempts, 300ms delay).
  * Retries only on network errors, timeouts, or 5xx responses.
  */
-export async function shopeeRequest(input: { method: string; path: string }) {
+export async function shopeeRequest(input: { method: string; path: string }, isRetryFromExpired = false): Promise<any> {
+  // 1. MOCK INTERCEPTOR
+  if (env.mockShopeeApi) {
+    console.log(`[shopeeRequest:MOCK] Bypassing real connection for ${input.path}`);
+    
+    // Simulate slight network delay
+    await new Promise(r => setTimeout(r, 150));
+    
+    // Specific mocks depending on the path
+    if (input.path === "/api/v2/shop/get_shop_info") {
+      return {
+        shop_name: "Test",
+        region: "ID",
+        status: "NORMAL",
+        is_mocked: true
+      };
+    }
+    
+    if (input.path === "/api/v2/product/update_stock") {
+      console.log("[MOCK SHOPEE] update stock triggered");
+      return { ok: true, is_mocked: true };
+    }
+    
+    // Fallback mock payload for any other path if needed
+    return {
+      message: "Mock response generated",
+      is_mocked: true
+    };
+  }
+
+  const creds = await getValidToken();
+
   const timestamp = Math.floor(Date.now() / 1000);
 
-  const baseString = `${partner_id}${input.path}${timestamp}${access_token}${shop_id}`;
-  const sign = crypto.createHmac("sha256", partner_key).update(baseString).digest("hex");
+  const baseString = `${creds.partnerId}${input.path}${timestamp}${creds.accessToken}${creds.shopId}`;
+  const sign = crypto.createHmac("sha256", creds.partnerKey).update(baseString).digest("hex");
 
-  const url = `https://partner.shopeemobile.com${input.path}?partner_id=${partner_id}&timestamp=${timestamp}&access_token=${access_token}&shop_id=${shop_id}&sign=${sign}`;
+  const url = `https://partner.shopeemobile.com${input.path}?partner_id=${creds.partnerId}&timestamp=${timestamp}&access_token=${creds.accessToken}&shop_id=${creds.shopId}&sign=${sign}`;
 
   console.log(`[shopeeRequest] ${input.method} ${input.path}`);
+  console.log(`[shopeeRequest] timestamp=${timestamp}, baseString=${baseString}`);
+  console.log(`[shopeeRequest] url=${url}`);
 
-  const MAX_RETRIES = 3;
-  const RETRY_DELAY_MS = 300;
-  const TIMEOUT_MS = 5000;
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+  for (let i = 0; i < 3; i++) {
+    let res: Response;
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+      const timeout = setTimeout(() => controller.abort(), 5000);
 
-      const res = await fetch(url, {
+      res = await fetch(url, {
         method: input.method,
-        headers: { "Content-Type": "application/json" },
         signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+        },
       });
 
-      clearTimeout(timeoutId);
-
-      // Do NOT retry on 4xx
-      if (res.status >= 400 && res.status < 500) {
-        const data = await res.json();
-        console.error(`[shopeeRequest] Client error ${res.status}:`, JSON.stringify(data, null, 2));
-        return data;
-      }
-
-      // Retry on 5xx
-      if (res.status >= 500) {
-        console.warn(`[shopeeRequest] Server error ${res.status}, attempt ${attempt}/${MAX_RETRIES}`);
-        if (attempt === MAX_RETRIES) {
-          const data = await res.json();
-          return data;
-        }
-        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
-        continue;
-      }
-
-      const data = await res.json();
-      console.log(`[shopeeRequest] Response:`, JSON.stringify(data, null, 2));
-      return data;
+      clearTimeout(timeout);
     } catch (err: any) {
-      const isTimeout = err.name === "AbortError";
-      console.warn(
-        `[shopeeRequest] ${isTimeout ? "Timeout" : "Network error"} on attempt ${attempt}/${MAX_RETRIES}: ${err.message}`,
-      );
-      if (attempt === MAX_RETRIES) throw err;
-      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+      if (i === 2) {
+        throw err;
+      }
+      await new Promise((r) => setTimeout(r, 300));
+      continue;
     }
+
+    if (res.status >= 500) {
+      if (i === 2) {
+        throw new Error("Server error");
+      }
+      await new Promise((r) => setTimeout(r, 300));
+      continue;
+    }
+
+    if (res.status >= 400 && res.status < 500) {
+      const data = await res.json();
+      
+      // INTERCEPT: If Shopee returns invalid timestamp or invalid token, try refreshing token ONCE
+      if ((data.error === "error_param" && data.message.includes("Invalid timestamp")) || data.error === "error_auth") {
+        if (!isRetryFromExpired) {
+          console.warn("[shopeeRequest] Token might be expired. Forcing refresh...");
+          await refreshAccessToken(creds);
+          return shopeeRequest(input, true); // retry once recursively
+        }
+      }
+      
+      console.error(`[shopeeRequest] Client error ${res.status}:`, JSON.stringify(data, null, 2));
+      return data;
+    }
+
+    return await res.json();
   }
 }
 
