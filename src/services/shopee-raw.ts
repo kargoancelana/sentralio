@@ -2,12 +2,25 @@ import * as crypto from 'crypto';
 import { env } from '../config/env';
 import { getValidToken, refreshAccessToken } from './shopee-auth';
 
+function isAuthError(data: any): boolean {
+  if (!data) return false;
+  const errorKey = (data.error || "").toLowerCase();
+  const msg = (data.message || "").toLowerCase();
+
+  return (
+    errorKey.includes("auth") || 
+    errorKey.includes("token") || 
+    msg.includes("token") ||
+    (errorKey === "error_param" && msg.includes("invalid timestamp"))
+  );
+}
+
 /**
  * Reusable Shopee API request wrapper.
  * Includes timeout (5s) and retry (3 attempts, 300ms delay).
  * Retries only on network errors, timeouts, or 5xx responses.
  */
-export async function shopeeRequest(input: { method: string; path: string }, isRetryFromExpired = false): Promise<any> {
+export async function shopeeRequest(input: { method: string; path: string; query?: Record<string, any> }, isRetryFromExpired = false): Promise<any> {
   // 1. MOCK INTERCEPTOR
   if (env.mockShopeeApi) {
     console.log(`[shopeeRequest:MOCK] Bypassing real connection for ${input.path}`);
@@ -44,7 +57,12 @@ export async function shopeeRequest(input: { method: string; path: string }, isR
   const baseString = `${creds.partnerId}${input.path}${timestamp}${creds.accessToken}${creds.shopId}`;
   const sign = crypto.createHmac("sha256", creds.partnerKey).update(baseString).digest("hex");
 
-  const url = `https://partner.shopeemobile.com${input.path}?partner_id=${creds.partnerId}&timestamp=${timestamp}&access_token=${creds.accessToken}&shop_id=${creds.shopId}&sign=${sign}`;
+  let url = `https://partner.shopeemobile.com${input.path}?partner_id=${creds.partnerId}&timestamp=${timestamp}&access_token=${creds.accessToken}&shop_id=${creds.shopId}&sign=${sign}`;
+
+  if (input.query) {
+    const qs = new URLSearchParams(input.query as any).toString();
+    if (qs) url += `&${qs}`;
+  }
 
   console.log(`[shopeeRequest] ${input.method} ${input.path}`);
   console.log(`[shopeeRequest] timestamp=${timestamp}, baseString=${baseString}`);
@@ -84,12 +102,13 @@ export async function shopeeRequest(input: { method: string; path: string }, isR
     if (res.status >= 400 && res.status < 500) {
       const data = await res.json();
       
-      // INTERCEPT: If Shopee returns invalid timestamp or invalid token, try refreshing token ONCE
-      if ((data.error === "error_param" && data.message.includes("Invalid timestamp")) || data.error === "error_auth") {
+      if (isAuthError(data)) {
         if (!isRetryFromExpired) {
-          console.warn("[shopeeRequest] Token might be expired. Forcing refresh...");
+          console.warn("[Shopee] Auth error detected, refreshing token...");
           await refreshAccessToken(creds);
           return shopeeRequest(input, true); // retry once recursively
+        } else {
+          console.error("[Shopee] Token refresh failed after retry");
         }
       }
       

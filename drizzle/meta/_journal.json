@@ -15,6 +15,13 @@
       "when": 1776494008926,
       "tag": "0001_living_zeigeist",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1776499957241,
+      "tag": "0002_handy_baron_strucker",
+      "breakpoints": true
     }
   ]
 }
