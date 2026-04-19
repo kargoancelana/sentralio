@@ -1,5 +1,13 @@
 import { int, mysqlTable, timestamp, varchar, text, uniqueIndex } from "drizzle-orm/mysql-core";
 
+export const masterProducts = mysqlTable("master_products", {
+  id: int("id").primaryKey().autoincrement(),
+  sku: varchar("sku", { length: 100 }).notNull().unique(),
+  name: varchar("name", { length: 255 }).notNull(),
+  stock: int("stock").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const productGroups = mysqlTable("product_groups", {
   id: int("id").primaryKey().autoincrement(),
   shopeeItemId: varchar("shopee_item_id", { length: 64 }),
@@ -12,6 +20,7 @@ export const productGroups = mysqlTable("product_groups", {
 
 export const products = mysqlTable("products", {
   id: int("id").primaryKey().autoincrement(),
+  masterProductId: int("master_product_id").references(() => masterProducts.id),
   groupId: int("group_id")
     .notNull()
     .references(() => productGroups.id, { onDelete: "cascade" }),

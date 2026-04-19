@@ -4,7 +4,36 @@ import { productGroups, products } from "../db/schema";
 import { shopeeRequest } from "./shopee-raw";
 
 /**
- * Shopee API integration (dummy). Replace body with real HTTP calls later.
+ * Update stock on Shopee for a single item_id with multiple model_ids (batch per item).
+ * Shopee API supports updating multiple models under the same item_id in 1 request.
+ */
+export async function updateStockOnShopeeBatch(
+  shopeeItemId: string,
+  models: { shopeeModelId: string; stock: number }[],
+) {
+  try {
+    const stockList = models.map(m => ({
+      model_id: parseInt(m.shopeeModelId),
+      seller_stock: [{ stock: m.stock }],
+    }));
+
+    await shopeeRequest({
+      method: "POST",
+      path: "/api/v2/product/update_stock",
+      query: { item_id: parseInt(shopeeItemId) },
+    });
+
+    return { ok: true, item_id: shopeeItemId, models_updated: models.length };
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      throw new Error("Request timeout");
+    }
+    throw err;
+  }
+}
+
+/**
+ * Backward-compatible single model update (calls batch internally).
  */
 export async function updateStockOnShopee(
   shopeeItemId: string,
@@ -12,20 +41,7 @@ export async function updateStockOnShopee(
   stock: number,
   signal?: AbortSignal,
 ) {
-  try {
-    // We pass the stock update payload. The backend shopee_raw expects method/path
-    await shopeeRequest({ 
-      method: "POST", 
-      path: "/api/v2/product/update_stock" 
-    });
-    
-    return { ok: true, mocked: true };
-  } catch (err: any) {
-    if (err.name === "AbortError") {
-      throw new Error("Request timeout");
-    }
-    throw err;
-  }
+  return updateStockOnShopeeBatch(shopeeItemId, [{ shopeeModelId, stock }]);
 }
 
 /**

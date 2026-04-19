@@ -4,7 +4,9 @@ import { desc, eq } from "drizzle-orm";
 config();
 
 import { db } from "./client";
+import { env } from "../config/env";
 import { productGroups, products, shopeeCredentials } from "./schema";
+import { encrypt } from "../utils/crypto";
 
 /**
  * Resets demo rows and inserts one group with three listings (same stock).
@@ -54,9 +56,9 @@ async function seed() {
   await db.insert(shopeeCredentials).values({
     partnerId: 2013408,
     partnerKey: "***REMOVED_PARTNER_KEY***",
-    shopId: 181462922,
-    accessToken: "***REMOVED_ACCESS_TOKEN***",
-    refreshToken: "dummy_refresh_token",
+    shopId: env.shopeeShopId,
+    accessToken: encrypt(env.shopeeAccessToken),
+    refreshToken: encrypt(env.shopeeRefreshToken),
     expiresAt: pastExpiredDate,
   });
   

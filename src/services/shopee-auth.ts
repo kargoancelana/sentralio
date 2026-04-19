@@ -2,6 +2,7 @@ import * as crypto from "crypto";
 import { eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { shopeeCredentials } from "../db/schema";
+import { encrypt, decrypt } from "../utils/crypto";
 
 interface TokenRow {
   id: number;
@@ -26,8 +27,12 @@ export async function getValidToken(): Promise<TokenRow> {
     throw new Error("No shopee credentials found in the database. Please seed the database first.");
   }
 
-  // Token expires early grace period? No, let's just check if it's strictly expired.
-  if (Date.now() > row.expiresAt.getTime()) {
+  // Decrypt tokens so the rest of the app doesn't know about encryption
+  row.accessToken = decrypt(row.accessToken);
+  row.refreshToken = decrypt(row.refreshToken);
+
+  // Refresh 60s before actual expiry to avoid race conditions
+  if (Date.now() > row.expiresAt.getTime() - 60_000) {
     console.warn(`[shopee-auth] Token expired at ${row.expiresAt.toISOString()}, triggering refresh`);
     return await refreshAccessToken(row);
   }
@@ -48,7 +53,7 @@ export async function refreshAccessToken(row: TokenRow): Promise<TokenRow> {
 
   const url = `https://partner.shopeemobile.com${path}?partner_id=${row.partnerId}&timestamp=${timestamp}&sign=${sign}`;
 
-  console.log(`[shopee-auth] Requesting new token with refresh_token=${row.refreshToken}`);
+  console.log(`[shopee-auth] Requesting new token with refresh_token=****${row.refreshToken.slice(-4)}`);
 
   const body = {
     refresh_token: row.refreshToken,
@@ -101,8 +106,8 @@ export async function refreshAccessToken(row: TokenRow): Promise<TokenRow> {
   console.log(`[shopee-auth] Token refreshed successfully. Valid until ${newExpiresAt.toISOString()}`);
 
   const updatePayload = {
-    accessToken: data.access_token,
-    refreshToken: data.refresh_token,
+    accessToken: encrypt(data.access_token),
+    refreshToken: encrypt(data.refresh_token),
     expiresAt: newExpiresAt,
     updatedAt: new Date(),
   };
@@ -112,5 +117,8 @@ export async function refreshAccessToken(row: TokenRow): Promise<TokenRow> {
   return {
     ...row,
     ...updatePayload,
+    // Ensure we return plaintext for caller
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token,
   };
 }

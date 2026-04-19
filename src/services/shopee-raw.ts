@@ -64,9 +64,7 @@ export async function shopeeRequest(input: { method: string; path: string; query
     if (qs) url += `&${qs}`;
   }
 
-  console.log(`[shopeeRequest] ${input.method} ${input.path}`);
-  console.log(`[shopeeRequest] timestamp=${timestamp}, baseString=${baseString}`);
-  console.log(`[shopeeRequest] url=${url}`);
+  console.log(`[shopeeRequest] ${input.method} ${input.path} timestamp=${timestamp}`);
 
   for (let i = 0; i < 3; i++) {
     let res: Response;
@@ -116,7 +114,20 @@ export async function shopeeRequest(input: { method: string; path: string; query
       return data;
     }
 
-    return await res.json();
+    const data = await res.json();
+
+    // Shopee sometimes returns 200 with error in body
+    if (data.error && isAuthError(data)) {
+      if (!isRetryFromExpired) {
+        console.warn("[Shopee] Auth error in 200 response, refreshing token...");
+        await refreshAccessToken(creds);
+        return shopeeRequest(input, true);
+      } else {
+        console.error("[Shopee] Token refresh failed after retry (200 body error)");
+      }
+    }
+
+    return data;
   }
 }
 

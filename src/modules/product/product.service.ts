@@ -49,6 +49,7 @@ export async function syncStockByShopeeItemId(input: {
 }
 
 export async function syncStockForGroup(input: { groupId: number; newStock: number; source: StockSource }) {
+  console.warn(`[DEPRECATED] syncStockForGroup called with group_id=${input.groupId}. Use /master/update-stock instead.`);
   if (input.newStock < 0 || input.newStock > STOCK_MAX) {
     throw new Error(`Invalid stock: must be between 0 and ${STOCK_MAX}`);
   }

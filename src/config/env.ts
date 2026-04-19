@@ -13,6 +13,7 @@ const requiredEnv = [
   "SHOP_ID",
   "ACCESS_TOKEN",
   "REFRESH_TOKEN",
+  "TOKEN_SECRET_KEY",
 ] as const;
 
 for (const key of requiredEnv) {
@@ -34,6 +35,7 @@ export const env = {
   shopeeShopId: Number(process.env.SHOP_ID),
   shopeeAccessToken: process.env.ACCESS_TOKEN as string,
   shopeeRefreshToken: process.env.REFRESH_TOKEN as string,
+  tokenSecretKey: process.env.TOKEN_SECRET_KEY as string,
   syncDelayMs: Number(process.env.SYNC_DELAY_MS ?? 300),
   syncTimeoutMs: Number(process.env.SYNC_TIMEOUT_MS ?? 10000),
   mockShopeeApi: process.env.MOCK_SHOPEE_API === "true",
