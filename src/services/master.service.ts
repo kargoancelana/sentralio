@@ -5,6 +5,17 @@ import { updateStockOnShopeeBatch } from "./shopee.service";
 import { delay } from "../utils/delay";
 import { env } from "../config/env";
 
+/**
+ * Only retry on transient errors (network, timeout, server errors).
+ * Auth errors and validation errors will always fail on retry.
+ */
+function isRetryableError(errorMsg: string): boolean {
+  const msg = errorMsg.toLowerCase();
+  return msg.includes("timeout") || msg.includes("network") || msg.includes("server error")
+    || msg.includes("aborted") || msg.includes("fetch") || msg.includes("econnrefused")
+    || msg.includes("5");
+}
+
 // ─── UPDATE STOCK (Reconciliation + Retry + Batch) ──────────────────
 
 /**
@@ -65,15 +76,19 @@ export async function updateStockByMasterSku(masterProductId: number, newStock: 
       success = true;
     } catch (err: any) {
       lastError = err.message;
-      console.warn(`[MASTER SKU SYNC] sku=${master.sku} item_id=${itemId} failed, retrying... error=${lastError}`);
 
-      // Attempt 2 (Retry x1)
-      try {
-        await delay(env.syncDelayMs);
-        await updateStockOnShopeeBatch(itemId, models);
-        success = true;
-      } catch (retryErr: any) {
-        lastError = retryErr.message;
+      // Attempt 2 (Retry x1) — only for retryable errors
+      if (isRetryableError(lastError)) {
+        console.warn(`[MASTER SKU SYNC] sku=${master.sku} item_id=${itemId} failed, retrying... error=${lastError}`);
+        try {
+          await delay(env.syncDelayMs);
+          await updateStockOnShopeeBatch(itemId, models);
+          success = true;
+        } catch (retryErr: any) {
+          lastError = retryErr.message;
+        }
+      } else {
+        console.error(`[MASTER SKU SYNC] sku=${master.sku} item_id=${itemId} non-retryable error: ${lastError}`);
       }
     }
 
@@ -107,11 +122,19 @@ export async function updateStockByMasterSku(masterProductId: number, newStock: 
     console.error(`[MASTER SKU SYNC] sku=${master.sku} ALL syncs failed — master stock NOT updated (reconciliation)`);
   }
 
+  // Determine status: success / partial / failed
+  const status = syncCount === mappedProducts.length ? "success"
+    : syncCount > 0 ? "partial"
+    : "failed";
+
+  console.log(`[SYNC RESULT] master=${master.sku} status=${status} success=${syncCount} failed=${failedProducts.length}`);
+
   return {
-    status: syncCount > 0 ? "success" : "failed",
+    status,
     sku: master.sku,
     synced_listings: syncCount,
     total_listings: mappedProducts.length,
+    failed_models: failedProducts.length > 0 ? failedProducts.map(f => f.id) : undefined,
     failed: failedProducts.length > 0 ? failedProducts : undefined,
   };
 }
