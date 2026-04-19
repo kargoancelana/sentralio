@@ -7,8 +7,8 @@ async function updateTokens() {
   const newRefreshToken = process.argv[3];
 
   if (!newAccessToken || !newRefreshToken) {
-    console.error("❌ ERROR: Argumen token hilang.");
-    console.error('👉 Cara pakai: bun run update_shopee_token.ts "ACCESS_TOKEN_BARU" "REFRESH_TOKEN_BARU"');
+    console.error("ERROR: Argumen token hilang.");
+    console.error('Cara pakai: bun run update_shopee_token.ts "ACCESS_TOKEN_BARU" "REFRESH_TOKEN_BARU"');
     process.exit(1);
   }
 
@@ -23,10 +23,10 @@ async function updateTokens() {
       updatedAt: new Date()
     });
 
-    console.log("✅ SUKSES: Token berhasil dienkripsi dan diupdate ke dalam database.");
-    console.log(`⏳ Akses token valid sampai: ${newExpiresAt.toISOString()}`);
+    console.log("Token berhasil dienkripsi dan diupdate ke dalam database.");
+    console.log(`Akses token valid sampai: ${newExpiresAt.toISOString()}`);
   } catch (error) {
-    console.error("❌ GAGAL melakukan update DB:", error);
+    console.error("GAGAL melakukan update DB:", error);
   } finally {
     pool.end();
   }
