@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import { env } from "./config/env";
 import { productRoutes } from "./modules/product/product.route";
 import { shopeeRoutes } from "./modules/shopee/shopee.route";
+import { shopeeAuthRoutes } from "./modules/shopee/shopee-auth.route";
 import { masterRoutes } from "./modules/master/master.route";
 import { healthRoutes } from "./routes/health";
 
@@ -22,6 +23,7 @@ const app = new Elysia()
   .use(healthRoutes)
   .use(productRoutes)
   .use(shopeeRoutes)
+  .use(shopeeAuthRoutes)
   .use(masterRoutes)
   .listen(env.appPort);
 
