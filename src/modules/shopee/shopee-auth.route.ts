@@ -44,7 +44,7 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
   </style>
 </head>
 <body>
-  <h1>🔐 Shopee OAuth Setup</h1>
+  <h1>Shopee OAuth Setup</h1>
 
   <div class="step">
     <h3>Step 1: Buka link ini di browser</h3>
@@ -148,6 +148,8 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
 
       if (existingRows.length > 0) {
         await db.update(shopeeCredentials).set({
+          partnerId: env.shopeePartnerId,
+          partnerKey: env.shopeePartnerKey,
           shopId: parseInt(shop_id),
           accessToken: encrypt(data.access_token),
           refreshToken: encrypt(data.refresh_token),
@@ -165,7 +167,7 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
         });
       }
 
-      console.log(`[shopee-oauth] ✅ Token saved! Valid until ${expiresAt.toISOString()}`);
+      console.log(`[shopee-oauth] Token saved. Valid until ${expiresAt.toISOString()}`);
 
       return {
         success: true,
