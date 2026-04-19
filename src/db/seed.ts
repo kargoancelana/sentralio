@@ -54,8 +54,8 @@ async function seed() {
   const pastExpiredDate = new Date(now.getTime() - 1000 * 60 * 60); // 1 hour ago
   
   await db.insert(shopeeCredentials).values({
-    partnerId: 2013408,
-    partnerKey: "***REMOVED_PARTNER_KEY***",
+    partnerId: env.shopeePartnerId,
+    partnerKey: env.shopeePartnerKey,
     shopId: env.shopeeShopId,
     accessToken: encrypt(env.shopeeAccessToken),
     refreshToken: encrypt(env.shopeeRefreshToken),
