@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1776298263355,
+      "tag": "0000_breezy_abomination",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1776494008926,
+      "tag": "0001_living_zeigeist",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1776499957241,
+      "tag": "0002_handy_baron_strucker",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1776570084834,
+      "tag": "0003_dry_silhouette",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1776694477062,
+      "tag": "0004_flimsy_power_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1776747193180,
+      "tag": "0005_luxuriant_gertrude_yorkes",
+      "breakpoints": true
+    }
+  ]
+}

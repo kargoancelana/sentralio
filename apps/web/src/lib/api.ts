@@ -1,0 +1,75 @@
+const API_BASE = '/api';
+
+export class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+export async function fetchApi<T = any>(
+  path: string,
+  options?: RequestInit
+): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw new ApiError(res.status, data.message || data.error || `API error ${res.status}`);
+  }
+
+  return data as T;
+}
+
+export const api = {
+  // Health
+  health: () => fetchApi('/health'),
+
+  // Master Products
+  masterList: () => fetchApi<{ success: boolean; data: any[] }>('/master/list'),
+  masterUpdate: (id: number, body: { sku?: string; name?: string }) =>
+    fetchApi(`/master/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  masterUpdateStock: (masterProductId: number, stock: number) =>
+    fetchApi('/master/update-stock', { method: 'POST', body: JSON.stringify({ master_product_id: masterProductId, stock }) }),
+  masterMap: (masterProductId: number, shopeeModelIds: string[]) =>
+    fetchApi('/master/map', { method: 'POST', body: JSON.stringify({ master_product_id: masterProductId, shopee_model_ids: shopeeModelIds }) }),
+  masterImport: (shopeeItemId: string) =>
+    fetchApi('/master/import-from-listing', { method: 'POST', body: JSON.stringify({ shopee_item_id: shopeeItemId }) }),
+  masterUnlinked: () => fetchApi<{ success: boolean; data: any[] }>('/master/unlinked-models'),
+  masterDelete: (id: number) =>
+    fetchApi(`/master/${id}`, { method: 'DELETE' }),
+
+  // Products / Channel
+  productStock: (groupId: number) => fetchApi(`/products/stock/${groupId}`),
+  productUpdateStock: (groupId: number, stock: number, source?: string) =>
+    fetchApi('/products/stock/update', { method: 'POST', body: JSON.stringify({ group_id: groupId, stock, source }) }),
+
+  // Shopee — Auth
+  shopeeGetAuthUrl: () => fetchApi<{ auth_url: string }>('/shopee/auth/url'),
+  shopeeExchangeToken: (code: string, shopId: string) =>
+    fetchApi('/shopee/auth/exchange', { method: 'POST', body: JSON.stringify({ code, shop_id: shopId }) }),
+
+  // Shopee — Credentials (Multi-seller)
+  shopeeCredentialsList: () => fetchApi<{ success: boolean; data: any[] }>('/shopee/credentials/list'),
+  shopeeCredentialsStatus: (shopId?: number) => {
+    const qs = shopId ? `?shop_id=${shopId}` : '';
+    return fetchApi(`/shopee/credentials/status${qs}`);
+  },
+  shopeeDisconnect: (shopId: number) =>
+    fetchApi(`/shopee/credentials/${shopId}`, { method: 'DELETE' }),
+
+  // Shopee — Operations
+  shopeeTestShop: () => fetchApi('/shopee/test-shop'),
+  shopeeSyncProducts: () => fetchApi('/shopee/sync-products'),
+  shopeeRealItems: (offset = 0, pageSize = 20) =>
+    fetchApi(`/shopee/real-items?offset=${offset}&page_size=${pageSize}`),
+  shopeeCatalog: () => fetchApi<{ success: boolean; data: any[] }>('/shopee/catalog'),
+  shopeeUpdateItem: (itemId: string, data: { name?: string }) =>
+    fetchApi('/shopee/update-item', { method: 'POST', body: JSON.stringify({ item_id: itemId, ...data }) }),
+  shopeeUpdatePrice: (itemId: string, modelId: string, price: number) =>
+    fetchApi('/shopee/update-price', { method: 'POST', body: JSON.stringify({ item_id: itemId, model_id: modelId, price }) }),
+};
