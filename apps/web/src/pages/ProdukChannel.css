@@ -76,7 +76,7 @@
 
 .catalog-card:hover {
   border-color: var(--accent);
-  box-shadow: 0 8px 32px rgba(99, 102, 241, 0.08);
+  box-shadow: 0 8px 32px rgba(232, 133, 45, 0.08);
   transform: translateY(-2px);
 }
 
@@ -309,7 +309,7 @@
   width: 80px;
   height: 80px;
   border-radius: 20px;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1));
+  background: linear-gradient(135deg, rgba(232, 133, 45, 0.1), rgba(245, 166, 35, 0.1));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -375,7 +375,7 @@
   padding: 14px 16px;
   background: var(--bg-hover);
   border-radius: 10px;
-  margin-bottom: 20px;
+  margin-bottom: 0;
   align-items: center;
 }
 
@@ -424,7 +424,7 @@
 .edit-modal-info .edit-product-meta .sku-tag {
   font-family: 'SF Mono', 'Fira Code', monospace;
   color: var(--accent);
-  background: rgba(99, 102, 241, 0.08);
+  background: rgba(232, 133, 45, 0.08);
   padding: 1px 6px;
   border-radius: 4px;
   font-weight: 500;
@@ -435,29 +435,111 @@
   opacity: 0.7;
 }
 
-.edit-variant-list {
+/* ─── Tabs ────────────────────────── */
+
+.edit-tabs {
+  display: flex;
+  gap: 0;
+  margin: 16px 0 0;
+  border-bottom: 2px solid var(--border);
+}
+
+.edit-tab {
+  padding: 10px 20px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.edit-tab:hover {
+  color: var(--text-primary);
+}
+
+.edit-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.edit-tab-content {
+  padding-top: 20px;
+}
+
+/* ─── Form Enhancements ──────────── */
+
+.form-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.char-counter {
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 100px;
+  max-height: 300px;
+  line-height: 1.6;
+  font-size: 0.875rem;
+}
+
+/* ─── Card Action Group ──────────── */
+
+.catalog-card-actions-group {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* ─── Variant Table (Tab 2) ──────── */
+
+.edit-variant-table {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.edit-variant-table-header {
+  display: grid;
+  grid-template-columns: 1fr 130px 90px 48px;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--bg-hover);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
 }
 
 .edit-variant-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 130px 90px 48px;
+  gap: 8px;
   align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
-  background: var(--bg-hover);
-  border-radius: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
   transition: background 0.15s;
 }
 
 .edit-variant-row:hover {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: var(--bg-hover);
 }
 
 .edit-variant-info {
-  flex: 1;
   min-width: 0;
 }
 
@@ -483,12 +565,21 @@
 }
 
 .edit-price-input .currency {
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   color: var(--text-muted);
   font-weight: 500;
+  flex-shrink: 0;
 }
 
 .edit-price-input input {
-  width: 110px;
+  width: 100%;
 }
 
+.edit-stock-input input {
+  width: 100%;
+}
+
+.edit-variant-actions {
+  display: flex;
+  justify-content: center;
+}

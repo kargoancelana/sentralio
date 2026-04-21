@@ -11,6 +11,7 @@ import './styles/globals.css';
 import './styles/animations.css';
 
 function App() {
+  console.log("DEBUG: VERSI BARU LOADED");
   return (
     <ThemeProvider>
       <BrowserRouter>

@@ -309,9 +309,10 @@ export async function getShopeeCatalog() {
 /**
  * Update product name via Shopee API and local DB.
  */
-export async function updateShopeeItem(itemId: string, data: { name?: string }) {
+export async function updateShopeeItem(itemId: string, data: { name?: string; description?: string }) {
   const updatePayload: Record<string, any> = { item_id: parseInt(itemId) };
   if (data.name) updatePayload.item_name = data.name;
+  if (data.description !== undefined) updatePayload.description = data.description;
 
   const result = await shopeeRequest({
     method: "POST",
@@ -324,9 +325,13 @@ export async function updateShopeeItem(itemId: string, data: { name?: string }) 
   }
 
   // Update local DB
-  if (data.name) {
+  const localUpdate: Record<string, any> = {};
+  if (data.name) localUpdate.name = data.name;
+  if (data.description !== undefined) localUpdate.description = data.description;
+
+  if (Object.keys(localUpdate).length > 0) {
     await db.update(productGroups)
-      .set({ name: data.name })
+      .set(localUpdate)
       .where(eq(productGroups.shopeeItemId, itemId));
   }
 
@@ -358,4 +363,52 @@ export async function updateShopeePrice(itemId: string, modelId: string, price: 
 
   console.log(`[EDIT] Updated price item=${itemId} model=${modelId} price=${price}`);
   return { status: "success", item_id: itemId, model_id: modelId, price };
+}
+
+/**
+ * Update variant stock via Shopee API and local DB (from Produk Channel).
+ */
+export async function updateShopeeVariantStock(
+  itemId: string,
+  modelId: string,
+  stock: number,
+) {
+  await updateStockOnShopeeBatch(itemId, [{ shopeeModelId: modelId, stock }]);
+
+  // Update local DB
+  await db.update(products)
+    .set({ shopeeStock: stock })
+    .where(eq(products.shopeeModelId, modelId));
+
+  console.log(`[EDIT] Updated stock item=${itemId} model=${modelId} stock=${stock}`);
+  return { status: "success", item_id: itemId, model_id: modelId, stock };
+}
+
+/**
+ * Toggle item status on Shopee (list/unlist).
+ */
+export async function toggleShopeeItemStatus(itemIds: string[], unlist: boolean) {
+  const result = await shopeeRequest({
+    method: "POST",
+    path: "/api/v2/product/unlist_item",
+    body: {
+      item_list: itemIds.map(id => ({ item_id: parseInt(id) })),
+      unlist,
+    },
+  });
+
+  if (result.error) {
+    throw new Error(`Shopee unlist_item error: ${result.message || result.error}`);
+  }
+
+  // Update local DB
+  const newStatus = unlist ? "UNLIST" : "NORMAL";
+  for (const itemId of itemIds) {
+    await db.update(productGroups)
+      .set({ itemStatus: newStatus })
+      .where(eq(productGroups.shopeeItemId, itemId));
+  }
+
+  console.log(`[EDIT] Toggled ${itemIds.length} items to ${newStatus}`);
+  return { status: "success", items: itemIds.length, new_status: newStatus };
 }
