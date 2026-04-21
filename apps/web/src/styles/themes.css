@@ -11,6 +11,12 @@
   --bg-sidebar: #0C0C0C;
   --bg-input: #1A1A1A;
 
+  /* Aliases — bridge legacy variable names used in page CSS */
+  --bg-card: var(--bg-surface);
+  --bg-card-rgb: 20, 20, 20;
+  --bg-hover: var(--bg-surface-hover);
+  --border: var(--border-default);
+
   --border-subtle: rgba(255, 165, 60, 0.12);
   --border-default: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.15);
@@ -40,6 +46,12 @@
   --bg-surface-hover: #F5F5F5;
   --bg-sidebar: #FFFFFF;
   --bg-input: #F3F4F6;
+
+  /* Aliases — bridge legacy variable names used in page CSS */
+  --bg-card: var(--bg-surface);
+  --bg-card-rgb: 255, 255, 255;
+  --bg-hover: var(--bg-surface-hover);
+  --border: var(--border-default);
 
   --border-subtle: rgba(232, 133, 45, 0.15);
   --border-default: rgba(0, 0, 0, 0.08);

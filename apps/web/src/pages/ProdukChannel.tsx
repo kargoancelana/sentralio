@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { ShoppingBag, RefreshCw, Package, Clock, Link2, Unlink, Search, Edit3 } from 'lucide-react';
+import { ShoppingBag, RefreshCw, Package, Clock, Link2, Unlink, Search, Edit3, Eye, EyeOff, Save } from 'lucide-react';
 import { StatCard } from '../components/ui/StatCard';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { PageLoading } from '../components/shared/LoadingSpinner';
 import { useApi, useApiMutation } from '../hooks/useApi';
+import { useToast } from '../components/ui/Toast';
 import { api } from '../lib/api';
 import './ProdukChannel.css';
 
@@ -20,27 +21,45 @@ function getStockClass(stock: number | null | undefined): string {
 }
 
 type FilterMode = 'all' | 'mapped' | 'unmapped';
+type EditTab = 'info' | 'variants';
 
 export function ProdukChannel() {
   const { data: catalogData, loading, refetch } = useApi(() => api.shopeeCatalog(), []);
   const [filter, setFilter] = useState<FilterMode>('all');
   const [search, setSearch] = useState('');
+  const { toast } = useToast();
+
+  // Edit modal state
   const [editItem, setEditItem] = useState<any>(null);
+  const [editTab, setEditTab] = useState<EditTab>('info');
   const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
   const [editPrices, setEditPrices] = useState<Record<string, string>>({});
+  const [editStocks, setEditStocks] = useState<Record<string, string>>({});
+  const [unlistConfirm, setUnlistConfirm] = useState<any>(null);
 
   const syncMut = useApiMutation(async () => {
     await api.shopeeSyncProducts();
     await refetch();
   });
 
-  const updateItemMut = useApiMutation(async (itemId: string, name: string) => {
-    await api.shopeeUpdateItem(itemId, { name });
+  const updateItemMut = useApiMutation(async (itemId: string, data: { name?: string; description?: string }) => {
+    await api.shopeeUpdateItem(itemId, data);
     await refetch();
   });
 
   const updatePriceMut = useApiMutation(async (itemId: string, modelId: string, price: number) => {
     await api.shopeeUpdatePrice(itemId, modelId, price);
+    await refetch();
+  });
+
+  const updateStockMut = useApiMutation(async (itemId: string, modelId: string, stock: number) => {
+    await api.shopeeUpdateVariantStock(itemId, modelId, stock);
+    await refetch();
+  });
+
+  const toggleStatusMut = useApiMutation(async (itemIds: string[], unlist: boolean) => {
+    await api.shopeeToggleStatus(itemIds, unlist);
     await refetch();
   });
 
@@ -71,29 +90,89 @@ export function ProdukChannel() {
 
   function openEditModal(item: any) {
     setEditItem(item);
+    setEditTab('info');
     setEditName(item.name || '');
+    setEditDescription(item.description || '');
     const prices: Record<string, string> = {};
+    const stocks: Record<string, string> = {};
     for (const v of (item.variants || [])) {
       prices[v.shopeeModelId] = String(v.price || 0);
+      stocks[v.shopeeModelId] = String(v.shopeeStock ?? 0);
     }
     setEditPrices(prices);
+    setEditStocks(stocks);
   }
 
-  async function handleSaveEdit() {
+  async function handleSaveInfo() {
     if (!editItem) return;
-    // Save name if changed
-    if (editName !== editItem.name) {
-      await updateItemMut.execute(editItem.shopeeItemId, editName);
-    }
-    // Save changed prices
-    for (const v of (editItem.variants || [])) {
-      const newPrice = parseInt(editPrices[v.shopeeModelId] || '0');
-      if (newPrice !== v.price && newPrice > 0) {
-        await updatePriceMut.execute(editItem.shopeeItemId, v.shopeeModelId, newPrice);
+    try {
+      const changes: { name?: string; description?: string } = {};
+      if (editName !== editItem.name) changes.name = editName;
+      if (editDescription !== (editItem.description || '')) changes.description = editDescription;
+
+      if (Object.keys(changes).length > 0) {
+        await updateItemMut.execute(editItem.shopeeItemId, changes);
+        toast.success('Informasi produk berhasil diupdate ke Shopee');
+      } else {
+        toast.info('Tidak ada perubahan');
       }
+      setEditItem(null);
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal update informasi produk');
     }
-    setEditItem(null);
-    await refetch();
+  }
+
+  async function handleSaveVariantPrice(modelId: string) {
+    if (!editItem) return;
+    const newPrice = parseInt(editPrices[modelId] || '0');
+    const variant = editItem.variants?.find((v: any) => v.shopeeModelId === modelId);
+    if (!variant || newPrice === variant.price || newPrice <= 0) return;
+    try {
+      await updatePriceMut.execute(editItem.shopeeItemId, modelId, newPrice);
+      toast.success(`Harga variasi berhasil diupdate`);
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal update harga');
+    }
+  }
+
+  async function handleSaveVariantStock(modelId: string) {
+    if (!editItem) return;
+    const newStock = parseInt(editStocks[modelId] || '0');
+    const variant = editItem.variants?.find((v: any) => v.shopeeModelId === modelId);
+    if (!variant || newStock === (variant.shopeeStock ?? 0) || newStock < 0) return;
+    try {
+      await updateStockMut.execute(editItem.shopeeItemId, modelId, newStock);
+      toast.success(`Stok variasi berhasil disync ke Shopee`);
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal update stok');
+    }
+  }
+
+  async function handleToggleStatus(item: any) {
+    const isNormal = (item.itemStatus || 'NORMAL') === 'NORMAL';
+    if (isNormal) {
+      // Unlist = dangerous, show confirmation
+      setUnlistConfirm(item);
+      return;
+    }
+    // Re-list = safe, execute directly
+    try {
+      await toggleStatusMut.execute([item.shopeeItemId], false);
+      toast.success('Produk berhasil di-aktifkan');
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal mengaktifkan produk');
+    }
+  }
+
+  async function confirmUnlist() {
+    if (!unlistConfirm) return;
+    try {
+      await toggleStatusMut.execute([unlistConfirm.shopeeItemId], true);
+      toast.success('Produk berhasil di-arsipkan');
+      setUnlistConfirm(null);
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal mengarsipkan produk');
+    }
   }
 
   return (
@@ -105,7 +184,9 @@ export function ProdukChannel() {
             <p className="page-subtitle">Katalog produk Shopee yang tersinkronisasi</p>
           </div>
           <div className="page-header-actions">
-            <Button variant="primary" icon={<RefreshCw size={16} />} onClick={() => syncMut.execute()} loading={syncMut.loading}>
+            <Button variant="primary" icon={<RefreshCw size={16} />} onClick={() => {
+              syncMut.execute().then(() => toast.success('Sync selesai')).catch((e: any) => toast.error(e.message || 'Sync gagal'));
+            }} loading={syncMut.loading}>
               Sync dari Shopee
             </Button>
           </div>
@@ -160,13 +241,22 @@ export function ProdukChannel() {
                   <h3>{item.name}</h3>
                   <div className="catalog-meta">
                     {item.itemSku && <span className="catalog-sku">{item.itemSku}</span>}
-                    <span className={`catalog-status-badge ${(item.itemStatus || 'NORMAL').toLowerCase()}`}>{item.itemStatus || 'NORMAL'}</span>
+                    <span className={`catalog-status-badge ${(item.itemStatus || 'NORMAL').toLowerCase()}`}>{(item.itemStatus || 'NORMAL') === 'NORMAL' ? 'AKTIF' : item.itemStatus}</span>
                     <span className="catalog-mapping-summary">
                       <Link2 size={12} /> <span className="mapped-count">{item.mappedVariants}</span>/<span className="total-count">{item.totalVariants}</span>
                     </span>
                   </div>
                 </div>
-                <Button size="sm" variant="ghost" icon={<Edit3 size={14} />} onClick={() => openEditModal(item)} />
+                <div className="catalog-card-actions-group">
+                  <Button size="sm" variant="ghost" icon={<Edit3 size={14} />} onClick={() => openEditModal(item)} />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={(item.itemStatus || 'NORMAL') === 'NORMAL' ? <EyeOff size={14} /> : <Eye size={14} />}
+                    onClick={() => handleToggleStatus(item)}
+                    loading={toggleStatusMut.loading}
+                  />
+                </div>
               </div>
 
               <div className="catalog-variants">
@@ -196,8 +286,8 @@ export function ProdukChannel() {
 
       {syncMut.error && <div className="sync-error" style={{ marginTop: '16px' }}><p>Sync gagal: {syncMut.error}</p></div>}
 
-      {/* Edit Product Modal */}
-      <Modal open={!!editItem} onClose={() => setEditItem(null)} title="Edit Produk" width="560px">
+      {/* ─── Edit Product Modal (Tabbed) ────────────────── */}
+      <Modal open={!!editItem} onClose={() => setEditItem(null)} title="Edit Produk" width="640px">
         {editItem && (
           <div>
             {/* Product Context Header */}
@@ -218,47 +308,153 @@ export function ProdukChannel() {
               </div>
             </div>
 
-            {/* Product Name Edit */}
-            <div className="form-group">
-              <label className="form-label">Nama Produk</label>
-              <input className="form-input" value={editName} onChange={(e) => setEditName(e.target.value)} />
+            {/* Tabs */}
+            <div className="edit-tabs">
+              <button className={`edit-tab ${editTab === 'info' ? 'active' : ''}`} onClick={() => setEditTab('info')}>
+                Informasi Dasar
+              </button>
+              <button className={`edit-tab ${editTab === 'variants' ? 'active' : ''}`} onClick={() => setEditTab('variants')}>
+                Harga &amp; Stok
+              </button>
             </div>
 
-            {/* Variant Prices */}
-            <div style={{ marginTop: '16px' }}>
-              <label className="form-label" style={{ marginBottom: '10px', display: 'block' }}>Harga per Variasi</label>
-              <div className="edit-variant-list">
-                {(editItem.variants || []).map((v: any) => (
-                  <div className="edit-variant-row" key={v.shopeeModelId}>
-                    <div className="edit-variant-info">
-                      <div className="vname">{v.modelName || `Model ${v.shopeeModelId}`}</div>
-                      {v.modelSku && <div className="vsku">{v.modelSku}</div>}
-                    </div>
-                    <div className="edit-price-input">
-                      <span className="currency">Rp</span>
-                      <input
-                        className="form-input"
-                        type="number"
-                        min="0"
-                        value={editPrices[v.shopeeModelId] || '0'}
-                        onChange={(e) => setEditPrices(prev => ({ ...prev, [v.shopeeModelId]: e.target.value }))}
-                      />
-                    </div>
+            {/* Tab 1: Info */}
+            {editTab === 'info' && (
+              <div className="edit-tab-content">
+                <div className="form-group">
+                  <label className="form-label">
+                    Nama Produk
+                    <span className="char-counter">{editName.length}/255</span>
+                  </label>
+                  <input
+                    className="form-input"
+                    value={editName}
+                    maxLength={255}
+                    onChange={(e) => setEditName(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">
+                    Deskripsi
+                    <span className="char-counter">{editDescription.length}</span>
+                  </label>
+                  <textarea
+                    className="form-input form-textarea"
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    rows={6}
+                    placeholder="Masukkan deskripsi produk..."
+                  />
+                </div>
+                <div className="form-actions" style={{ marginTop: '20px' }}>
+                  <Button variant="secondary" onClick={() => setEditItem(null)}>Batal</Button>
+                  <Button variant="primary" onClick={handleSaveInfo} loading={updateItemMut.loading}>
+                    Simpan ke Shopee
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 2: Variants — Price & Stock */}
+            {editTab === 'variants' && (
+              <div className="edit-tab-content">
+                <div className="edit-variant-table">
+                  <div className="edit-variant-table-header">
+                    <span className="col-name">Variasi</span>
+                    <span className="col-price">Harga (Rp)</span>
+                    <span className="col-stock">Stok</span>
+                    <span className="col-action">Aksi</span>
                   </div>
-                ))}
+                  {(editItem.variants || []).map((v: any) => (
+                    <div className="edit-variant-row" key={v.shopeeModelId}>
+                      <div className="edit-variant-info">
+                        <div className="vname">{v.modelName || `Model ${v.shopeeModelId}`}</div>
+                        {v.modelSku && <div className="vsku">{v.modelSku}</div>}
+                      </div>
+                      <div className="edit-price-input">
+                        <span className="currency">Rp</span>
+                        <input
+                          className="form-input"
+                          type="number"
+                          min="0"
+                          value={editPrices[v.shopeeModelId] || '0'}
+                          onChange={(e) => setEditPrices(prev => ({ ...prev, [v.shopeeModelId]: e.target.value }))}
+                        />
+                      </div>
+                      <div className="edit-stock-input">
+                        <input
+                          className="form-input"
+                          type="number"
+                          min="0"
+                          value={editStocks[v.shopeeModelId] || '0'}
+                          onChange={(e) => setEditStocks(prev => ({ ...prev, [v.shopeeModelId]: e.target.value }))}
+                        />
+                      </div>
+                      <div className="edit-variant-actions">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          icon={<Save size={14} />}
+                          loading={updatePriceMut.loading || updateStockMut.loading}
+                          onClick={async () => {
+                            await handleSaveVariantPrice(v.shopeeModelId);
+                            await handleSaveVariantStock(v.shopeeModelId);
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="form-actions" style={{ marginTop: '20px' }}>
+                  <Button variant="secondary" onClick={() => setEditItem(null)}>Tutup</Button>
+                </div>
+              </div>
+            )}
+
+            {(updateItemMut.error || updatePriceMut.error || updateStockMut.error) && (
+              <p style={{ color: 'var(--error)', fontSize: '0.8125rem', marginTop: '12px' }}>
+                {updateItemMut.error || updatePriceMut.error || updateStockMut.error}
+              </p>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      {/* ─── Unlist Confirmation Modal ────────────────── */}
+      <Modal open={!!unlistConfirm} onClose={() => setUnlistConfirm(null)} title="⚠️ Arsipkan Produk?" width="460px">
+        {unlistConfirm && (
+          <div>
+            <div className="edit-modal-header" style={{ marginBottom: '16px' }}>
+              <div className="edit-modal-thumb">
+                {unlistConfirm.imageUrl
+                  ? <img src={unlistConfirm.imageUrl} alt={unlistConfirm.name} />
+                  : <Package size={24} style={{ color: 'var(--text-muted)', opacity: 0.5 }} />
+                }
+              </div>
+              <div className="edit-modal-info">
+                <div className="edit-product-name">{unlistConfirm.name}</div>
+                <div className="edit-product-meta">
+                  <span className="id-tag">#{unlistConfirm.shopeeItemId}</span>
+                  <span>{unlistConfirm.totalVariants} variasi</span>
+                </div>
               </div>
             </div>
 
-            {(updateItemMut.error || updatePriceMut.error) && (
-              <p style={{ color: 'var(--error)', fontSize: '0.8125rem', marginTop: '12px' }}>
-                {updateItemMut.error || updatePriceMut.error}
+            <div style={{ padding: '14px 16px', background: 'rgba(239, 68, 68, 0.06)', border: '1px solid rgba(239, 68, 68, 0.15)', borderRadius: '10px', marginBottom: '16px' }}>
+              <p style={{ color: 'var(--error)', fontSize: '0.875rem', fontWeight: 600, marginBottom: '6px' }}>
+                Peringatan: Tindakan ini berisiko!
               </p>
-            )}
+              <ul style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem', lineHeight: 1.6, paddingLeft: '18px', margin: 0 }}>
+                <li>Produk akan <strong>hilang dari pencarian Shopee</strong> dan tidak bisa dibeli pembeli.</li>
+                <li>Produk yang sedang <strong>ramai orderan bisa kehilangan ranking</strong> di hasil pencarian.</li>
+                <li>Produk bisa diaktifkan kembali, tapi <strong>posisi ranking mungkin tidak kembali</strong> seperti semula.</li>
+              </ul>
+            </div>
 
-            <div className="form-actions" style={{ marginTop: '20px' }}>
-              <Button variant="secondary" onClick={() => setEditItem(null)}>Batal</Button>
-              <Button variant="primary" onClick={handleSaveEdit} loading={updateItemMut.loading || updatePriceMut.loading}>
-                Simpan ke Shopee
+            <div className="form-actions">
+              <Button variant="secondary" onClick={() => setUnlistConfirm(null)}>Batal</Button>
+              <Button variant="danger" onClick={confirmUnlist} loading={toggleStatusMut.loading}>
+                Ya, Arsipkan
               </Button>
             </div>
           </div>

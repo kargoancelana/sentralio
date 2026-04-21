@@ -12,7 +12,7 @@ import { shopeeCredentials } from "./db/schema";
 
 const app = new Elysia()
   .use(cors({
-    origin: ["http://localhost:5173", "http://localhost:3000"],
+    origin: ["http://localhost:5173", "http://localhost:3000", "http://localhost:5175"],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     credentials: true,
   }))

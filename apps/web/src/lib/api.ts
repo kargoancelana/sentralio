@@ -42,6 +42,10 @@ export const api = {
   masterUnlinked: () => fetchApi<{ success: boolean; data: any[] }>('/master/unlinked-models'),
   masterDelete: (id: number) =>
     fetchApi(`/master/${id}`, { method: 'DELETE' }),
+  masterUnlink: (shopeeItemId: string) =>
+    fetchApi('/master/unlink', { method: 'POST', body: JSON.stringify({ shopee_item_id: shopeeItemId }) }),
+  masterLinkGroup: (masterProductId: number, shopeeItemId: string) =>
+    fetchApi('/master/link-group', { method: 'POST', body: JSON.stringify({ master_product_id: masterProductId, shopee_item_id: shopeeItemId }) }),
 
   // Products / Channel
   productStock: (groupId: number) => fetchApi(`/products/stock/${groupId}`),
@@ -68,8 +72,12 @@ export const api = {
   shopeeRealItems: (offset = 0, pageSize = 20) =>
     fetchApi(`/shopee/real-items?offset=${offset}&page_size=${pageSize}`),
   shopeeCatalog: () => fetchApi<{ success: boolean; data: any[] }>('/shopee/catalog'),
-  shopeeUpdateItem: (itemId: string, data: { name?: string }) =>
+  shopeeUpdateItem: (itemId: string, data: { name?: string; description?: string }) =>
     fetchApi('/shopee/update-item', { method: 'POST', body: JSON.stringify({ item_id: itemId, ...data }) }),
   shopeeUpdatePrice: (itemId: string, modelId: string, price: number) =>
     fetchApi('/shopee/update-price', { method: 'POST', body: JSON.stringify({ item_id: itemId, model_id: modelId, price }) }),
+  shopeeUpdateVariantStock: (itemId: string, modelId: string, stock: number) =>
+    fetchApi('/shopee/update-variant-stock', { method: 'POST', body: JSON.stringify({ item_id: itemId, model_id: modelId, stock }) }),
+  shopeeToggleStatus: (itemIds: string[], unlist: boolean) =>
+    fetchApi('/shopee/toggle-status', { method: 'POST', body: JSON.stringify({ item_ids: itemIds, unlist }) }),
 };

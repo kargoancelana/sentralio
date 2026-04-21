@@ -2,11 +2,13 @@ import { Elysia, t } from "elysia";
 import {
   updateStockByMasterSku,
   mapModelsToMaster,
+  mapProductGroupToMaster,
   importFromListing,
   listMasterProducts,
   getUnlinkedModels,
   updateMasterProduct,
   deleteMasterProduct,
+  unlinkProductGroup,
 } from "../../services/master.service";
 
 export const masterRoutes = new Elysia({ prefix: "/master" })
@@ -134,5 +136,48 @@ export const masterRoutes = new Elysia({ prefix: "/master" })
     },
     {
       params: t.Object({ id: t.String() }),
+    }
+  )
+
+  // ─── Unlink Product Group ───────────────────────────────────
+  .post(
+    "/unlink",
+    async ({ body, set }) => {
+      try {
+        const result = await unlinkProductGroup(body.shopee_item_id);
+        return { success: true, data: result };
+      } catch (error: any) {
+        const msg = error.message || "Failed to unlink";
+        set.status = msg.includes("not found") || msg.includes("No linked") ? 404 : 500;
+        return { success: false, message: msg };
+      }
+    },
+    {
+      body: t.Object({
+        shopee_item_id: t.String(),
+      }),
+    }
+  )
+
+  // ─── Link Product Group to Master ──────────────────────────
+  .post(
+    "/link-group",
+    async ({ body, set }) => {
+      try {
+        const result = await mapProductGroupToMaster(body.master_product_id, body.shopee_item_id);
+        return { success: true, data: result };
+      } catch (error: any) {
+        const msg = error.message || "Failed to link";
+        if (msg.includes("not found")) set.status = 404;
+        else if (msg.includes("already linked")) set.status = 409;
+        else set.status = 500;
+        return { success: false, message: msg };
+      }
+    },
+    {
+      body: t.Object({
+        master_product_id: t.Number(),
+        shopee_item_id: t.String(),
+      }),
     }
   );

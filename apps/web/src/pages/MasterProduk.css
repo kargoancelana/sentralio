@@ -2,6 +2,23 @@
   max-width: 1200px;
 }
 
+.master-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.master-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .page-header-row {
   display: flex;
   align-items: flex-start;
@@ -139,10 +156,68 @@
 /* Table selected row highlight */
 tr.row-selected td,
 .data-table tbody tr.row-selected td {
-  background: rgba(99, 102, 241, 0.04) !important;
+  background: rgba(232, 133, 45, 0.04) !important;
 }
 
 /* Extra bottom padding when bulk bar is visible */
 .master-produk.has-selection {
   padding-bottom: 100px;
+}
+
+/* ─── Linked Variant Rows (Edit Modal) ───── */
+
+.linked-variant-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  transition: background 0.15s;
+}
+
+.linked-variant-row:hover {
+  background: var(--bg-card);
+}
+
+.linked-variant-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.linked-variant-name {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.linked-variant-sku {
+  font-size: 0.6875rem;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: var(--text-muted);
+}
+
+.linked-variant-price {
+  font-size: 0.8125rem;
+  font-family: monospace;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.linked-variant-stock {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ─── Link Picker Row ────────────────────── */
+
+.link-picker-row:hover {
+  background: rgba(232, 133, 45, 0.04) !important;
 }
