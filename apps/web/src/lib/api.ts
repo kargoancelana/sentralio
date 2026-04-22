@@ -1,8 +1,10 @@
 const API_BASE = '/api';
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  status: number;
+  constructor(status: number, message: string) {
     super(message);
+    this.status = status;
     this.name = 'ApiError';
   }
 }
@@ -80,4 +82,6 @@ export const api = {
     fetchApi('/shopee/update-variant-stock', { method: 'POST', body: JSON.stringify({ item_id: itemId, model_id: modelId, stock }) }),
   shopeeToggleStatus: (itemIds: string[], unlist: boolean) =>
     fetchApi('/shopee/toggle-status', { method: 'POST', body: JSON.stringify({ item_ids: itemIds, unlist }) }),
+  shopeeUpdateModel: (itemId: string, modelId: string, data: { model_name?: string; model_sku?: string }) =>
+    fetchApi('/shopee/update-model', { method: 'POST', body: JSON.stringify({ item_id: itemId, model_id: modelId, ...data }) }),
 };

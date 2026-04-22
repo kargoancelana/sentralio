@@ -132,3 +132,34 @@ export async function refreshAccessToken(row: TokenRow): Promise<TokenRow> {
     refreshToken: data.refresh_token,
   };
 }
+
+/**
+ * Proactively refresh all tokens that are expired or will expire within 30 minutes.
+ * Called by cron job and smart-refresh endpoints.
+ */
+export async function ensureAllTokensFresh(): Promise<{ refreshed: number; failed: number }> {
+  const rows = await db.select().from(shopeeCredentials);
+  let refreshed = 0;
+  let failed = 0;
+  const margin = 30 * 60 * 1000; // 30 minutes before expiry
+
+  for (const row of rows) {
+    if (Date.now() > row.expiresAt.getTime() - margin) {
+      try {
+        const decrypted = {
+          ...row,
+          accessToken: decrypt(row.accessToken),
+          refreshToken: decrypt(row.refreshToken),
+        };
+        await refreshAccessToken(decrypted);
+        refreshed++;
+        console.log(`[CRON] Token refreshed for shop ${row.shopId}`);
+      } catch (err: any) {
+        failed++;
+        console.error(`[CRON] Failed to refresh token for shop ${row.shopId}: ${err.message}`);
+      }
+    }
+  }
+
+  return { refreshed, failed };
+}

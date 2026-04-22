@@ -9,6 +9,7 @@ import { masterRoutes } from "./modules/master/master.route";
 import { healthRoutes } from "./routes/health";
 import { db } from "./db/client";
 import { shopeeCredentials } from "./db/schema";
+import { ensureAllTokensFresh } from "./services/shopee-auth";
 
 const app = new Elysia()
   .use(cors({
@@ -38,6 +39,9 @@ const app = new Elysia()
   // ─── Multi-Seller: List all connected shops ─────────────────
   .get("/shopee/credentials/list", async () => {
     try {
+      // Smart-refresh: proactively refresh any expired/near-expired tokens
+      await ensureAllTokensFresh();
+
       const rows = await db.select().from(shopeeCredentials);
       return {
         success: true,
@@ -111,3 +115,20 @@ const app = new Elysia()
   .listen(env.appPort);
 
 console.log(`Server running at http://${app.server?.hostname}:${app.server?.port}`);
+
+// ─── Cron: Auto-refresh Shopee tokens every 3 hours ──────────
+const TOKEN_REFRESH_INTERVAL = 3 * 60 * 60 * 1000; // 3 hours
+setInterval(async () => {
+  console.log("[CRON] Running token refresh check...");
+  try {
+    const result = await ensureAllTokensFresh();
+    if (result.refreshed > 0 || result.failed > 0) {
+      console.log(`[CRON] Token refresh complete: ${result.refreshed} refreshed, ${result.failed} failed`);
+    } else {
+      console.log("[CRON] All tokens still valid, no refresh needed");
+    }
+  } catch (err: any) {
+    console.error(`[CRON] Token refresh error: ${err.message}`);
+  }
+}, TOKEN_REFRESH_INTERVAL);
+console.log(`[CRON] Token auto-refresh scheduled every ${TOKEN_REFRESH_INTERVAL / 3600000}h`);

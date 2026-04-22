@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { getShopInfo, getItemListRaw, syncShopeeProducts, getShopeeCatalog, updateShopeeItem, updateShopeePrice, updateShopeeVariantStock, toggleShopeeItemStatus } from "../../services/shopee.service";
+import { getShopInfo, getItemListRaw, syncShopeeProducts, getShopeeCatalog, updateShopeeItem, updateShopeePrice, updateShopeeVariantStock, toggleShopeeItemStatus, updateShopeeModel } from "../../services/shopee.service";
 import { getShopInfoRaw } from "../../services/shopee-raw";
 
 export const shopeeRoutes = new Elysia({ prefix: "/shopee" })
@@ -96,6 +96,29 @@ export const shopeeRoutes = new Elysia({ prefix: "/shopee" })
       body: t.Object({
         item_ids: t.Array(t.String()),
         unlist: t.Boolean(),
+      }),
+    }
+  )
+  .post(
+    "/update-model",
+    async ({ body, set }) => {
+      try {
+        const result = await updateShopeeModel(body.item_id, body.model_id, {
+          modelName: body.model_name,
+          modelSku: body.model_sku,
+        });
+        return { success: true, data: result };
+      } catch (error: any) {
+        set.status = 500;
+        return { success: false, message: error.message };
+      }
+    },
+    {
+      body: t.Object({
+        item_id: t.String(),
+        model_id: t.String(),
+        model_name: t.Optional(t.String()),
+        model_sku: t.Optional(t.String()),
       }),
     }
   );

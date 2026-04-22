@@ -108,7 +108,15 @@ export async function getModelListByItemId(itemId: string): Promise<any[]> {
 
   if (res.error) throw new Error("API Error: " + res.message);
 
-  return res.response.model || [];
+  const models = res.response?.model || [];
+  
+  // Debug: Log first model's full structure to see available price fields
+  if (models.length > 0) {
+    console.log(`[PRICE DEBUG] item_id=${itemId} first model keys:`, Object.keys(models[0]));
+    console.log(`[PRICE DEBUG] item_id=${itemId} first model price_info:`, JSON.stringify(models[0].price_info, null, 2));
+  }
+  
+  return models;
 }
 
 /**
@@ -207,10 +215,27 @@ export async function syncShopeeProducts() {
       const modelId = model.model_id.toString();
       const modelName = model.model_name || null;
       const modelSku = model.model_sku || null;
-      const price = model.price_info?.original_price ?? model.price_info?.current_price ?? 0;
+
+      // Shopee price_info is an array. We pick the first one.
+      let priceInfoList = Array.isArray(model.price_info) ? model.price_info : (model.price_info ? [model.price_info] : []);
+      if (priceInfoList.length === 0 && Array.isArray(itemInfo?.price_info)) {
+        priceInfoList = itemInfo.price_info;
+      }
+      const pInfo = priceInfoList[0] || {};
+      
+      let rawCurrent = pInfo.current_price ?? 0;
+      let rawOriginal = pInfo.original_price ?? 0;
+      // Prefer promo price (current_price) if > 0
+      let rawPrice = rawCurrent > 0 ? rawCurrent : rawOriginal;
+      
+      // Shopee returns prices with 100000 multiplier
+      let price = rawPrice > 10000 ? rawPrice / 100000 : rawPrice;
+
       const shopeeStock = model.stock_info_v2?.seller_stock?.[0]?.stock
         ?? model.stock_info?.normal_stock
         ?? 0;
+
+      console.log(`[PRICE DEBUG] item_id=${itemId} model_id=${modelId} raw_price=${rawPrice} price=${price} stock=${shopeeStock}`);
 
       await db.insert(products)
         .values({
@@ -411,4 +436,43 @@ export async function toggleShopeeItemStatus(itemIds: string[], unlist: boolean)
 
   console.log(`[EDIT] Toggled ${itemIds.length} items to ${newStatus}`);
   return { status: "success", items: itemIds.length, new_status: newStatus };
+}
+
+/**
+ * Update a variant's name and/or SKU on Shopee and local DB.
+ */
+export async function updateShopeeModel(
+  itemId: string,
+  modelId: string,
+  data: { modelName?: string; modelSku?: string }
+) {
+  // Build model list for Shopee API
+  const modelUpdate: Record<string, any> = { model_id: parseInt(modelId) };
+  if (data.modelName !== undefined) modelUpdate.model_name = data.modelName;
+  if (data.modelSku !== undefined) modelUpdate.model_sku = data.modelSku;
+
+  const result = await shopeeRequest({
+    method: "POST",
+    path: "/api/v2/product/update_model",
+    body: {
+      item_id: parseInt(itemId),
+      model: [modelUpdate],
+    },
+  });
+
+  if (result.error) {
+    throw new Error(`Shopee update_model error: ${result.message || result.error}`);
+  }
+
+  // Update local DB
+  const dbUpdate: Record<string, any> = { updatedAt: new Date() };
+  if (data.modelName !== undefined) dbUpdate.modelName = data.modelName;
+  if (data.modelSku !== undefined) dbUpdate.modelSku = data.modelSku;
+
+  await db.update(products)
+    .set(dbUpdate)
+    .where(eq(products.shopeeModelId, modelId));
+
+  console.log(`[EDIT] Updated model ${modelId} (item ${itemId}): name=${data.modelName}, sku=${data.modelSku}`);
+  return { status: "success", model_id: modelId };
 }

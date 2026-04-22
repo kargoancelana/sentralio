@@ -493,6 +493,12 @@
   font-size: 0.875rem;
 }
 
+.form-input-sm {
+  font-size: 0.75rem;
+  padding: 4px 8px;
+  height: 28px;
+}
+
 /* ─── Card Action Group ──────────── */
 
 .catalog-card-actions-group {
@@ -514,7 +520,7 @@
 
 .edit-variant-table-header {
   display: grid;
-  grid-template-columns: 1fr 130px 90px 48px;
+  grid-template-columns: 1fr 100px 110px 70px 48px;
   gap: 8px;
   padding: 10px 14px;
   background: var(--bg-hover);
@@ -527,7 +533,7 @@
 
 .edit-variant-row {
   display: grid;
-  grid-template-columns: 1fr 130px 90px 48px;
+  grid-template-columns: 1fr 100px 110px 70px 48px;
   gap: 8px;
   align-items: center;
   padding: 10px 14px;

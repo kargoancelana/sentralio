@@ -1,7 +1,12 @@
 import { eq, isNull, inArray } from "drizzle-orm";
 import { db } from "../db/client";
 import { masterProducts, products, productGroups } from "../db/schema";
-import { updateStockOnShopeeBatch } from "./shopee.service";
+import { 
+  updateStockOnShopee, 
+  updateStockOnShopeeBatch, 
+  updateShopeeVariantStock,
+  toggleShopeeItemStatus 
+} from "./shopee.service";
 import { delay } from "../utils/delay";
 import { env } from "../config/env";
 
@@ -45,74 +50,58 @@ export async function updateStockByMasterSku(masterProductId: number, newStock: 
     return { status: "success", sku: master.sku, synced_listings: 0, message: "No mapped listings found" };
   }
 
-  // 3. Group by item_id for batch update (reduces API calls)
-  const groupedByItem = new Map<string, typeof mappedProducts>();
-  for (const p of mappedProducts) {
-    const list = groupedByItem.get(p.shopeeItemId) ?? [];
-    list.push(p);
-    groupedByItem.set(p.shopeeItemId, list);
-  }
-
-  console.log(`[MASTER SKU SYNC] sku=${master.sku} — ${mappedProducts.length} models across ${groupedByItem.size} items`);
-
-  // 4. Sync per item_id batch with retry
+  // 3. Sync each model individually with retry
   let syncCount = 0;
   const failedProducts: { id: number; error: string }[] = [];
 
-  for (const [itemId, itemProducts] of groupedByItem) {
-    const models = itemProducts.map(p => ({ shopeeModelId: p.shopeeModelId, stock: newStock }));
-
-    // Mark all as pending
-    for (const p of itemProducts) {
-      await db.update(products).set({ syncStatus: "pending" }).where(eq(products.id, p.id));
-    }
+  for (const p of mappedProducts) {
+    await db.update(products).set({ syncStatus: "pending" }).where(eq(products.id, p.id));
 
     let success = false;
     let lastError = "";
 
     // Attempt 1
     try {
-      await updateStockOnShopeeBatch(itemId, models);
+      await updateShopeeVariantStock(p.shopeeItemId, p.shopeeModelId, newStock);
       success = true;
     } catch (err: any) {
       lastError = err.message;
-
-      // Attempt 2 (Retry x1) — only for retryable errors
+      
+      // Attempt 2 (Retry x1)
       if (isRetryableError(lastError)) {
-        console.warn(`[MASTER SKU SYNC] sku=${master.sku} item_id=${itemId} failed, retrying... error=${lastError}`);
+        console.warn(`[MASTER SKU SYNC] sku=${master.sku} model_id=${p.shopeeModelId} failed, retrying... error=${lastError}`);
         try {
           await delay(env.syncDelayMs);
-          await updateStockOnShopeeBatch(itemId, models);
+          await updateShopeeVariantStock(p.shopeeItemId, p.shopeeModelId, newStock);
           success = true;
         } catch (retryErr: any) {
           lastError = retryErr.message;
         }
       } else {
-        console.error(`[MASTER SKU SYNC] sku=${master.sku} item_id=${itemId} non-retryable error: ${lastError}`);
+        console.error(`[MASTER SKU SYNC] sku=${master.sku} model_id=${p.shopeeModelId} non-retryable error: ${lastError}`);
       }
     }
 
     // Update per-product status
-    for (const p of itemProducts) {
-      if (success) {
-        await db.update(products)
-          .set({ syncStatus: "success", lastError: null, updatedAt: new Date() })
-          .where(eq(products.id, p.id));
-        console.log(`[MASTER SKU SYNC] sku=${master.sku} model_id=${p.shopeeModelId} synced stock=${newStock}`);
-        syncCount++;
-      } else {
-        await db.update(products)
-          .set({ syncStatus: "failed", lastError, updatedAt: new Date() })
-          .where(eq(products.id, p.id));
-        console.error(`[MASTER SKU SYNC] sku=${master.sku} model_id=${p.shopeeModelId} FAILED error=${lastError}`);
-        failedProducts.push({ id: p.id, error: lastError });
-      }
+    if (success) {
+      // shopeeStock is already updated by updateShopeeVariantStock! Just update syncStatus here.
+      await db.update(products)
+        .set({ syncStatus: "success", lastError: null })
+        .where(eq(products.id, p.id));
+      console.log(`[MASTER SKU SYNC] sku=${master.sku} model_id=${p.shopeeModelId} synced stock=${newStock}`);
+      syncCount++;
+    } else {
+      await db.update(products)
+        .set({ syncStatus: "failed", lastError })
+        .where(eq(products.id, p.id));
+      console.error(`[MASTER SKU SYNC] sku=${master.sku} model_id=${p.shopeeModelId} FAILED error=${lastError}`);
+      failedProducts.push({ id: p.id, error: lastError });
     }
 
     await delay(env.syncDelayMs);
   }
 
-  // 5. Reconciliation: Only update master stock if at least 1 sync succeeded
+  // 4. Reconciliation: Only update master stock if at least 1 sync succeeded
   if (syncCount > 0) {
     await db.update(masterProducts)
       .set({ stock: newStock })
