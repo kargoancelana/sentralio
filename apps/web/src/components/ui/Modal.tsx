@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import './Modal.css';
 
@@ -30,7 +31,7 @@ export function Modal({ open, onClose, title, children, width }: ModalProps) {
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div className="modal-overlay animate-fade-in" onClick={onClose}>
       <div
         className="modal-content animate-scale-in"
@@ -45,6 +46,7 @@ export function Modal({ open, onClose, title, children, width }: ModalProps) {
         </div>
         <div className="modal-body">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

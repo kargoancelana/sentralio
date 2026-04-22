@@ -427,6 +427,7 @@ export function ProdukChannel() {
                           min="0"
                           value={editPrices[v.shopeeModelId] || '0'}
                           onChange={(e) => setEditPrices(prev => ({ ...prev, [v.shopeeModelId]: e.target.value }))}
+                          onFocus={(e) => e.target.select()}
                           disabled
                         />
                       </div>
@@ -437,6 +438,7 @@ export function ProdukChannel() {
                           min="0"
                           value={editStocks[v.shopeeModelId] || '0'}
                           onChange={(e) => setEditStocks(prev => ({ ...prev, [v.shopeeModelId]: e.target.value }))}
+                          onFocus={(e) => e.target.select()}
                         />
                       </div>
                     </div>
