@@ -229,10 +229,14 @@ export function MasterProduk() {
         const shopeeStock = getShopeeStock(item);
         if (shopeeStock === null) return <span style={{ color: 'var(--text-muted)' }}>-</span>;
         const isMismatch = shopeeStock !== item.stock;
+        let labelDisplay = 'Synced';
+        if (isMismatch) {
+          labelDisplay = shopeeStock === 0 ? 'Stok Habis' : 'Selisih';
+        }
         return (
           <div className="stock-cell">
             <span className={`stock-value ${isMismatch ? 'mismatch' : ''}`}>{shopeeStock}</span>
-            <span className="stock-label">{isMismatch ? 'Mismatch' : 'Synced'}</span>
+            <span className="stock-label">{labelDisplay}</span>
           </div>
         );
       },
@@ -375,28 +379,38 @@ export function MasterProduk() {
                   Edit Variasi
                 </h4>
                 <div className="edit-variant-table">
-                  <div className="edit-variant-table-header" style={{ gridTemplateColumns: 'minmax(0,1.5fr) 100px' }}>
+                  <div className="edit-variant-table-header" style={{ gridTemplateColumns: 'minmax(0,1.2fr) minmax(0,1fr) 100px' }}>
+                    <span className="col-name">Variasi</span>
                     <span className="col-sku">MSKU</span>
                     <span className="col-stock">Stok Master</span>
                   </div>
-                  {Array.from(new Set(editModal.linked_models.map((v: any) => v.modelSku || '(Kosong)'))).map((msku: any) => (
-                    <div className="edit-variant-row" key={msku} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.5fr) 100px', gap: '8px', alignItems: 'center' }}>
-                      <div className="edit-sku-input">
-                        <input className="form-input form-input-sm"
-                          value={editVariantSkus[msku] || ''}
-                          onChange={(e) => setEditVariantSkus(prev => ({ ...prev, [msku]: e.target.value }))}
-                          placeholder="MSKU"
-                          disabled={msku === '(Kosong)'}
-                        />
+                  {Array.from(new Set(editModal.linked_models.map((v: any) => v.modelSku || '(Kosong)'))).map((msku: any) => {
+                    const variantName = editModal.linked_models.find((v:any) => (v.modelSku || '(Kosong)') === msku)?.modelName || 'Varian';
+                    return (
+                      <div className="edit-variant-row" key={msku} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.2fr) minmax(0,1fr) 100px', gap: '8px', alignItems: 'center' }}>
+                        <div className="edit-variant-info">
+                          <div className="vname" style={{ fontSize: '0.8125rem', color: 'var(--text-primary)', wordBreak: 'break-all' }}>
+                            {variantName}
+                          </div>
+                        </div>
+                        <div className="edit-sku-input">
+                          <input className="form-input form-input-sm"
+                            value={editVariantSkus[msku] || ''}
+                            onChange={(e) => setEditVariantSkus(prev => ({ ...prev, [msku]: e.target.value }))}
+                            placeholder="MSKU"
+                            disabled={msku === '(Kosong)'}
+                          />
+                        </div>
+                        <div className="edit-stock-input">
+                          <input className="form-input" type="number" min="0" style={{ fontWeight: 600 }}
+                            value={editVariantStocks[msku] || '0'}
+                            onChange={(e) => setEditVariantStocks(prev => ({ ...prev, [msku]: e.target.value }))}
+                            onFocus={(e) => e.target.select()}
+                          />
+                        </div>
                       </div>
-                      <div className="edit-stock-input">
-                        <input className="form-input" type="number" min="0" style={{ fontWeight: 600 }}
-                          value={editVariantStocks[msku] || '0'}
-                          onChange={(e) => setEditVariantStocks(prev => ({ ...prev, [msku]: e.target.value }))}
-                        />
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <div className="form-actions" style={{ marginTop: '16px', justifyContent: 'flex-end', gap: '8px' }}>
                   <Button variant="secondary" onClick={() => setEditModal(null)}>Tutup</Button>

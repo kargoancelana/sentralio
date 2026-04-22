@@ -50,8 +50,8 @@ export const shopeeCredentials = mysqlTable("shopee_credentials", {
   partnerKey: varchar("partner_key", { length: 255 }).notNull(),
   shopId: int("shop_id").notNull(),
   shopName: varchar("shop_name", { length: 255 }),
-  accessToken: varchar("access_token", { length: 255 }).notNull(),
-  refreshToken: varchar("refresh_token", { length: 255 }).notNull(),
+  accessToken: text("access_token").notNull(),
+  refreshToken: text("refresh_token").notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => ({

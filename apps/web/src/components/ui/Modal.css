@@ -53,11 +53,11 @@
   padding: 12px 24px 24px;
 }
 
-.modal-body .form-group {
+.form-group {
   margin-bottom: 16px;
 }
 
-.modal-body .form-label {
+.form-label {
   display: block;
   font-size: 0.8125rem;
   font-weight: 500;
@@ -65,7 +65,7 @@
   margin-bottom: 6px;
 }
 
-.modal-body .form-input {
+.form-input {
   width: 100%;
   padding: 10px 14px;
   background: var(--bg-input);
@@ -76,12 +76,12 @@
   transition: all var(--transition-fast);
 }
 
-.modal-body .form-input:focus {
+.form-input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(232, 133, 45, 0.1);
 }
 
-.modal-body .form-actions {
+.form-actions {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
