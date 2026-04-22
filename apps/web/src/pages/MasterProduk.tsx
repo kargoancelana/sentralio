@@ -297,27 +297,7 @@ export function MasterProduk() {
         }
       />
 
-      {/* Sticky Bulk Action Bar */}
-      {selectedIds.size > 0 && (
-        <div className="bulk-bar">
-          <div className="bulk-bar-info">
-            <span className="bulk-count">{selectedIds.size} produk dipilih</span>
-            <span className="bulk-hint">Set stok baru untuk semua produk yang dipilih</span>
-          </div>
-          <div className="bulk-bar-form">
-            <div className="bulk-stock-input">
-              <label>Stok Baru:</label>
-              <input className="form-input" type="number" min="0" max="10000" value={bulkStock} onChange={(e) => setBulkStock(e.target.value)} placeholder="0" />
-            </div>
-          </div>
-          <div className="bulk-bar-actions">
-            <Button variant="secondary" onClick={() => { setSelectedIds(new Set()); setBulkStock(''); }}>Batal</Button>
-            <Button variant="primary" icon={<CloudUpload size={16} />} loading={bulkMut.loading} disabled={!bulkStock || parseInt(bulkStock) < 0}
-              onClick={() => bulkMut.execute(Array.from(selectedIds), parseInt(bulkStock)).then(() => toast.success('Stok berhasil diupdate')).catch((e: any) => toast.error(e.message))}
-            >Update &amp; Sync</Button>
-          </div>
-        </div>
-      )}
+
 
       {/* ─── Edit Modal (SKU, Name, Linked Groups with Unlink, Variant Stocks) ── */}
       <Modal open={!!editModal} onClose={() => setEditModal(null)} title="Edit Master Product" width="600px">
@@ -350,9 +330,8 @@ export function MasterProduk() {
                 setEditModal(null);
               } catch (err: any) { toast.error(err.message || 'Gagal update'); }
             }}>
-              <div className="form-group">
-                <label className="form-label">SKU</label>
-                <input className="form-input" name="sku" defaultValue={editModal.sku} required />
+              <div className="form-group" style={{ display: 'none' }}>
+                <input className="form-input" name="sku" defaultValue={editModal.sku} />
               </div>
               <div className="form-group">
                 <label className="form-label">Nama</label>
@@ -426,9 +405,10 @@ export function MasterProduk() {
                     </div>
                   ))}
                 </div>
-                <div className="form-actions" style={{ marginTop: '16px', justifyContent: 'flex-end' }}>
+                <div className="form-actions" style={{ marginTop: '16px', justifyContent: 'flex-end', gap: '8px' }}>
+                  <Button variant="secondary" onClick={() => setEditModal(null)}>Tutup</Button>
                   <Button variant="primary" onClick={handleSaveVariants} loading={saveVariantLoading}>
-                    Simpan Perbaikan Variasi
+                    Simpan
                   </Button>
                 </div>
               </div>
@@ -556,10 +536,8 @@ function LinkGroupPicker({ open, master, onClose, onLink, linkLoading }: {
   const [pickerSearch, setPickerSearch] = useState('');
 
   const catalog: any[] = catalogData?.data || [];
-  // Show listings that have unmapped variants
+  // Show all listings, let UI disable mapped ones
   const available = catalog.filter((item: any) => {
-    const hasUnmapped = (item.variants || []).some((v: any) => !v.isMapped);
-    if (!hasUnmapped) return false;
     if (!pickerSearch) return true;
     const s = pickerSearch.toLowerCase();
     return (item.name || '').toLowerCase().includes(s) || (item.itemSku || '').toLowerCase().includes(s) || (item.shopeeItemId || '').includes(s);
@@ -578,21 +556,31 @@ function LinkGroupPicker({ open, master, onClose, onLink, linkLoading }: {
         {loading ? (
           <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>Memuat katalog...</div>
         ) : available.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>Semua listing sudah ter-link.</div>
+          <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>Tidak ada listing.</div>
         ) : (
           <div style={{ maxHeight: '380px', overflow: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {available.map((item: any) => (
-              <div key={item.shopeeItemId} className="linked-variant-row" style={{ padding: '10px 12px' }}>
-                <div style={{ width: 42, height: 42, borderRadius: 8, overflow: 'hidden', flexShrink: 0, background: 'var(--bg-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {item.imageUrl ? <img src={item.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Package size={18} style={{ color: 'var(--text-muted)', opacity: 0.4 }} />}
+            {available.map((item: any) => {
+              const isMapped = item.mappedVariants > 0;
+              return (
+                <div key={item.shopeeItemId} className="linked-variant-row" style={{ padding: '10px 12px' }}>
+                  <div style={{ width: 42, height: 42, borderRadius: 8, overflow: 'hidden', flexShrink: 0, background: 'var(--bg-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {item.imageUrl ? <img src={item.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: isMapped ? 0.5 : 1 }} /> : <Package size={18} style={{ color: 'var(--text-muted)', opacity: 0.4 }} />}
+                  </div>
+                  <div className="linked-variant-info">
+                    <span className="linked-variant-name" style={{ color: isMapped ? 'var(--text-muted)' : 'inherit' }}>{item.name}</span>
+                    <span className="linked-variant-sku">
+                      {item.totalVariants} variasi
+                      {isMapped && <span style={{ color: 'var(--error)', marginLeft: '6px' }}>• Ter-link ke master lain</span>}
+                    </span>
+                  </div>
+                  {isMapped ? (
+                    <Button size="sm" variant="secondary" onClick={() => alert('Produk Channel ini sudah terhubung ke Master Produk lain. Harap "Unlink" produk ini terlebih dahulu sebelum memindahkannya ke Master Produk ini.')}>Pilih</Button>
+                  ) : (
+                    <Button size="sm" variant="primary" onClick={() => onLink(item.shopeeItemId)} loading={linkLoading}>Pilih</Button>
+                  )}
                 </div>
-                <div className="linked-variant-info">
-                  <span className="linked-variant-name">{item.name}</span>
-                  <span className="linked-variant-sku">{item.totalVariants} variasi • {item.totalVariants - item.mappedVariants} unmapped</span>
-                </div>
-                <Button size="sm" variant="primary" onClick={() => onLink(item.shopeeItemId)} loading={linkLoading}>Link</Button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

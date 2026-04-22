@@ -202,69 +202,32 @@ export async function importFromListing(shopeeItemId: string) {
 
   const group = groupRows[0];
 
-  // 2. Find all variants under this listing
-  const itemProducts = await db.select().from(products)
-    .where(eq(products.shopeeItemId, shopeeItemId));
-
-  if (itemProducts.length === 0) {
-    throw new Error(`No variants found for shopee_item_id=${shopeeItemId}. Run /shopee/sync-products first.`);
-  }
-
-  // 3. Check if any are already mapped
-  const unmapped = itemProducts.filter(p => p.masterProductId === null);
-
-  if (unmapped.length === 0) {
-    return {
-      status: "skipped",
-      message: "All variants under this listing are already mapped to a master",
-      item_id: shopeeItemId,
-      total_variants: itemProducts.length,
-      created: 0,
-    };
-  }
-
-  // 4. Check if a master already exists for this listing (by SKU)
-  const masterSku = group.itemSku || shopeeItemId;
+  // 2. Determine Master SKU and ensure uniqueness
+  let masterSku = group.itemSku || shopeeItemId;
   const existingMaster = await db.select().from(masterProducts)
     .where(eq(masterProducts.sku, masterSku)).limit(1);
 
-  let masterId: number;
-
   if (existingMaster.length > 0) {
-    // Master already exists — just map unmapped variants to it
-    masterId = existingMaster[0].id;
-    console.log(`[MASTER IMPORT] Existing master found id=${masterId} sku=${masterSku}, mapping ${unmapped.length} variants`);
-  } else {
-    // 5. Create 1 master product for the entire listing
-    const masterName = group.name || `Shopee Item ${shopeeItemId}`;
-
-    const [result] = await db.insert(masterProducts).values({
-      sku: masterSku,
-      name: masterName,
-      stock: 0,
-    });
-    masterId = (result as any).insertId as number;
-    console.log(`[MASTER IMPORT] Created master id=${masterId} sku=${masterSku} name="${masterName}"`);
+    masterSku = `${masterSku}-${Date.now().toString().slice(-6)}`;
   }
 
-  // 6. Auto-map all unmapped variants to this single master
-  await db.transaction(async (tx) => {
-    for (const p of unmapped) {
-      await tx.update(products)
-        .set({ masterProductId: masterId })
-        .where(eq(products.id, p.id));
-    }
-  });
+  // 3. Create 1 master product for the entire listing
+  const masterName = group.name || `Shopee Item ${shopeeItemId}`;
 
-  console.log(`[MASTER IMPORT] item_id=${shopeeItemId} mapped ${unmapped.length} variants to master id=${masterId}`);
+  const [result] = await db.insert(masterProducts).values({
+    sku: masterSku,
+    name: masterName,
+    stock: 0,
+  });
+  const masterId = (result as any).insertId as number;
+  console.log(`[MASTER IMPORT] Created master id=${masterId} sku=${masterSku} name="${masterName}"`);
 
   return {
     status: "success",
     item_id: shopeeItemId,
     master_id: masterId,
     master_sku: masterSku,
-    total_variants: itemProducts.length,
-    mapped: unmapped.length,
+    message: "Master Product berhasil dibuat. Silakan mapping listing dari menu manual link."
   };
 }
 

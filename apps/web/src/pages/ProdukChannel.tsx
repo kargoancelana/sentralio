@@ -390,7 +390,12 @@ export function ProdukChannel() {
                     <span className="col-price">Harga (Rp)</span>
                     <span className="col-stock">Stok</span>
                   </div>
-                  {(editItem.variants || []).map((v: any) => (
+                  {/* Sort variants based on model ID so they appear consistent */}
+                  {[...(editItem.variants || [])].sort((a: any, b: any) => {
+                    const idA = a.shopeeModelId || '';
+                    const idB = b.shopeeModelId || '';
+                    return idA.localeCompare(idB);
+                  }).map((v: any) => (
                     <div className="edit-variant-row" key={v.shopeeModelId}>
                       <div className="edit-variant-info">
                         <input

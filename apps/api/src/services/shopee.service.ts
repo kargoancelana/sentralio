@@ -228,8 +228,11 @@ export async function syncShopeeProducts() {
       // Prefer promo price (current_price) if > 0
       let rawPrice = rawCurrent > 0 ? rawCurrent : rawOriginal;
       
-      // Shopee returns prices with 100000 multiplier
-      let price = rawPrice > 10000 ? rawPrice / 100000 : rawPrice;
+      // Perbaikan Ambang Batas Multiplier Shopee
+      // Shopee mengembalikan harga kadang dengan multiplier 100000 (contoh: 5800000000 => 58.000)
+      // Harga terkecil di Shopee biasanya Rp 99. Jika sebuah nilai lebih besar dari 1.000.000 (Satu Juta),
+      // baru kita asumsikan ia terkena multiplier, sehingga aman untuk harga baju asli misal 58000.
+      let price = rawPrice > 1000000 ? rawPrice / 100000 : rawPrice;
 
       const shopeeStock = model.stock_info_v2?.seller_stock?.[0]?.stock
         ?? model.stock_info?.normal_stock
