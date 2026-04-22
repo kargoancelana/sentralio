@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ShoppingBag, RefreshCw, Package, Clock, Link2, Unlink, Search, Edit3, Eye, EyeOff, Save } from 'lucide-react';
+import { ShoppingBag, RefreshCw, Package, Clock, Link2, Unlink, Search, Edit3, Eye, EyeOff } from 'lucide-react';
 import { StatCard } from '../components/ui/StatCard';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
@@ -36,7 +36,10 @@ export function ProdukChannel() {
   const [editDescription, setEditDescription] = useState('');
   const [editPrices, setEditPrices] = useState<Record<string, string>>({});
   const [editStocks, setEditStocks] = useState<Record<string, string>>({});
+  const [editVariantNames, setEditVariantNames] = useState<Record<string, string>>({});
+  const [editVariantSkus, setEditVariantSkus] = useState<Record<string, string>>({});
   const [unlistConfirm, setUnlistConfirm] = useState<any>(null);
+  const [saveAllLoading, setSaveAllLoading] = useState(false);
 
   const syncMut = useApiMutation(async () => {
     await api.shopeeSyncProducts();
@@ -48,20 +51,12 @@ export function ProdukChannel() {
     await refetch();
   });
 
-  const updatePriceMut = useApiMutation(async (itemId: string, modelId: string, price: number) => {
-    await api.shopeeUpdatePrice(itemId, modelId, price);
-    await refetch();
-  });
-
-  const updateStockMut = useApiMutation(async (itemId: string, modelId: string, stock: number) => {
-    await api.shopeeUpdateVariantStock(itemId, modelId, stock);
-    await refetch();
-  });
-
   const toggleStatusMut = useApiMutation(async (itemIds: string[], unlist: boolean) => {
     await api.shopeeToggleStatus(itemIds, unlist);
     await refetch();
   });
+
+
 
   if (loading) return <PageLoading />;
 
@@ -95,12 +90,18 @@ export function ProdukChannel() {
     setEditDescription(item.description || '');
     const prices: Record<string, string> = {};
     const stocks: Record<string, string> = {};
+    const varNames: Record<string, string> = {};
+    const varSkus: Record<string, string> = {};
     for (const v of (item.variants || [])) {
       prices[v.shopeeModelId] = String(v.price || 0);
       stocks[v.shopeeModelId] = String(v.shopeeStock ?? 0);
+      varNames[v.shopeeModelId] = v.modelName || '';
+      varSkus[v.shopeeModelId] = v.modelSku || '';
     }
     setEditPrices(prices);
     setEditStocks(stocks);
+    setEditVariantNames(varNames);
+    setEditVariantSkus(varSkus);
   }
 
   async function handleSaveInfo() {
@@ -122,29 +123,54 @@ export function ProdukChannel() {
     }
   }
 
-  async function handleSaveVariantPrice(modelId: string) {
+  async function handleSaveAllVariants() {
     if (!editItem) return;
-    const newPrice = parseInt(editPrices[modelId] || '0');
-    const variant = editItem.variants?.find((v: any) => v.shopeeModelId === modelId);
-    if (!variant || newPrice === variant.price || newPrice <= 0) return;
+    setSaveAllLoading(true);
+    let successCount = 0;
+    
     try {
-      await updatePriceMut.execute(editItem.shopeeItemId, modelId, newPrice);
-      toast.success(`Harga variasi berhasil diupdate`);
+      for (const v of editItem.variants || []) {
+        const modelId = v.shopeeModelId;
+        let changed = false;
+        
+        // 1. Check Name/SKU changes
+        const nameChanged = editVariantNames[modelId] !== (v.modelName || '');
+        const skuChanged = editVariantSkus[modelId] !== (v.modelSku || '');
+        if (nameChanged || skuChanged) {
+          const modelData: { model_name?: string; model_sku?: string } = {};
+          if (nameChanged) modelData.model_name = editVariantNames[modelId];
+          if (skuChanged) modelData.model_sku = editVariantSkus[modelId];
+          await api.shopeeUpdateModel(editItem.shopeeItemId, modelId, modelData);
+          changed = true;
+        }
+        
+        // 2. Check Price changes
+        const newPrice = parseInt(editPrices[modelId] || '0');
+        if (newPrice > 0 && newPrice !== v.price) {
+          await api.shopeeUpdatePrice(editItem.shopeeItemId, modelId, newPrice);
+          changed = true;
+        }
+        
+        // 3. Check Stock changes
+        const newStock = parseInt(editStocks[modelId] || '0');
+        if (newStock >= 0 && newStock !== (v.shopeeStock ?? 0)) {
+          await api.shopeeUpdateVariantStock(editItem.shopeeItemId, modelId, newStock);
+          changed = true;
+        }
+        
+        if (changed) successCount++;
+      }
+      
+      if (successCount > 0) {
+        toast.success(`${successCount} variasi berhasil disimpan ke Shopee`);
+        await refetch();
+      } else {
+        toast.info('Tidak ada perubahan variasi');
+      }
     } catch (err: any) {
-      toast.error(err.message || 'Gagal update harga');
-    }
-  }
-
-  async function handleSaveVariantStock(modelId: string) {
-    if (!editItem) return;
-    const newStock = parseInt(editStocks[modelId] || '0');
-    const variant = editItem.variants?.find((v: any) => v.shopeeModelId === modelId);
-    if (!variant || newStock === (variant.shopeeStock ?? 0) || newStock < 0) return;
-    try {
-      await updateStockMut.execute(editItem.shopeeItemId, modelId, newStock);
-      toast.success(`Stok variasi berhasil disync ke Shopee`);
-    } catch (err: any) {
-      toast.error(err.message || 'Gagal update stok');
+      toast.error(err.message || 'Gagal menyimpan variasi');
+    } finally {
+      setSaveAllLoading(false);
     }
   }
 
@@ -355,21 +381,32 @@ export function ProdukChannel() {
               </div>
             )}
 
-            {/* Tab 2: Variants — Price & Stock */}
             {editTab === 'variants' && (
               <div className="edit-tab-content">
                 <div className="edit-variant-table">
                   <div className="edit-variant-table-header">
                     <span className="col-name">Variasi</span>
+                    <span className="col-sku">SKU</span>
                     <span className="col-price">Harga (Rp)</span>
                     <span className="col-stock">Stok</span>
-                    <span className="col-action">Aksi</span>
                   </div>
                   {(editItem.variants || []).map((v: any) => (
                     <div className="edit-variant-row" key={v.shopeeModelId}>
                       <div className="edit-variant-info">
-                        <div className="vname">{v.modelName || `Model ${v.shopeeModelId}`}</div>
-                        {v.modelSku && <div className="vsku">{v.modelSku}</div>}
+                        <input
+                          className="form-input form-input-sm"
+                          value={editVariantNames[v.shopeeModelId] || ''}
+                          onChange={(e) => setEditVariantNames(prev => ({ ...prev, [v.shopeeModelId]: e.target.value }))}
+                          placeholder="Nama variasi"
+                        />
+                      </div>
+                      <div className="edit-sku-input">
+                        <input
+                          className="form-input form-input-sm"
+                          value={editVariantSkus[v.shopeeModelId] || ''}
+                          onChange={(e) => setEditVariantSkus(prev => ({ ...prev, [v.shopeeModelId]: e.target.value }))}
+                          placeholder="SKU"
+                        />
                       </div>
                       <div className="edit-price-input">
                         <span className="currency">Rp</span>
@@ -390,30 +427,21 @@ export function ProdukChannel() {
                           onChange={(e) => setEditStocks(prev => ({ ...prev, [v.shopeeModelId]: e.target.value }))}
                         />
                       </div>
-                      <div className="edit-variant-actions">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          icon={<Save size={14} />}
-                          loading={updatePriceMut.loading || updateStockMut.loading}
-                          onClick={async () => {
-                            await handleSaveVariantPrice(v.shopeeModelId);
-                            await handleSaveVariantStock(v.shopeeModelId);
-                          }}
-                        />
-                      </div>
                     </div>
                   ))}
                 </div>
                 <div className="form-actions" style={{ marginTop: '20px' }}>
                   <Button variant="secondary" onClick={() => setEditItem(null)}>Tutup</Button>
+                  <Button variant="primary" onClick={handleSaveAllVariants} loading={saveAllLoading}>
+                    Simpan Perubahan
+                  </Button>
                 </div>
               </div>
             )}
 
-            {(updateItemMut.error || updatePriceMut.error || updateStockMut.error) && (
+            {updateItemMut.error && (
               <p style={{ color: 'var(--error)', fontSize: '0.8125rem', marginTop: '12px' }}>
-                {updateItemMut.error || updatePriceMut.error || updateStockMut.error}
+                {updateItemMut.error}
               </p>
             )}
           </div>

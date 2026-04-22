@@ -25,14 +25,17 @@ export function MasterProduk() {
   const [importModal, setImportModal] = useState(false);
   const [deleteModal, setDeleteModal] = useState<any>(null);
   const [linkModal, setLinkModal] = useState<any>(null);
+  const [unlinkConfirm, setUnlinkConfirm] = useState<any>(null);
   const { toast } = useToast();
 
-  // Edit modal variant stocks
+  // Edit modal variant stocks + skus
   const [editVariantStocks, setEditVariantStocks] = useState<Record<string, string>>({});
+  const [editVariantSkus, setEditVariantSkus] = useState<Record<string, string>>({});
 
   // Bulk selection
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkStock, setBulkStock] = useState('');
+  const [saveVariantLoading, setSaveVariantLoading] = useState(false);
 
   // Mutations
   const editMut = useApiMutation(async (id: number, sku: string, name: string) => {
@@ -65,10 +68,6 @@ export function MasterProduk() {
     await refetch();
   });
 
-  const variantStockMut = useApiMutation(async (itemId: string, modelId: string, stock: number) => {
-    await api.shopeeUpdateVariantStock(itemId, modelId, stock);
-    await refetch();
-  });
 
   const bulkMut = useApiMutation(async (ids: number[], stock: number) => {
     for (const id of ids) {
@@ -124,13 +123,54 @@ export function MasterProduk() {
     return models.reduce((sum: number, m: any) => sum + (m.shopeeStock ?? 0), 0);
   }
 
+  async function handleSaveVariants() {
+    if (!editModal) return;
+    setSaveVariantLoading(true);
+    let successCount = 0;
+    try {
+      for (const v of editModal.linked_models || []) {
+        let changed = false;
+        
+        // 1. Process MSKU update
+        const skuChanged = editVariantSkus[v.shopeeModelId] !== (v.modelSku || '');
+        if (skuChanged) {
+          await api.shopeeUpdateModel(v.shopeeItemId, v.shopeeModelId, { model_sku: editVariantSkus[v.shopeeModelId] });
+          changed = true;
+        }
+        
+        // 2. Process stock update
+        const newStock = parseInt(editVariantStocks[v.shopeeModelId] || '0');
+        if (newStock >= 0 && newStock !== (v.shopeeStock ?? 0)) {
+          await api.shopeeUpdateVariantStock(v.shopeeItemId, v.shopeeModelId, newStock);
+          changed = true;
+        }
+        
+        if (changed) successCount++;
+      }
+      
+      if (successCount > 0) {
+        toast.success(`Perubahan variasi berhasil disimpan`);
+        await refetch();
+      } else {
+        toast.info('Tidak ada perubahan yang perlu disimpan');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal menyimpan variasi');
+    } finally {
+      setSaveVariantLoading(false);
+    }
+  }
+
   function openEditModal(item: any) {
     setEditModal(item);
     const stocks: Record<string, string> = {};
+    const skus: Record<string, string> = {};
     for (const v of (item.linked_models || [])) {
       stocks[v.shopeeModelId] = String(v.shopeeStock ?? 0);
+      skus[v.shopeeModelId] = v.modelSku || '';
     }
     setEditVariantStocks(stocks);
+    setEditVariantSkus(skus);
   }
 
   const columns: Column<any>[] = [
@@ -154,7 +194,6 @@ export function MasterProduk() {
         </div>
       ),
     },
-    { key: 'sku', label: 'SKU', render: (item) => <span style={{ fontWeight: 600, color: 'var(--accent)', fontFamily: 'monospace', fontSize: '0.8125rem' }}>{item.sku}</span> },
     { key: 'name', label: 'Nama' },
     {
       key: 'price', label: 'Harga',
@@ -295,7 +334,6 @@ export function MasterProduk() {
               <div className="edit-modal-info">
                 <div className="edit-product-name">{editModal.name}</div>
                 <div className="edit-product-meta">
-                  <span className="sku-tag">{editModal.sku}</span>
                   <span>{editModal.linked_models?.length || 0} variasi</span>
                 </div>
               </div>
@@ -345,14 +383,7 @@ export function MasterProduk() {
                         <span className="linked-variant-sku">#{group.shopeeItemId}</span>
                       </div>
                       <Button size="sm" variant="ghost" icon={<Unlink size={13} />} loading={unlinkMut.loading}
-                        onClick={async () => {
-                          try {
-                            await unlinkMut.execute(group.shopeeItemId);
-                            toast.success(`Listing "${group.name}" berhasil di-unlink`);
-                            const refreshed = (await api.masterList()).data?.find((m: any) => m.id === editModal.id);
-                            if (refreshed) openEditModal(refreshed); else setEditModal(null);
-                          } catch (err: any) { toast.error(err.message || 'Gagal unlink'); }
-                        }}
+                        onClick={() => setUnlinkConfirm(group)}
                       />
                     </div>
                   ))}
@@ -360,47 +391,45 @@ export function MasterProduk() {
               </div>
             )}
 
-            {/* Variant Stock Editing */}
+            {/* Variant Editing — Name, MSKU, Stock */}
             {(editModal.linked_models?.length || 0) > 0 && (
               <div style={{ marginTop: '20px', borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
                 <h4 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '10px' }}>
-                  Stok per Variasi
+                  Edit Variasi
                 </h4>
                 <div className="edit-variant-table">
                   <div className="edit-variant-table-header">
                     <span className="col-name">Variasi</span>
+                    <span className="col-sku">MSKU</span>
                     <span className="col-price">Harga</span>
-                    <span className="col-stock">Stok</span>
-                    <span className="col-action">Sync</span>
+                    <span className="col-stock" style={{ gridColumn: 'span 2' }}>Stok</span>
                   </div>
                   {editModal.linked_models.map((v: any) => (
                     <div className="edit-variant-row" key={v.shopeeModelId}>
                       <div className="edit-variant-info">
                         <div className="vname">{v.modelName || `Model ${v.shopeeModelId}`}</div>
-                        {v.modelSku && <div className="vsku">{v.modelSku}</div>}
+                      </div>
+                      <div className="edit-sku-input">
+                        <input className="form-input form-input-sm"
+                          value={editVariantSkus[v.shopeeModelId] || ''}
+                          onChange={(e) => setEditVariantSkus(prev => ({ ...prev, [v.shopeeModelId]: e.target.value }))}
+                          placeholder="MSKU"
+                        />
                       </div>
                       <div className="linked-variant-price">{formatPrice(v.price)}</div>
-                      <div className="edit-stock-input">
+                      <div className="edit-stock-input" style={{ gridColumn: 'span 2' }}>
                         <input className="form-input" type="number" min="0"
                           value={editVariantStocks[v.shopeeModelId] || '0'}
                           onChange={(e) => setEditVariantStocks(prev => ({ ...prev, [v.shopeeModelId]: e.target.value }))}
                         />
                       </div>
-                      <div className="edit-variant-actions">
-                        <Button size="sm" variant="ghost" icon={<CloudUpload size={13} />}
-                          loading={variantStockMut.loading}
-                          onClick={async () => {
-                            const newStock = parseInt(editVariantStocks[v.shopeeModelId] || '0');
-                            if (newStock < 0) return;
-                            try {
-                              await variantStockMut.execute(v.shopeeItemId, v.shopeeModelId, newStock);
-                              toast.success(`Stok ${v.modelName || v.shopeeModelId} disync ke Shopee`);
-                            } catch (err: any) { toast.error(err.message || 'Gagal sync stok'); }
-                          }}
-                        />
-                      </div>
                     </div>
                   ))}
+                </div>
+                <div className="form-actions" style={{ marginTop: '16px', justifyContent: 'flex-end' }}>
+                  <Button variant="primary" onClick={handleSaveVariants} loading={saveVariantLoading}>
+                    Simpan Perbaikan Variasi
+                  </Button>
                 </div>
               </div>
             )}
@@ -408,7 +437,6 @@ export function MasterProduk() {
         )}
       </Modal>
 
-      {/* ─── Link Product Group Picker ── */}
       <LinkGroupPicker
         open={!!linkModal}
         master={linkModal}
@@ -423,6 +451,36 @@ export function MasterProduk() {
         }}
         linkLoading={linkGroupMut.loading}
       />
+
+      {/* ─── Unlink Confirm Modal ── */}
+      <Modal open={!!unlinkConfirm} onClose={() => setUnlinkConfirm(null)} title="Konfirmasi Unlink">
+        {unlinkConfirm && (
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            try {
+              await unlinkMut.execute(unlinkConfirm.shopeeItemId);
+              toast.success(`Listing "${unlinkConfirm.name}" berhasil di-unlink`);
+              setUnlinkConfirm(null);
+              if (editModal) {
+                const refreshed = (await api.masterList()).data?.find((m: any) => m.id === editModal.id);
+                if (refreshed) openEditModal(refreshed); else setEditModal(null);
+              } else {
+                await refetch();
+              }
+            } catch (err: any) { toast.error(err.message || 'Gagal unlink'); }
+          }}>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '16px' }}>
+              Apakah Anda yakin ingin memutus koneksi listing Shopee <strong style={{ color: 'var(--text-primary)' }}>{unlinkConfirm.name}</strong> dari Master Produk ini?
+            </p>
+            <div className="form-actions">
+              <Button variant="secondary" type="button" onClick={() => setUnlinkConfirm(null)}>Batal</Button>
+              <Button variant="primary" type="submit" loading={unlinkMut.loading} style={{ background: 'var(--error)' }}>
+                Ya, Putus Koneksi
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
 
       {/* Stock Update Modal */}
       <Modal open={!!stockModal} onClose={() => setStockModal(null)} title="Update Stock">
