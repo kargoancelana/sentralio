@@ -357,6 +357,7 @@ export function ProdukChannel() {
                     value={editName}
                     maxLength={255}
                     onChange={(e) => setEditName(e.target.value)}
+                    disabled
                   />
                 </div>
                 <div className="form-group">
@@ -370,7 +371,11 @@ export function ProdukChannel() {
                     onChange={(e) => setEditDescription(e.target.value)}
                     rows={6}
                     placeholder="Masukkan deskripsi produk..."
+                    disabled
                   />
+                </div>
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', marginTop: '12px', fontStyle: 'italic' }}>
+                  * Nama Produk dan Deskripsi untuk sementara waktu dikunci (Read-Only).
                 </div>
                 <div className="form-actions" style={{ marginTop: '20px' }}>
                   <Button variant="secondary" onClick={() => setEditItem(null)}>Batal</Button>
@@ -403,6 +408,7 @@ export function ProdukChannel() {
                           value={editVariantNames[v.shopeeModelId] || ''}
                           onChange={(e) => setEditVariantNames(prev => ({ ...prev, [v.shopeeModelId]: e.target.value }))}
                           placeholder="Nama variasi"
+                          disabled
                         />
                       </div>
                       <div className="edit-sku-input">
@@ -421,6 +427,7 @@ export function ProdukChannel() {
                           min="0"
                           value={editPrices[v.shopeeModelId] || '0'}
                           onChange={(e) => setEditPrices(prev => ({ ...prev, [v.shopeeModelId]: e.target.value }))}
+                          disabled
                         />
                       </div>
                       <div className="edit-stock-input">
