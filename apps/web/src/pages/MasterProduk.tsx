@@ -127,19 +127,29 @@ export function MasterProduk() {
     if (!editModal) return;
     setSaveVariantLoading(true);
     let successCount = 0;
+
     try {
+      // 1. Update Master Product Name
+      const nameInput = document.getElementById('master-name-input') as HTMLInputElement;
+      if (nameInput && nameInput.value !== editModal.name) {
+        await editMut.execute(editModal.id, editModal.sku, nameInput.value);
+        successCount++;
+      }
+
+      // 2. Process variants grouped by original MSKU
       for (const v of editModal.linked_models || []) {
+        const originalMsku = v.modelSku || '(Kosong)';
         let changed = false;
         
-        // 1. Process MSKU update
-        const skuChanged = editVariantSkus[v.shopeeModelId] !== (v.modelSku || '');
-        if (skuChanged) {
-          await api.shopeeUpdateModel(v.shopeeItemId, v.shopeeModelId, { model_sku: editVariantSkus[v.shopeeModelId] });
+        // Process MSKU update
+        const newMsku = editVariantSkus[originalMsku];
+        if (newMsku !== undefined && newMsku !== (v.modelSku || '') && originalMsku !== '(Kosong)') {
+          await api.shopeeUpdateModel(v.shopeeItemId, v.shopeeModelId, { model_sku: newMsku });
           changed = true;
         }
         
-        // 2. Process stock update
-        const newStock = parseInt(editVariantStocks[v.shopeeModelId] || '0');
+        // Process stock update
+        const newStock = parseInt(editVariantStocks[originalMsku] || '0');
         if (newStock >= 0 && newStock !== (v.shopeeStock ?? 0)) {
           await api.shopeeUpdateVariantStock(v.shopeeItemId, v.shopeeModelId, newStock);
           changed = true;
@@ -149,10 +159,12 @@ export function MasterProduk() {
       }
       
       if (successCount > 0) {
-        toast.success(`Perubahan variasi berhasil disimpan`);
+        toast.success(`Perubahan berhasil disimpan`);
         await refetch();
+        setEditModal(null);
       } else {
         toast.info('Tidak ada perubahan yang perlu disimpan');
+        setEditModal(null);
       }
     } catch (err: any) {
       toast.error(err.message || 'Gagal menyimpan variasi');
@@ -166,8 +178,9 @@ export function MasterProduk() {
     const stocks: Record<string, string> = {};
     const skus: Record<string, string> = {};
     for (const v of (item.linked_models || [])) {
-      stocks[v.shopeeModelId] = String(v.shopeeStock ?? 0);
-      skus[v.shopeeModelId] = v.modelSku || '';
+      const msku = v.modelSku || '(Kosong)';
+      if (!stocks[msku]) stocks[msku] = String(v.shopeeStock ?? 0);
+      if (!skus[msku]) skus[msku] = v.modelSku || '';
     }
     setEditVariantStocks(stocks);
     setEditVariantSkus(skus);
@@ -250,7 +263,6 @@ export function MasterProduk() {
         <div className="data-table-actions">
           <Button size="sm" variant="ghost" icon={<Edit3 size={14} />} onClick={() => openEditModal(item)} />
           <Button size="sm" variant="ghost" icon={<Link2 size={14} />} onClick={() => setLinkModal(item)} />
-          <Button size="sm" variant="ghost" icon={<RefreshCw size={14} />} onClick={() => setStockModal(item)} />
           <Button size="sm" variant="ghost" icon={<Trash2 size={14} />} onClick={() => setDeleteModal(item)} />
         </div>
       ),
@@ -319,29 +331,15 @@ export function MasterProduk() {
               </div>
             </div>
 
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              const form = e.target as HTMLFormElement;
-              const sku = (form.elements.namedItem('sku') as HTMLInputElement).value;
-              const name = (form.elements.namedItem('name') as HTMLInputElement).value;
-              try {
-                await editMut.execute(editModal.id, sku, name);
-                toast.success('Master product berhasil diupdate');
-                setEditModal(null);
-              } catch (err: any) { toast.error(err.message || 'Gagal update'); }
-            }}>
+            <div>
               <div className="form-group" style={{ display: 'none' }}>
                 <input className="form-input" name="sku" defaultValue={editModal.sku} />
               </div>
               <div className="form-group">
-                <label className="form-label">Nama</label>
-                <input className="form-input" name="name" defaultValue={editModal.name} required />
+                <label className="form-label">Nama Master</label>
+                <input id="master-name-input" className="form-input" name="name" defaultValue={editModal.name} required />
               </div>
-              <div className="form-actions">
-                <Button variant="secondary" type="button" onClick={() => setEditModal(null)}>Cancel</Button>
-                <Button variant="primary" type="submit" loading={editMut.loading}>Save Changes</Button>
-              </div>
-            </form>
+            </div>
 
             {/* Linked Product Groups — Unlink per group */}
             {(editModal.linked_groups?.length || 0) > 0 && (
@@ -377,29 +375,24 @@ export function MasterProduk() {
                   Edit Variasi
                 </h4>
                 <div className="edit-variant-table">
-                  <div className="edit-variant-table-header">
-                    <span className="col-name">Variasi</span>
+                  <div className="edit-variant-table-header" style={{ gridTemplateColumns: 'minmax(0,1.5fr) 100px' }}>
                     <span className="col-sku">MSKU</span>
-                    <span className="col-price">Harga</span>
-                    <span className="col-stock" style={{ gridColumn: 'span 2' }}>Stok</span>
+                    <span className="col-stock">Stok Master</span>
                   </div>
-                  {editModal.linked_models.map((v: any) => (
-                    <div className="edit-variant-row" key={v.shopeeModelId}>
-                      <div className="edit-variant-info">
-                        <div className="vname">{v.modelName || `Model ${v.shopeeModelId}`}</div>
-                      </div>
+                  {Array.from(new Set(editModal.linked_models.map((v: any) => v.modelSku || '(Kosong)'))).map((msku: any) => (
+                    <div className="edit-variant-row" key={msku} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.5fr) 100px', gap: '8px', alignItems: 'center' }}>
                       <div className="edit-sku-input">
                         <input className="form-input form-input-sm"
-                          value={editVariantSkus[v.shopeeModelId] || ''}
-                          onChange={(e) => setEditVariantSkus(prev => ({ ...prev, [v.shopeeModelId]: e.target.value }))}
+                          value={editVariantSkus[msku] || ''}
+                          onChange={(e) => setEditVariantSkus(prev => ({ ...prev, [msku]: e.target.value }))}
                           placeholder="MSKU"
+                          disabled={msku === '(Kosong)'}
                         />
                       </div>
-                      <div className="linked-variant-price">{formatPrice(v.price)}</div>
-                      <div className="edit-stock-input" style={{ gridColumn: 'span 2' }}>
-                        <input className="form-input" type="number" min="0"
-                          value={editVariantStocks[v.shopeeModelId] || '0'}
-                          onChange={(e) => setEditVariantStocks(prev => ({ ...prev, [v.shopeeModelId]: e.target.value }))}
+                      <div className="edit-stock-input">
+                        <input className="form-input" type="number" min="0" style={{ fontWeight: 600 }}
+                          value={editVariantStocks[msku] || '0'}
+                          onChange={(e) => setEditVariantStocks(prev => ({ ...prev, [msku]: e.target.value }))}
                         />
                       </div>
                     </div>
