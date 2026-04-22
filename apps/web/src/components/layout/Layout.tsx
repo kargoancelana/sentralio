@@ -1,19 +1,45 @@
-import { useState } from 'react';
-import { Outlet } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Outlet, useLocation } from 'react-router-dom';
+import { ToastProvider } from '../ui/Toast';
 import { Sidebar } from './Sidebar';
-import { Header } from './Header';
-import './Layout.css';
+import { TopBar } from './Header';
 
 export function Layout() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const location = useLocation();
+
+  // Dark mode integration
+  const [dark, setDark] = useState(() => {
+    try { return localStorage.getItem('wms-theme') === 'dark'; } catch { return false; }
+  });
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', dark);
+    try { localStorage.setItem('wms-theme', dark ? 'dark' : 'light'); } catch {}
+  }, [dark]);
+
+  // Determine active item from react-router pathname
+  const active = location.pathname.includes('/integrasi/shopee') ? 'integrations'
+    : location.pathname.includes('/produk/channel') ? 'channel'
+    : location.pathname.includes('/produk/master') ? 'master'
+    : location.pathname.includes('/settings') ? 'settings'
+    : 'dashboard';
 
   return (
-    <div className="layout">
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <Header onMenuClick={() => setSidebarOpen(prev => !prev)} />
-      <main className="layout-content">
-        <Outlet />
-      </main>
-    </div>
+    <ToastProvider>
+      <div className="wms-shell">
+        <Sidebar
+          active={active}
+          collapsed={collapsed}
+          setCollapsed={setCollapsed}
+          dark={dark}
+          toggleDark={() => setDark(d => !d)}
+        />
+        <div className="wms-main">
+          <TopBar active={active} />
+          <Outlet />
+        </div>
+      </div>
+    </ToastProvider>
   );
 }
