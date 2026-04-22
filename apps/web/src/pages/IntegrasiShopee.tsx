@@ -348,13 +348,13 @@ export function IntegrasiShopee() {
       <Modal
         open={!!disconnectShop}
         onClose={() => setDisconnectShop(null)}
-        title="Disconnect Shop"
+        title="Peringatan Disconnect Integrasi"
         width="420px"
       >
         {disconnectShop && (
           <div>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9375rem', marginBottom: '8px' }}>
-              Yakin ingin memutuskan koneksi toko:
+              Anda akan memutus koneksi integrasi toko:
             </p>
             <p style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '1.0625rem', marginBottom: '4px' }}>
               {disconnectShop.shop_name}
@@ -362,9 +362,12 @@ export function IntegrasiShopee() {
             <p style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', marginBottom: '20px' }}>
               Shop ID: {disconnectShop.shop_id}
             </p>
-            <p style={{ color: 'var(--error)', fontSize: '0.8125rem', marginBottom: '20px' }}>
-              Token dan kredensial toko ini akan dihapus. Anda perlu authorize ulang untuk menghubungkan kembali.
-            </p>
+            <div style={{ background: 'rgba(239,68,68,0.1)', padding: '12px', borderRadius: '8px', marginBottom: '20px', border: '1px solid rgba(239,68,68,0.2)' }}>
+              <p style={{ color: 'var(--error)', fontSize: '0.8125rem', fontWeight: 600, marginBottom: '4px' }}>⚠️ Peringatan Keras</p>
+              <p style={{ color: 'var(--error)', fontSize: '0.8125rem', lineHeight: 1.4 }}>
+                Token dan seluruh kredensial toko Shopee ini akan dihapus secara permanen dari sistem. Manajemen Master Produk untuk toko ini mungkin tertunda hingga Anda melakukan Re-Authorize.
+              </p>
+            </div>
             <div className="form-actions">
               <Button variant="secondary" onClick={() => setDisconnectShop(null)}>Batal</Button>
               <Button
