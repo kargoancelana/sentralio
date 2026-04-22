@@ -1,17 +1,16 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { X } from 'lucide-react';
-import './Modal.css';
 
 interface ModalProps {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
-  width?: string;
+  footer?: ReactNode;
+  size?: 'lg' | '';
 }
 
-export function Modal({ open, onClose, title, children, width }: ModalProps) {
+export function Modal({ open, onClose, title, children, footer, size = '' }: ModalProps) {
   useEffect(() => {
     if (open) {
       document.body.style.overflow = 'hidden';
@@ -21,30 +20,21 @@ export function Modal({ open, onClose, title, children, width }: ModalProps) {
     return () => { document.body.style.overflow = ''; };
   }, [open]);
 
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && open) onClose();
-    };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [open, onClose]);
-
   if (!open) return null;
 
   return createPortal(
-    <div className="modal-overlay animate-fade-in" onClick={onClose}>
-      <div
-        className="modal-content animate-scale-in"
-        style={width ? { maxWidth: width } : undefined}
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="modal-header">
-          <h3>{title}</h3>
-          <button className="modal-close" onClick={onClose} aria-label="Close">
-            <X size={18} />
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className={`modal-box ${size === 'lg' ? 'modal-box-lg' : ''}`}>
+        <div className="modal-head">
+          <span className="modal-title">{title}</span>
+          <button className="ic-btn" onClick={onClose}>
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
           </button>
         </div>
         <div className="modal-body">{children}</div>
+        {footer && <div className="modal-footer">{footer}</div>}
       </div>
     </div>,
     document.body
