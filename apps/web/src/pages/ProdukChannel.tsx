@@ -321,12 +321,24 @@ export function ProdukChannel() {
         <div className="product-grid">
           {filtered.map(product => {
             const isMapped = product.mappedVariants === product.totalVariants && product.totalVariants > 0;
+            const prices = (product.variants || []).map((v: any) => v.price).filter((p: number) => p > 0);
+            let priceStr = '';
+            if (prices.length > 0) {
+              const minP = Math.min(...prices);
+              const maxP = Math.max(...prices);
+              if (minP === maxP) {
+                priceStr = `Rp ${minP.toLocaleString('id-ID')}`;
+              } else {
+                priceStr = `Rp ${minP.toLocaleString('id-ID')} - Rp ${maxP.toLocaleString('id-ID')}`;
+              }
+            }
+
             return (
               <div key={product.shopeeItemId} className="prod-card">
                 <ProductThumb name={product.name || ''} imageUrl={product.imageUrl} />
                 <div className="prod-body">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6, marginBottom: 6 }}>
-                    <span className={`badge ${product.status === 'NORMAL' ? 'badge-green' : 'badge-gray'}`}>{product.status}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--shopee)' }}>{priceStr}</span>
                     <span className={`badge ${isMapped ? 'badge-blue' : 'badge-yellow'}`}>{isMapped ? `Ter-link ${product.mappedVariants}` : 'Unlinked'}</span>
                   </div>
                   <div className="prod-name" title={product.name}>{product.name}</div>

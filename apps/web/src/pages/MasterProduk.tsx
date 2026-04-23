@@ -384,7 +384,7 @@ export function MasterProduk() {
                  badgeText = 'Stok Habis';
               } else if (wmsStock <= 50) {
                  badgeClass = 'badge-orange';
-                 badgeText = 'Menipis';
+                 badgeText = 'Stok Menipis';
               } else {
                  badgeClass = 'badge-green';
                  badgeText = 'Linked';
