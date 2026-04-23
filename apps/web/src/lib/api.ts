@@ -28,10 +28,10 @@ export async function fetchApi<T = any>(
 }
 
 export const api = {
-  // Health
+  // Status Kesehatan (Health)
   health: () => fetchApi('/health'),
 
-  // Master Products
+  // Master Produk
   masterList: () => fetchApi<{ success: boolean; data: any[] }>('/master/list'),
   masterUpdate: (id: number, body: { sku?: string; name?: string }) =>
     fetchApi(`/master/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
@@ -49,17 +49,17 @@ export const api = {
   masterLinkGroup: (masterProductId: number, shopeeItemId: string) =>
     fetchApi('/master/link-group', { method: 'POST', body: JSON.stringify({ master_product_id: masterProductId, shopee_item_id: shopeeItemId }) }),
 
-  // Products / Channel
+  // Produk Channel
   productStock: (groupId: number) => fetchApi(`/products/stock/${groupId}`),
   productUpdateStock: (groupId: number, stock: number, source?: string) =>
     fetchApi('/products/stock/update', { method: 'POST', body: JSON.stringify({ group_id: groupId, stock, source }) }),
 
-  // Shopee — Auth
+  // Shopee — Otorisasi
   shopeeGetAuthUrl: () => fetchApi<{ auth_url: string }>('/shopee/auth/url'),
   shopeeExchangeToken: (code: string, shopId: string) =>
     fetchApi('/shopee/auth/exchange', { method: 'POST', body: JSON.stringify({ code, shop_id: shopId }) }),
 
-  // Shopee — Credentials (Multi-seller)
+  // Shopee — Kredensial (Multi-seller)
   shopeeCredentialsList: () => fetchApi<{ success: boolean; data: any[] }>('/shopee/credentials/list'),
   shopeeCredentialsStatus: (shopId?: number) => {
     const qs = shopId ? `?shop_id=${shopId}` : '';
@@ -68,7 +68,7 @@ export const api = {
   shopeeDisconnect: (shopId: number) =>
     fetchApi(`/shopee/credentials/${shopId}`, { method: 'DELETE' }),
 
-  // Shopee — Operations
+  // Shopee — Operasi
   shopeeTestShop: () => fetchApi('/shopee/test-shop'),
   shopeeSyncProducts: () => fetchApi('/shopee/sync-products'),
   shopeeRealItems: (offset = 0, pageSize = 20) =>

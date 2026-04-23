@@ -9,7 +9,7 @@ import { encrypt } from "../../utils/crypto";
 const SHOPEE_BASE = "https://partner.shopeemobile.com";
 
 /**
- * Generate HMAC-SHA256 signature for Shopee API.
+ * Membuat signature HMAC-SHA256 untuk API Shopee.
  */
 function makeSign(partnerId: number, partnerKey: string, path: string, timestamp: number): string {
   const baseString = `${partnerId}${path}${timestamp}`;
@@ -18,7 +18,7 @@ function makeSign(partnerId: number, partnerKey: string, path: string, timestamp
 
 export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
 
-  // ─── Get auth URL as JSON (for frontend redirect) ───────────
+  // ─── Dapatkan URL otorisasi sebagai JSON (untuk redirect frontend) ───────────
   .get("/auth/url", () => {
     const path = "/api/v2/shop/auth_partner";
     const timestamp = Math.floor(Date.now() / 1000);
@@ -30,7 +30,7 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
     return { auth_url: authUrl };
   })
 
-  // ─── Legacy HTML auth page (kept for backward compatibility) ─
+  // ─── Halaman otorisasi HTML lawas (dipertahankan untuk kompatibilitas) ─
   .get("/auth", ({ set }) => {
     const path = "/api/v2/shop/auth_partner";
     const timestamp = Math.floor(Date.now() / 1000);
@@ -45,7 +45,7 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
 <p>Redirecting to Shopee authorization...</p></body></html>`;
   })
 
-  // ─── Exchange auth code for tokens (multi-seller upsert) ────
+  // ─── Tukarkan kode otorisasi dengan token (upsert multi-seller) ────
   .post(
     "/auth/exchange",
     async ({ body, set }) => {
@@ -93,7 +93,7 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
 
       const expiresAt = new Date(Date.now() + data.expire_in * 1000);
 
-      // Try to fetch shop name from Shopee API
+      // Coba untuk mendapatkan nama toko dari API Shopee
       let shopName: string | null = null;
       try {
         const shopInfoPath = "/api/v2/shop/get_shop_info";
@@ -121,7 +121,7 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
         updatedAt: new Date(),
       };
 
-      // Multi-seller upsert: check by shop_id
+      // Upsert multi-seller: periksa berdasarkan shop_id
       const existing = await db.select().from(shopeeCredentials)
         .where(eq(shopeeCredentials.shopId, shopIdNum)).limit(1);
 

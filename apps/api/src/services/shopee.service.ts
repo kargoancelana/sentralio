@@ -110,7 +110,7 @@ export async function getModelListByItemId(itemId: string): Promise<any[]> {
 
   const models = res.response?.model || [];
   
-  // Debug: Log first model's full structure to see available price fields
+  // Debug: Log struktur data model pertama untuk melihat field harga yang tersedia
   if (models.length > 0) {
     console.log(`[PRICE DEBUG] item_id=${itemId} first model keys:`, Object.keys(models[0]));
     console.log(`[PRICE DEBUG] item_id=${itemId} first model price_info:`, JSON.stringify(models[0].price_info, null, 2));
@@ -155,7 +155,7 @@ export async function syncShopeeProducts() {
       }
     } catch (err: any) {
       console.warn(`[SYNC] Failed to fetch item base info batch: ${err.message}`);
-      // Continue without enriched data for this batch
+      // Lanjutkan tanpa data yang diperkaya (enriched) untuk batch ini
     }
   }
 
@@ -216,7 +216,7 @@ export async function syncShopeeProducts() {
       const modelName = model.model_name || null;
       const modelSku = model.model_sku || null;
 
-      // Shopee price_info is an array. We pick the first one.
+      // price_info Shopee adalah array. Kita ambil yang pertama.
       let priceInfoList = Array.isArray(model.price_info) ? model.price_info : (model.price_info ? [model.price_info] : []);
       if (priceInfoList.length === 0 && Array.isArray(itemInfo?.price_info)) {
         priceInfoList = itemInfo.price_info;
@@ -225,7 +225,7 @@ export async function syncShopeeProducts() {
       
       let rawCurrent = pInfo.current_price ?? 0;
       let rawOriginal = pInfo.original_price ?? 0;
-      // Prefer promo price (current_price) if > 0
+      // Prioritaskan harga promo (current_price) jika lebih besar dari 0
       let rawPrice = rawCurrent > 0 ? rawCurrent : rawOriginal;
       
       // Perbaikan Ambang Batas Multiplier Shopee
@@ -352,7 +352,7 @@ export async function updateShopeeItem(itemId: string, data: { name?: string; de
     throw new Error(`Shopee update_item error: ${result.message || result.error}`);
   }
 
-  // Update local DB
+  // Update DB lokal
   const localUpdate: Record<string, any> = {};
   if (data.name) localUpdate.name = data.name;
   if (data.description !== undefined) localUpdate.description = data.description;
@@ -384,7 +384,7 @@ export async function updateShopeePrice(itemId: string, modelId: string, price: 
     throw new Error(`Shopee update_price error: ${result.message || result.error}`);
   }
 
-  // Update local DB
+  // Update DB lokal
   await db.update(products)
     .set({ price: Math.round(price) })
     .where(eq(products.shopeeModelId, modelId));
@@ -403,7 +403,7 @@ export async function updateShopeeVariantStock(
 ) {
   await updateStockOnShopeeBatch(itemId, [{ shopeeModelId: modelId, stock }]);
 
-  // Update local DB
+  // Update DB lokal
   await db.update(products)
     .set({ shopeeStock: stock })
     .where(eq(products.shopeeModelId, modelId));
@@ -429,7 +429,7 @@ export async function toggleShopeeItemStatus(itemIds: string[], unlist: boolean)
     throw new Error(`Shopee unlist_item error: ${result.message || result.error}`);
   }
 
-  // Update local DB
+  // Update DB lokal
   const newStatus = unlist ? "UNLIST" : "NORMAL";
   for (const itemId of itemIds) {
     await db.update(productGroups)
@@ -449,7 +449,7 @@ export async function updateShopeeModel(
   modelId: string,
   data: { modelName?: string; modelSku?: string }
 ) {
-  // Build model list for Shopee API
+  // Buat daftar model untuk API Shopee
   const modelUpdate: Record<string, any> = { model_id: parseInt(modelId) };
   if (data.modelName !== undefined) modelUpdate.model_name = data.modelName;
   if (data.modelSku !== undefined) modelUpdate.model_sku = data.modelSku;
@@ -467,7 +467,7 @@ export async function updateShopeeModel(
     throw new Error(`Shopee update_model error: ${result.message || result.error}`);
   }
 
-  // Update local DB
+  // Update DB lokal
   const dbUpdate: Record<string, any> = { updatedAt: new Date() };
   if (data.modelName !== undefined) dbUpdate.modelName = data.modelName;
   if (data.modelSku !== undefined) dbUpdate.modelSku = data.modelSku;
