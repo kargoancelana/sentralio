@@ -114,7 +114,7 @@ function EditModal({ product, onClose, onSave, saving, onUnlink }: any) {
                {filteredLinkedModels.map((group: any, idx: number) => (
                   <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--bg2)', borderRadius: 6, border: '1px solid var(--border)' }}>
                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
-                        <div style={{ width: 34, height: 34, borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
+                        <div style={{ width: 80, height: 80, borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
                            <ProductThumb name={group.shopeeItemName} imageUrl={group.imageUrl} />
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
@@ -339,13 +339,12 @@ export function MasterProduk() {
               </button>
             ))}
           </div>
+        </div>
+        <div className="toolbar-right">
           <div className="search-wrap" style={{ width: 260 }}>
             <svg width="13" height="13" fill="none" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.5"/><path d="M16.5 16.5L21 21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
             <input className="search-inp" placeholder="Cari master produk atau SKU..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-        </div>
-        <div className="toolbar-right">
-          <span style={{ fontSize: 12, color: 'var(--text4)' }}>{filtered.length} produk ditampilkan</span>
         </div>
       </div>
 
@@ -537,7 +536,7 @@ function ImportPickerModal({ open, onClose, onImport, importLoading }: any) {
         <div style={{ maxHeight: 400, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {filteredCatalog.map((item: any) => (
              <div key={item.shopeeItemId} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, border: '1px solid var(--border)', borderRadius: 8 }}>
-                 <div style={{ width: 44, height: 44, flexShrink: 0, borderRadius: 6, overflow: 'hidden' }}>
+                 <div style={{ width: 80, height: 80, flexShrink: 0, borderRadius: 6, overflow: 'hidden' }}>
                     <ProductThumb name={item.name} imageUrl={item.imageUrl} />
                  </div>
                  <div style={{ flex: 1, minWidth: 0 }}>

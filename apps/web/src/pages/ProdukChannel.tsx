@@ -168,6 +168,16 @@ export function ProdukChannel() {
     await refetch();
   });
 
+  const handleSyncNow = async () => {
+    toast('Memulai sinkronisasi produk...', 'info');
+    try {
+      await syncMut.execute();
+      toast('Sinkronisasi selesai!', 'success');
+    } catch (err: any) {
+      toast(err.message || 'Sinkronisasi gagal', 'error');
+    }
+  };
+
   const handleReload = async (product: any) => {
     setReloadingId(product.shopeeItemId);
     toast(`Memuat ulang data ${product.itemSku || product.name}...`, 'info');
@@ -254,7 +264,7 @@ export function ProdukChannel() {
           <div className="page-subtitle">Raw data Shopee — parkir sebelum dipetakan ke Master Produk</div>
         </div>
         <div className="page-actions">
-           <button className="btn btn-shopee" onClick={() => syncMut.execute()} disabled={syncMut.loading}>
+           <button className="btn btn-shopee" onClick={handleSyncNow} disabled={syncMut.loading}>
             {syncMut.loading ? 'Syncing...' : 'Sinkronkan Sekarang'}
           </button>
         </div>
@@ -285,6 +295,12 @@ export function ProdukChannel() {
         </div>
       </div>
 
+      <div style={{ marginBottom: 16 }}>
+        <select value={shopFilter} onChange={e => setShopFilter(e.target.value)} style={{ padding: '7px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)', fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '220px' }}>
+          {SHOPS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+        </select>
+      </div>
+
       <div className="toolbar">
         <div className="toolbar-left">
           <div className="filter-tabs">
@@ -298,16 +314,12 @@ export function ProdukChannel() {
               </button>
             ))}
           </div>
+        </div>
+        <div className="toolbar-right">
           <div className="search-wrap" style={{ width: 220 }}>
             <svg width="13" height="13" fill="none" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.5"/><path d="M16.5 16.5L21 21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
             <input className="search-inp" placeholder="Cari produk atau SKU..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-          <select value={shopFilter} onChange={e => setShopFilter(e.target.value)} style={{ padding: '7px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)', fontSize: 13, fontFamily: 'inherit', outline: 'none' }}>
-            {SHOPS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-          </select>
-        </div>
-        <div className="toolbar-right">
-          <span style={{ fontSize: 12, color: 'var(--text4)' }}>{filtered.length} produk ditampilkan</span>
         </div>
       </div>
 
