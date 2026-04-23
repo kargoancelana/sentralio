@@ -1,5 +1,4 @@
 import { Package, ShoppingBag, CheckCircle, AlertTriangle } from 'lucide-react';
-import { StatCard } from '../components/ui/StatCard';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { useApi } from '../hooks/useApi';
 import { api } from '../lib/api';
@@ -21,35 +20,35 @@ export function Dashboard() {
     sum + (m.linked_models?.filter((l: any) => l.syncStatus === 'failed').length || 0), 0);
 
   return (
-    <div className="dashboard animate-fade-in">
+    <div className="wms-page animate-fade-in">
       <div className="page-header">
-        <h1>Dashboard</h1>
-        <p className="page-subtitle">Overview of your WMS Sync system</p>
+        <div>
+          <h1 className="page-title">Dashboard</h1>
+          <p className="page-subtitle">Overview of your WMS Sync system</p>
+        </div>
       </div>
 
       <div className="stats-grid stagger-children">
-        <StatCard
-          label="Master Products"
-          value={totalMaster}
-          icon={<Package size={18} />}
-        />
-        <StatCard
-          label="Channel Models"
-          value={allLinked}
-          icon={<ShoppingBag size={18} />}
-        />
-        <StatCard
-          label="Synced"
-          value={synced}
-          icon={<CheckCircle size={18} />}
-          trend={allLinked > 0 ? { value: `${Math.round((synced/Math.max(allLinked,1))*100)}%`, type: 'positive' } : undefined}
-        />
-        <StatCard
-          label="Failed"
-          value={failed}
-          icon={<AlertTriangle size={18} />}
-          trend={failed > 0 ? { value: `${failed} issues`, type: 'negative' } : { value: 'All good', type: 'positive' }}
-        />
+        <div className="stat-card">
+          <div className="stat-label">Master Products</div>
+          <div className="stat-value">{totalMaster}</div>
+          <div className="stat-sub"><Package size={14} style={{ marginRight: 4 }} /> Item di WMS</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Channel Models</div>
+          <div className="stat-value">{allLinked}</div>
+          <div className="stat-sub"><ShoppingBag size={14} style={{ marginRight: 4 }} /> Variasi terhubung</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Synced</div>
+          <div className="stat-value" style={{ color: '#16A34A' }}>{synced}</div>
+          <div className="stat-sub" style={{ color: '#16A34A' }}><CheckCircle size={14} style={{ marginRight: 4 }} /> {allLinked > 0 ? `${Math.round((synced/Math.max(allLinked,1))*100)}% berhasil` : 'Belum ada data'}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Failed</div>
+          <div className="stat-value" style={{ color: failed > 0 ? '#DC2626' : 'var(--text1)' }}>{failed}</div>
+          <div className="stat-sub" style={{ color: failed > 0 ? '#DC2626' : 'var(--text3)' }}><AlertTriangle size={14} style={{ marginRight: 4 }} /> {failed > 0 ? 'Butuh perhatian' : 'Semua aman'}</div>
+        </div>
       </div>
 
       <div className="dashboard-info-cards">
