@@ -4,7 +4,7 @@ import { Modal } from '../components/ui/Modal';
 import { useApi, useApiMutation } from '../hooks/useApi';
 import { api } from '../lib/api';
 
-import { Package, CloudUpload, Plug, Search, Edit3, Book, Info, Trash2, Unlink } from 'lucide-react';
+import { Package, CloudUpload, Link, Search, Edit3, Book, Info, Trash2, Unlink } from 'lucide-react';
 
 /* ── PRODUCT IMAGE PLACEHOLDER ── */
 function ProductThumb({ name, imageUrl }: { name: string; imageUrl?: string }) {
@@ -50,6 +50,7 @@ function EditModal({ product, onClose, onSave, saving, onUnlink }: any) {
           });
         }
       }
+      uniqueVariants.sort((a, b) => a.varName.localeCompare(b.varName));
       setVariants(uniqueVariants);
     }
   }, [product]);
@@ -61,19 +62,16 @@ function EditModal({ product, onClose, onSave, saving, onUnlink }: any) {
   const handleFocus = (e: any) => e.target.select();
 
   const filteredLinkedModels = useMemo(() => {
-    if (!product || !product.linked_models) return [];
-    const grouped = product.linked_models.reduce((acc: any, mod: any) => {
-      if (!acc[mod.shopeeItemId]) {
-        acc[mod.shopeeItemId] = { 
-          shopeeItemId: mod.shopeeItemId, 
-          shopeeItemName: mod.shopeeItemName, 
-          variants: [] 
-        };
-      }
-      acc[mod.shopeeItemId].variants.push({ name: mod.modelName, sku: mod.shopeeModelId });
-      return acc;
-    }, {});
-    return Object.values(grouped);
+    if (!product || !product.linked_groups) return [];
+    return product.linked_groups.map((g: any) => {
+      const variants = product.linked_models?.filter((m: any) => m.shopeeItemId === g.shopeeItemId) || [];
+      return {
+        shopeeItemId: g.shopeeItemId,
+        shopeeItemName: g.name,
+        imageUrl: g.imageUrl,
+        variants: variants.map((m: any) => ({ name: m.modelName, sku: m.shopeeModelId }))
+      };
+    });
   }, [product]);
 
   if (!product) return null;
@@ -110,7 +108,7 @@ function EditModal({ product, onClose, onSave, saving, onUnlink }: any) {
       {filteredLinkedModels.length > 0 && (
          <div style={{ marginBottom: 18, border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg)' }}>
             <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
-               <h4 style={{ fontSize: 12, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', display: 'flex', alignItems: 'center', gap: 6 }}><Plug size={14} /> Produk Shopee Terhubung</h4>
+               <h4 style={{ fontSize: 12, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', display: 'flex', alignItems: 'center', gap: 6 }}><Link size={14} /> Produk Shopee Terhubung</h4>
             </div>
             <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                {filteredLinkedModels.map((group: any, idx: number) => (
@@ -139,7 +137,7 @@ function EditModal({ product, onClose, onSave, saving, onUnlink }: any) {
           <table className="variant-table">
             <thead>
               <tr>
-                <th>Var Shopee</th>
+                <th>Nama Variasi</th>
                 <th>MSKU</th>
                 <th style={{ textAlign: 'right' }}>Stok Global</th>
               </tr>
@@ -156,10 +154,12 @@ function EditModal({ product, onClose, onSave, saving, onUnlink }: any) {
                       className="variant-input"
                       type="number"
                       min="0"
-                      value={v.stock}
+                      placeholder="0"
+                      value={v.stock === 0 ? '' : v.stock}
                       onFocus={handleFocus}
                       onChange={e => {
-                        const val = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
+                        const valStr = e.target.value.replace(/^0+/, '');
+                        const val = valStr === '' ? 0 : parseInt(valStr, 10);
                         updateVariant(v.id, 'stock', val);
                       }}
                       disabled={saving}
@@ -360,36 +360,47 @@ export function MasterProduk() {
           {filtered.map(product => {
             const models = product.linked_models || [];
             const isMapped = models.length > 0;
-            const wmsStock = product.stock;
-            const channelStock = isMapped ? models.reduce((s: number, m: any) => s + (m.shopeeStock ?? 0), 0) : wmsStock;
             
-            // Re-implement the Stok Habis / Selisih / Synced logic
+            let wmsStock = 0;
+            if (isMapped) {
+              const mskus = new Set();
+              for (const v of models) {
+                const msku = v.modelSku || '(Kosong)';
+                if (!mskus.has(msku)) {
+                  mskus.add(msku);
+                  wmsStock += (v.shopeeStock ?? 0);
+                }
+              }
+            } else {
+              wmsStock = product.stock;
+            }
+
             let badgeClass = 'badge-gray';
             let badgeText = 'Unlinked';
             
             if (isMapped) {
-              if (wmsStock === 0 && channelStock === 0) {
+              if (wmsStock === 0) {
                  badgeClass = 'badge-red';
                  badgeText = 'Stok Habis';
-              } else if (wmsStock === channelStock) {
-                 badgeClass = 'badge-green';
-                 badgeText = 'Synced';
-              } else {
+              } else if (wmsStock <= 50) {
                  badgeClass = 'badge-orange';
-                 badgeText = 'Selisih';
+                 badgeText = 'Menipis';
+              } else {
+                 badgeClass = 'badge-green';
+                 badgeText = 'Linked';
               }
             }
 
             return (
               <div key={product.id} className="prod-card">
-                <ProductThumb name={product.name || ''} />
+                <ProductThumb name={product.name || ''} imageUrl={product.imageUrl} />
                 <div className="prod-body">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6, marginBottom: 8 }}>
                     <span className={`badge ${badgeClass}`}>{isMapped ? `☁ ${badgeText}` : '⚠ Unlinked'}</span>
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                       {isMapped && <span className="badge badge-purple" style={{ padding: '0 6px' }}>🔗 {models.length} Ch</span>}
                       <button className="btn btn-ghost btn-xs" style={{ padding: '0 4px', height: 20 }} onClick={() => setLinkModal(product)} title="Tambah Tautan Shopee Baru">
-                        <Plug size={12} />
+                        <Link size={12} />
                       </button>
                     </div>
                   </div>
@@ -401,8 +412,7 @@ export function MasterProduk() {
                   </div>
                   <div className="prod-sku">MSKU: {product.sku}</div>
                   <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 12, display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: wmsStock === 0 ? '#DC2626' : 'inherit' }}><strong>Stok: {wmsStock}</strong></span>
-                    {isMapped && wmsStock !== channelStock && <span className="mismatch-selisih" style={{ fontSize: 11 }}>(Shopee: {channelStock})</span>}
+                    <span style={{ color: wmsStock === 0 ? '#DC2626' : 'inherit' }}><strong>Total Stok: {wmsStock}</strong></span>
                   </div>
                   <div className="prod-footer" style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
                     <button className="btn btn-ghost btn-sm" onClick={() => setEditTarget(product)} style={{ width: '100%', justifyContent: 'center' }}>

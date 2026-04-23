@@ -32,13 +32,15 @@ function EditModal({ product, onClose, onSave, saving }: any) {
   // Init variants on mount
   useMemo(() => {
     if (product) {
-      setVariants(product.variants.map((v: any) => ({
+      const uniqueVariants = product.variants.map((v: any) => ({
         id: v.shopeeModelId,
         varName: v.modelName || 'Default',
         msku: v.modelSku || '',
         stock: v.shopeeStock ?? 0,
         origPrice: v.price,
-      })));
+      }));
+      uniqueVariants.sort((a: any, b: any) => a.varName.localeCompare(b.varName));
+      setVariants(uniqueVariants);
     }
   }, [product]);
 
@@ -78,18 +80,19 @@ function EditModal({ product, onClose, onSave, saving }: any) {
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">SKU Induk</label>
-            <input className="form-input readonly" value={product.itemSku || ''} readOnly />
+            <input className="form-input readonly" value={product.variants?.find((v: any) => v.isMapped)?.master?.sku || ''} readOnly />
           </div>
         </div>
       </div>
       <div>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}><Edit3 size={14} /> Live Edit — MSKU & Stok Variasi</div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}><Edit3 size={14} /> Live Edit — SKU & Stok Variasi</div>
         <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
           <table className="variant-table">
             <thead>
               <tr>
                 <th>Nama Variasi</th>
-                <th>MSKU (Master SKU)</th>
+                <th>SKU</th>
+                <th>Harga</th>
                 <th style={{ textAlign: 'right' }}>Stok</th>
               </tr>
             </thead>
@@ -101,10 +104,18 @@ function EditModal({ product, onClose, onSave, saving }: any) {
                     <input
                       className="variant-input"
                       value={v.msku}
-                      placeholder="Masukkan MSKU..."
+                      placeholder="Masukkan SKU..."
                       onChange={e => updateVariant(v.id, 'msku', e.target.value)}
                       style={{ textAlign: 'left' }}
                       disabled={saving}
+                    />
+                  </td>
+                  <td>
+                    <input 
+                      className="variant-input readonly" 
+                      value={`Rp ${v.origPrice.toLocaleString('id-ID')}`} 
+                      readOnly 
+                      style={{ textAlign: 'left', background: 'transparent', border: 'none' }} 
                     />
                   </td>
                   <td>
@@ -112,10 +123,11 @@ function EditModal({ product, onClose, onSave, saving }: any) {
                       className="variant-input"
                       type="number"
                       min="0"
-                      value={v.stock}
+                      placeholder="0"
+                      value={v.stock === 0 ? '' : v.stock}
                       onFocus={handleFocus}
                       onChange={e => {
-                        const strVal = e.target.value;
+                        const strVal = e.target.value.replace(/^0+/, '');
                         const val = strVal === '' ? 0 : parseInt(strVal, 10);
                         updateVariant(v.id, 'stock', val);
                       }}
