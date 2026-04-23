@@ -29,7 +29,7 @@ function ProductThumb({ name, imageUrl }: { name: string; imageUrl?: string }) {
 function EditModal({ product, onClose, onSave, saving }: any) {
   const [variants, setVariants] = useState<any[]>([]);
 
-  // Init variants on mount
+  // Inisialisasi variasi saat mount
   useMemo(() => {
     if (product) {
       const uniqueVariants = product.variants.map((v: any) => ({
@@ -182,7 +182,7 @@ export function ProdukChannel() {
     setReloadingId(product.shopeeItemId);
     toast(`Memuat ulang data ${product.itemSku || product.name}...`, 'info');
     try {
-      // Typically we'd have a single product sync endpoint, fallback to global for now
+      // Biasanya menggunakan endpoint sinkronisasi per produk tunggal, namun untuk sementara menggunakan sinkronisasi global
       await syncMut.execute();
       toast(`${product.itemSku || product.name} berhasil diperbarui dari Shopee`, 'success');
     } catch {

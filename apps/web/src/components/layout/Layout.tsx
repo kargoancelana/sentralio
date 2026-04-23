@@ -8,7 +8,7 @@ export function Layout() {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
 
-  // Dark mode integration
+  // Integrasi Dark Mode
   const [dark, setDark] = useState(() => {
     try { return localStorage.getItem('wms-theme') === 'dark'; } catch { return false; }
   });
@@ -18,7 +18,7 @@ export function Layout() {
     try { localStorage.setItem('wms-theme', dark ? 'dark' : 'light'); } catch {}
   }, [dark]);
 
-  // Determine active item from react-router pathname
+  // Menentukan item navigasi aktif dari URL
   const active = location.pathname.includes('/integrasi/shopee') ? 'integrations'
     : location.pathname.includes('/produk/channel') ? 'channel'
     : location.pathname.includes('/produk/master') ? 'master'

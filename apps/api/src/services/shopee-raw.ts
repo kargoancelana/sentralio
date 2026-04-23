@@ -87,7 +87,7 @@ export async function shopeeRequest(input: { method: string; path: string; query
 
     const data = await res.json();
 
-    // Shopee sometimes returns 200 with error in body
+    // Shopee terkadang merespon 200 namun terdapat pesan error di dalam body
     if (data.error && isAuthError(data)) {
       if (!isRetryFromExpired) {
         console.warn("[Shopee] Auth error in 200 response, refreshing token...");
@@ -109,7 +109,7 @@ export async function getShopInfoRaw() {
   return shopeeRequest({ method: "GET", path: "/api/v2/shop/get_shop_info" });
 }
 
-// Auto-run if executed directly
+// Jalankan otomatis jika dieksekusi secara langsung
 if (require.main === module) {
   getShopInfoRaw().catch(console.error);
 }

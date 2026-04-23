@@ -33,15 +33,15 @@ export async function getValidToken(shopId?: number): Promise<TokenRow> {
   if (!row) {
     const msg = shopId 
       ? `No shopee credentials found for shop ID ${shopId}.`
-      : "No shopee credentials found in the database. Please connect a shop first.";
+      : "No shopee credentials found. Please connect a shop first.";
     throw new Error(msg);
   }
 
-  // Decrypt tokens so the rest of the app doesn't know about encryption
+  // Dekripsi token sehingga bagian aplikasi lain tidak perlu tahu perihal enkripsi
   row.accessToken = decrypt(row.accessToken);
   row.refreshToken = decrypt(row.refreshToken);
 
-  // Refresh 60s before actual expiry to avoid race conditions
+  // Refresh 60 detik sebelum masa berlaku habis untuk menghindari race condition
   if (Date.now() > row.expiresAt.getTime() - 60_000) {
     console.warn(`[shopee-auth] Token for shop ${row.shopId} expired at ${row.expiresAt.toISOString()}, triggering refresh`);
     return await refreshAccessToken(row);
@@ -57,7 +57,7 @@ export async function refreshAccessToken(row: TokenRow): Promise<TokenRow> {
   const path = "/api/v2/auth/access_token/get";
   const timestamp = Math.floor(Date.now() / 1000);
 
-  // Sign API requires: partner_id + path + timestamp
+  // Kalkulasi signature: SHA256(partner_id + path + timestamp + partner_key)
   const baseString = `${row.partnerId}${path}${timestamp}`;
   const sign = crypto.createHmac("sha256", row.partnerKey).update(baseString).digest("hex");
 
@@ -127,7 +127,7 @@ export async function refreshAccessToken(row: TokenRow): Promise<TokenRow> {
   return {
     ...row,
     ...updatePayload,
-    // Ensure we return plaintext for caller
+    // Pastikan kita mengembalikan plaintext untuk pemanggil fungsi
     accessToken: data.access_token,
     refreshToken: data.refresh_token,
   };

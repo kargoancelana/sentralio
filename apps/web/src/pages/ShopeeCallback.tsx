@@ -24,7 +24,7 @@ export function ShopeeCallback() {
       return;
     }
 
-    // Auto-exchange the authorization code
+    // Otomatis menukar kode otorisasi (auto-exchange)
     (async () => {
       try {
         const result = await api.shopeeExchangeToken(code, shopId);
@@ -32,7 +32,7 @@ export function ShopeeCallback() {
         setMessage(result.message || 'Toko berhasil terhubung!');
         setShopInfo({ shop_id: result.shop_id, shop_name: result.shop_name });
 
-        // Auto-redirect after 3 seconds
+        // Otomatis redirect setelah 3 detik
         setTimeout(() => navigate('/integrasi/shopee'), 3000);
       } catch (err: any) {
         setState('error');

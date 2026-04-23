@@ -6,9 +6,7 @@ import { MasterProduk } from './pages/MasterProduk';
 import { ProdukChannel } from './pages/ProdukChannel';
 import { IntegrasiShopee } from './pages/IntegrasiShopee';
 import { ShopeeCallback } from './pages/ShopeeCallback';
-import './styles/themes.css';
 import './styles/globals.css';
-import './styles/animations.css';
 
 function App() {
   console.log("DEBUG: VERSI BARU LOADED");

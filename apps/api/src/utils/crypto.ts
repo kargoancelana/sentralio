@@ -2,12 +2,12 @@ import crypto from "crypto";
 import { env } from "../config/env";
 
 const algorithm = "aes-256-cbc";
-// Our secret is exactly 32 bytes (256 bits)
+// Secret key kita persis 32 bytes (256 bits)
 const key = Buffer.from(env.tokenSecretKey, "utf-8");
 
 export function encrypt(text: string): string {
   const iv = crypto.randomBytes(16);
-  // Typecast or strictly define parameters per native standards
+  // Definisikan parameter sesuai standar bawaan
   const cipher = crypto.createCipheriv(algorithm, key, iv);
 
   let encrypted = cipher.update(text, "utf8", "hex");
@@ -17,7 +17,7 @@ export function encrypt(text: string): string {
 }
 
 export function decrypt(text: string): string {
-  // If a raw string without IV divider is passed (like legacy data), 
+  // Jika format string mentah (legacy) yang digunakan, 
   // gracefully fall back or throw error
   if (!text.includes(":")) {
     throw new Error("Invalid encrypted format. Expected iv:encrypted_hex");
