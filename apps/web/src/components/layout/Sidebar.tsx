@@ -7,6 +7,8 @@ const navItems = [
   { id: 'header-produk', label: 'PRODUK', isHeader: true },
   { id: 'master',       label: 'Master Produk',    icon: 'master',       path: '/produk/master', badge: null },
   { id: 'channel',      label: 'Produk Channel',   icon: 'products',     path: '/produk/channel', badge: null },
+  { id: 'header-pesanan', label: 'PESANAN', isHeader: true },
+  { id: 'orders',       label: 'Pesanan Saya',     icon: 'orders',       path: '/pesanan/saya', badge: null },
   { id: 'header-toko', label: 'WORKFLOW', isHeader: true },
   { id: 'integrations', label: 'Integrasi Toko', icon: 'integrations', path: '/integrasi/shopee', badge: null },
   { id: 'header-system', label: 'SYSTEM', isHeader: true },
@@ -54,7 +56,7 @@ export function Sidebar({ active, collapsed, setCollapsed, dark, toggleDark }: S
             >
               <Icon name={item.icon!} size={16} />
               {!collapsed && <span className="nav-label">{item.label}</span>}
-              {!collapsed && item.badge ? <span className="nav-badge">{item.badge}</span> : null}
+              {!collapsed && (item as any).badge ? <span className="nav-badge">{(item as any).badge}</span> : null}
             </Link>
           );
         })}

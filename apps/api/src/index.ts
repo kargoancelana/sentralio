@@ -6,6 +6,7 @@ import { productRoutes } from "./modules/product/product.route";
 import { shopeeRoutes } from "./modules/shopee/shopee.route";
 import { shopeeAuthRoutes } from "./modules/shopee/shopee-auth.route";
 import { masterRoutes } from "./modules/master/master.route";
+import { orderRoutes } from "./modules/order/order.route";
 import { healthRoutes } from "./routes/health";
 import { db } from "./db/client";
 import { shopeeCredentials } from "./db/schema";
@@ -35,6 +36,7 @@ const app = new Elysia()
   .use(shopeeRoutes)
   .use(shopeeAuthRoutes)
   .use(masterRoutes)
+  .use(orderRoutes)
 
   // ─── Multi-Seller: List all connected shops ─────────────────
   .get("/shopee/credentials/list", async () => {

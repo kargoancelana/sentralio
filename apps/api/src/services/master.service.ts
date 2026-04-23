@@ -31,7 +31,7 @@ function isRetryableError(errorMsg: string): boolean {
  * Batch: Groups model_ids by item_id to reduce API calls.
  */
 export async function updateStockByMasterSku(masterProductId: number, newStock: number) {
-  // 1. Validate master product exists & fetch SKU for logging
+  // 1. Validate master product exists & fetch SKU for matching
   const masterRows = await db.select().from(masterProducts)
     .where(eq(masterProducts.id, masterProductId)).limit(1);
 
@@ -41,20 +41,43 @@ export async function updateStockByMasterSku(masterProductId: number, newStock: 
 
   const master = masterRows[0];
 
-  // 2. Fetch all mapped products (DO NOT update DB yet — reconciliation)
-  const mappedProducts = await db.select().from(products)
+  // 2. Fetch all products linked to this master
+  const allMapped = await db.select().from(products)
     .where(eq(products.masterProductId, masterProductId));
 
-  if (mappedProducts.length === 0) {
+  if (allMapped.length === 0) {
     console.log(`[MASTER SKU SYNC] sku=${master.sku} — no listings mapped`);
-    return { status: "success", sku: master.sku, synced_listings: 0, message: "No mapped listings found" };
+    return { status: "success", sku: master.sku, synced_listings: 0, skipped_listings: 0, message: "No mapped listings found" };
   }
 
-  // 3. Sync each model individually with retry
+  // 3. SKU-based filter: only push stock to variants where modelSku matches master SKU
+  const eligibleProducts = allMapped.filter(p => p.modelSku === master.sku);
+  const skippedProducts  = allMapped.filter(p => p.modelSku !== master.sku);
+
+  // Mark skipped (linked but MSKU not matched) as sku_mismatch
+  for (const p of skippedProducts) {
+    await db.update(products)
+      .set({ syncStatus: "sku_mismatch", lastError: `Model SKU "${p.modelSku || '(kosong)'}" tidak cocok dengan Master SKU "${master.sku}"` })
+      .where(eq(products.id, p.id));
+    console.log(`[MASTER SKU SYNC] SKIP model_id=${p.shopeeModelId} model_sku="${p.modelSku}" != master_sku="${master.sku}"`);
+  }
+
+  if (eligibleProducts.length === 0) {
+    console.log(`[MASTER SKU SYNC] sku=${master.sku} — 0 eligible (all ${skippedProducts.length} have mismatched SKU)`);
+    return {
+      status: "sku_mismatch",
+      sku: master.sku,
+      synced_listings: 0,
+      skipped_listings: skippedProducts.length,
+      message: `Tidak ada variasi yang MSKU-nya cocok dengan Master SKU "${master.sku}". Samakan MSKU di Produk Channel terlebih dahulu.`,
+    };
+  }
+
+  // 4. Sync eligible variants to Shopee with retry
   let syncCount = 0;
   const failedProducts: { id: number; error: string }[] = [];
 
-  for (const p of mappedProducts) {
+  for (const p of eligibleProducts) {
     await db.update(products).set({ syncStatus: "pending" }).where(eq(products.id, p.id));
 
     let success = false;
@@ -66,8 +89,8 @@ export async function updateStockByMasterSku(masterProductId: number, newStock: 
       success = true;
     } catch (err: any) {
       lastError = err.message;
-      
-      // Attempt 2 (Retry x1)
+
+      // Attempt 2 (Retry x1 on transient errors)
       if (isRetryableError(lastError)) {
         console.warn(`[MASTER SKU SYNC] sku=${master.sku} model_id=${p.shopeeModelId} failed, retrying... error=${lastError}`);
         try {
@@ -82,9 +105,7 @@ export async function updateStockByMasterSku(masterProductId: number, newStock: 
       }
     }
 
-    // Update per-product status
     if (success) {
-      // shopeeStock is already updated by updateShopeeVariantStock! Just update syncStatus here.
       await db.update(products)
         .set({ syncStatus: "success", lastError: null })
         .where(eq(products.id, p.id));
@@ -101,7 +122,7 @@ export async function updateStockByMasterSku(masterProductId: number, newStock: 
     await delay(env.syncDelayMs);
   }
 
-  // 4. Reconciliation: Only update master stock if at least 1 sync succeeded
+  // 5. Reconciliation: Only update master stock if at least 1 sync succeeded
   if (syncCount > 0) {
     await db.update(masterProducts)
       .set({ stock: newStock })
@@ -111,18 +132,18 @@ export async function updateStockByMasterSku(masterProductId: number, newStock: 
     console.error(`[MASTER SKU SYNC] sku=${master.sku} ALL syncs failed — master stock NOT updated (reconciliation)`);
   }
 
-  // Determine status: success / partial / failed
-  const status = syncCount === mappedProducts.length ? "success"
+  const status = syncCount === eligibleProducts.length ? "success"
     : syncCount > 0 ? "partial"
     : "failed";
 
-  console.log(`[SYNC RESULT] master=${master.sku} status=${status} success=${syncCount} failed=${failedProducts.length}`);
+  console.log(`[SYNC RESULT] master=${master.sku} status=${status} synced=${syncCount} skipped=${skippedProducts.length} failed=${failedProducts.length}`);
 
   return {
     status,
     sku: master.sku,
     synced_listings: syncCount,
-    total_listings: mappedProducts.length,
+    skipped_listings: skippedProducts.length,
+    total_linked: allMapped.length,
     failed_models: failedProducts.length > 0 ? failedProducts.map(f => f.id) : undefined,
     failed: failedProducts.length > 0 ? failedProducts : undefined,
   };

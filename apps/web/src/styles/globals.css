@@ -208,6 +208,7 @@ h1, h2, h3, h4, h5, h6 { line-height: 1.3; }
 .badge-purple  { background: #F3E8FF; color: #7E22CE; }
 .badge-gray    { background: var(--bg3); color: var(--text3); border: 1px solid var(--border); }
 .badge-orange  { background: #FFEDD5; color: #C2410C; }
+.badge-primary { background: #DBEAFE; color: #1D4ED8; }
 .dark .badge-green   { background: rgba(21, 128, 61, 0.2); color: #4ADE80; }
 .dark .badge-yellow  { background: rgba(161, 98, 7, 0.2); color: #FACC15; }
 .dark .badge-red     { background: rgba(220, 38, 38, 0.2); color: #F87171; }
@@ -264,6 +265,8 @@ h1, h2, h3, h4, h5, h6 { line-height: 1.3; }
   border-radius: var(--radius); overflow: hidden;
   transition: all .2s ease-in-out;
   cursor: pointer;
+  display: flex;
+  flex-direction: column;
 }
 .prod-card:hover { border-color: transparent; box-shadow: var(--shadow-md); transform: translateY(-3px); }
 .prod-thumb {
@@ -271,11 +274,14 @@ h1, h2, h3, h4, h5, h6 { line-height: 1.3; }
   background: var(--bg3); display: flex; align-items: center;
   justify-content: center; color: var(--text4); font-size: 28px;
 }
-.prod-body { padding: 12px 16px; }
+.prod-body { padding: 12px 16px; display: flex; flex-direction: column; flex: 1; }
 .prod-name { font-size: 13.5px; font-weight: 500; color: var(--text1); margin-bottom: 6px; line-height: 1.4;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.prod-sku  { font-size: 11px; color: var(--text4); font-family: monospace; margin-bottom: 8px; }
-.prod-footer { display: flex; align-items: center; justify-content: space-between; }
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  min-height: 38px; }
+.prod-sku  { font-size: 11px; color: var(--text4); font-family: monospace; margin-bottom: 4px; min-height: 16px; }
+.prod-shop { font-size: 11.5px; color: var(--text3); font-weight: 500; min-height: 18px; }
+.prod-meta { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; min-height: 22px; }
+.prod-footer { display: flex; align-items: center; justify-content: space-between; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--bg3); }
 
 /* ── SHOP CARDS ── */
 .shop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
