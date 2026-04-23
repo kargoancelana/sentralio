@@ -113,3 +113,31 @@ export async function getShopInfoRaw() {
 if (require.main === module) {
   getShopInfoRaw().catch(console.error);
 }
+
+export async function getShopeeOrderList(shopId: number, timeFrom: number, timeTo: number, cursor: string = "") {
+  return shopeeRequest({
+    shopId,
+    method: "GET",
+    path: "/api/v2/order/get_order_list",
+    query: {
+      time_range_field: "create_time",
+      time_from: timeFrom,
+      time_to: timeTo,
+      page_size: 50,
+      cursor,
+    },
+  });
+}
+
+export async function getShopeeOrderDetails(shopId: number, orderSnList: string[]) {
+  // Shopee order details limits to 50 SNs per request
+  return shopeeRequest({
+    shopId,
+    method: "GET",
+    path: "/api/v2/order/get_order_detail",
+    query: {
+      order_sn_list: orderSnList.join(","),
+      response_optional_fields: "buyer_user_id,buyer_username,total_amount,pay_time,create_time,item_list,shipping_carrier,shipping_info",
+    },
+  });
+}

@@ -54,6 +54,11 @@ export const api = {
   productUpdateStock: (groupId: number, stock: number, source?: string) =>
     fetchApi('/products/stock/update', { method: 'POST', body: JSON.stringify({ group_id: groupId, stock, source }) }),
 
+  // Pesanan / Orders
+  orderList: () => fetchApi<{ success: boolean; data: any[] }>('/orders'),
+  orderSync: (shopId?: number, daysBack: number = 15) => 
+    fetchApi('/orders/sync', { method: 'POST', body: JSON.stringify({ shop_id: shopId, days_back: daysBack }) }),
+
   // Shopee — Otorisasi
   shopeeGetAuthUrl: () => fetchApi<{ auth_url: string }>('/shopee/auth/url'),
   shopeeExchangeToken: (code: string, shopId: string) =>

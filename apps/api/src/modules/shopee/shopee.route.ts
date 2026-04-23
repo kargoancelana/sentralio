@@ -10,12 +10,15 @@ export const shopeeRoutes = new Elysia({ prefix: "/shopee" })
     return await getShopInfoRaw();
   })
   .get("/real-items", async ({ query }) => {
+    const shop_id = query.shop_id ? parseInt(query.shop_id as string) : undefined;
+    if (!shop_id) throw new Error("shop_id is required");
     const offset = parseInt(query.offset as string) || 0;
     const pageSize = parseInt(query.page_size as string) || 10;
-    return await getItemListRaw(offset, pageSize);
+    return await getItemListRaw(shop_id, offset, pageSize);
   })
-  .get("/sync-products", async () => {
-    return await syncShopeeProducts();
+  .get("/sync-products", async ({ query }) => {
+    const shop_id = query.shop_id ? parseInt(query.shop_id as string) : undefined;
+    return await syncShopeeProducts(shop_id);
   })
   .get("/catalog", async () => {
     const catalog = await getShopeeCatalog();

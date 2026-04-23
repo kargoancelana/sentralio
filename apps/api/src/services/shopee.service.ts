@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "../db/client";
-import { productGroups, products, masterProducts } from "../db/schema";
+import { productGroups, products, masterProducts, shopeeCredentials } from "../db/schema";
 import { shopeeRequest } from "./shopee-raw";
 
 /**
@@ -17,7 +17,13 @@ export async function updateStockOnShopeeBatch(
       seller_stock: [{ stock: m.stock }],
     }));
 
+    // Cari shopId dari productGroups
+    const groupRows = await db.select({ shopId: productGroups.shopId }).from(productGroups)
+      .where(eq(productGroups.shopeeItemId, shopeeItemId)).limit(1);
+    const shopId = groupRows.length > 0 ? groupRows[0].shopId : undefined;
+
     const result = await shopeeRequest({
+      shopId,
       method: "POST",
       path: "/api/v2/product/update_stock",
       body: {
@@ -59,16 +65,17 @@ export async function getShopInfo() {
 }
 
 
-export async function getItemListRaw(offset = 0, pageSize = 10) {
+export async function getItemListRaw(shopId: number, offset = 0, pageSize = 10) {
   console.log("[REAL API] Fetch item list");
   return shopeeRequest({
+    shopId,
     method: "GET",
     path: "/api/v2/product/get_item_list",
     query: { offset, page_size: pageSize, item_status: "NORMAL" }
   });
 }
 
-export async function getItemListAll(): Promise<string[]> {
+export async function getItemListAll(shopId: number): Promise<string[]> {
   let offset = 0;
   const pageSize = 50;
   const itemIds: string[] = [];
@@ -77,6 +84,7 @@ export async function getItemListAll(): Promise<string[]> {
   while (hasNextPage) {
     console.log(`[REAL API] Fetch item list batch offset=${offset}`);
     const res = await shopeeRequest({
+      shopId,
       method: "GET",
       path: "/api/v2/product/get_item_list",
       query: { offset, page_size: pageSize, item_status: "NORMAL" }
@@ -98,9 +106,10 @@ export async function getItemListAll(): Promise<string[]> {
 /**
  * Fetch full model data for an item (model_name, model_sku, price, stock).
  */
-export async function getModelListByItemId(itemId: string): Promise<any[]> {
+export async function getModelListByItemId(shopId: number, itemId: string): Promise<any[]> {
   console.log(`[REAL API] Fetch models for item_id=${itemId}`);
   const res = await shopeeRequest({
+    shopId,
     method: "GET",
     path: "/api/v2/product/get_model_list",
     query: { item_id: parseInt(itemId) }
@@ -123,9 +132,10 @@ export async function getModelListByItemId(itemId: string): Promise<any[]> {
  * Fetch item base info for up to 50 item_ids per call.
  * Returns enriched product data: name, description, sku, category, status, images.
  */
-export async function getItemBaseInfo(itemIds: string[]): Promise<any[]> {
+export async function getItemBaseInfo(shopId: number, itemIds: string[]): Promise<any[]> {
   console.log(`[REAL API] Fetch item base info for ${itemIds.length} items`);
   const res = await shopeeRequest({
+    shopId,
     method: "GET",
     path: "/api/v2/product/get_item_base_info",
     query: { item_id_list: itemIds.join(",") }
@@ -139,9 +149,35 @@ export async function getItemBaseInfo(itemIds: string[]): Promise<any[]> {
 /**
  * Full enriched sync: pulls item info + model details and stores everything in DB.
  */
-export async function syncShopeeProducts() {
+export async function syncShopeeProducts(targetShopId?: number) {
+  let shopsToSync = [];
+  if (targetShopId) {
+    shopsToSync = [{ shopId: targetShopId }];
+  } else {
+    shopsToSync = await db.select({ shopId: shopeeCredentials.shopId }).from(shopeeCredentials);
+  }
+
+  let grandTotalItems = 0;
+  let grandTotalModels = 0;
+
+  for (const shop of shopsToSync) {
+    const shopId = shop.shopId;
+    console.log(`[SYNC] Starting sync for shopId=${shopId}`);
+    try {
+      const res = await syncShopeeProductsForShop(shopId);
+      grandTotalItems += res.total_items;
+      grandTotalModels += res.total_models;
+    } catch (err: any) {
+      console.error(`[SYNC] Failed sync for shopId=${shopId}: ${err.message}`);
+    }
+  }
+
+  return { total_items: grandTotalItems, total_models: grandTotalModels, status: "success" };
+}
+
+async function syncShopeeProductsForShop(shopId: number) {
   // 1. Fetch all item IDs (paginated)
-  const itemIds = await getItemListAll();
+  const itemIds = await getItemListAll(shopId);
   let totalModels = 0;
 
   // 2. Batch fetch item base info (max 50 per call)
@@ -149,7 +185,7 @@ export async function syncShopeeProducts() {
   for (let i = 0; i < itemIds.length; i += 50) {
     const batch = itemIds.slice(i, i + 50);
     try {
-      const items = await getItemBaseInfo(batch);
+      const items = await getItemBaseInfo(shopId, batch);
       for (const item of items) {
         itemInfoMap.set(item.item_id.toString(), item);
       }
@@ -172,6 +208,7 @@ export async function syncShopeeProducts() {
     // 3a. UPSERT product group with enriched data
     await db.insert(productGroups)
       .values({
+        shopId,
         shopeeItemId: itemId,
         name: itemName,
         description,
@@ -204,7 +241,7 @@ export async function syncShopeeProducts() {
     // 4. Fetch enriched model data
     let models: any[];
     try {
-      models = await getModelListByItemId(itemId);
+      models = await getModelListByItemId(shopId, itemId);
     } catch (err: any) {
       console.warn(`[SYNC] Failed to fetch models for item_id=${itemId}: ${err.message}`);
       continue;
@@ -242,6 +279,7 @@ export async function syncShopeeProducts() {
 
       await db.insert(products)
         .values({
+          shopId,
           groupId,
           shopeeItemId: itemId,
           shopeeModelId: modelId,
@@ -278,14 +316,21 @@ export async function getShopeeCatalog() {
   // 1. Fetch all product groups (items)
   const groups = await db.select().from(productGroups);
 
-  // 2. Build catalog
+  // 2. Pre-load shop name map from credentials
+  const shopRows = await db.select({ shopId: shopeeCredentials.shopId, shopName: shopeeCredentials.shopName }).from(shopeeCredentials);
+  const shopNameMap = new Map<number, string>();
+  for (const s of shopRows) {
+    shopNameMap.set(s.shopId, s.shopName || `Toko #${s.shopId}`);
+  }
+
+  // 3. Build catalog
   const catalog = [];
   for (const group of groups) {
-    // 3. Fetch all variants for this item
+    // 4. Fetch all variants for this item
     const variants = await db.select().from(products)
       .where(eq(products.groupId, group.id));
 
-    // 4. Enrich variants with master product info
+    // 5. Enrich variants with master product info
     const enrichedVariants = [];
     for (const v of variants) {
       let master = null;
@@ -315,8 +360,12 @@ export async function getShopeeCatalog() {
       });
     }
 
+    const shopName = shopNameMap.get(group.shopId) || `Toko #${group.shopId}`;
+
     catalog.push({
       id: group.id,
+      shopId: group.shopId,
+      shopName,
       shopeeItemId: group.shopeeItemId,
       name: group.name,
       description: group.description,
@@ -338,11 +387,16 @@ export async function getShopeeCatalog() {
  * Update product name via Shopee API and local DB.
  */
 export async function updateShopeeItem(itemId: string, data: { name?: string; description?: string }) {
+  const groupRows = await db.select({ shopId: productGroups.shopId }).from(productGroups)
+    .where(eq(productGroups.shopeeItemId, itemId)).limit(1);
+  const shopId = groupRows.length > 0 ? groupRows[0].shopId : undefined;
+
   const updatePayload: Record<string, any> = { item_id: parseInt(itemId) };
   if (data.name) updatePayload.item_name = data.name;
   if (data.description !== undefined) updatePayload.description = data.description;
 
   const result = await shopeeRequest({
+    shopId,
     method: "POST",
     path: "/api/v2/product/update_item",
     body: updatePayload,
@@ -371,7 +425,12 @@ export async function updateShopeeItem(itemId: string, data: { name?: string; de
  * Update variant price via Shopee API and local DB.
  */
 export async function updateShopeePrice(itemId: string, modelId: string, price: number) {
+  const groupRows = await db.select({ shopId: productGroups.shopId }).from(productGroups)
+    .where(eq(productGroups.shopeeItemId, itemId)).limit(1);
+  const shopId = groupRows.length > 0 ? groupRows[0].shopId : undefined;
+
   const result = await shopeeRequest({
+    shopId,
     method: "POST",
     path: "/api/v2/product/update_price",
     body: {
@@ -416,7 +475,14 @@ export async function updateShopeeVariantStock(
  * Toggle item status on Shopee (list/unlist).
  */
 export async function toggleShopeeItemStatus(itemIds: string[], unlist: boolean) {
+  if (itemIds.length === 0) return { status: "success", items: 0, new_status: unlist ? "UNLIST" : "NORMAL" };
+  
+  const groupRows = await db.select({ shopId: productGroups.shopId }).from(productGroups)
+    .where(eq(productGroups.shopeeItemId, itemIds[0])).limit(1);
+  const shopId = groupRows.length > 0 ? groupRows[0].shopId : undefined;
+
   const result = await shopeeRequest({
+    shopId,
     method: "POST",
     path: "/api/v2/product/unlist_item",
     body: {
@@ -449,12 +515,17 @@ export async function updateShopeeModel(
   modelId: string,
   data: { modelName?: string; modelSku?: string }
 ) {
+  const groupRows = await db.select({ shopId: productGroups.shopId }).from(productGroups)
+    .where(eq(productGroups.shopeeItemId, itemId)).limit(1);
+  const shopId = groupRows.length > 0 ? groupRows[0].shopId : undefined;
+
   // Buat daftar model untuk API Shopee
   const modelUpdate: Record<string, any> = { model_id: parseInt(modelId) };
   if (data.modelName !== undefined) modelUpdate.model_name = data.modelName;
   if (data.modelSku !== undefined) modelUpdate.model_sku = data.modelSku;
 
   const result = await shopeeRequest({
+    shopId,
     method: "POST",
     path: "/api/v2/product/update_model",
     body: {

@@ -427,7 +427,7 @@ export function MasterProduk() {
 
       <EditModal product={editTarget} onClose={() => setEditTarget(null)} onSave={handleSaveEdit} saving={savingEdit} onUnlink={(mod: any) => setUnlinkConfirm(mod)} />
 
-      <Modal open={!!unlinkConfirm} onClose={() => setUnlinkConfirm(null)} title="Konfirmasi Unlink" size="md">
+      <Modal open={!!unlinkConfirm} onClose={() => setUnlinkConfirm(null)} title="Konfirmasi Unlink">
         {unlinkConfirm && (
           <form onSubmit={async (e) => {
             e.preventDefault();
@@ -452,7 +452,7 @@ export function MasterProduk() {
         )}
       </Modal>
 
-      <Modal open={!!deleteModal} onClose={() => setDeleteModal(null)} title="Hapus Master Produk" size="md">
+      <Modal open={!!deleteModal} onClose={() => setDeleteModal(null)} title="Hapus Master Produk">
         {deleteModal && (
           <div>
             <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 8 }}>Yakin ingin menghapus master SKU:</p>

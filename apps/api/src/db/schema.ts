@@ -10,6 +10,7 @@ export const masterProducts = mysqlTable("master_products", {
 
 export const productGroups = mysqlTable("product_groups", {
   id: int("id").primaryKey().autoincrement(),
+  shopId: int("shop_id").notNull(),
   shopeeItemId: varchar("shopee_item_id", { length: 64 }),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
@@ -21,11 +22,12 @@ export const productGroups = mysqlTable("product_groups", {
   lastSync: timestamp("last_sync"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (t) => ({
-  uniqShopeeItemId: uniqueIndex("uniq_shopee_item_id").on(t.shopeeItemId)
+  uniqShopeeItemId: uniqueIndex("uniq_shopee_item_id").on(t.shopId, t.shopeeItemId)
 }));
 
 export const products = mysqlTable("products", {
   id: int("id").primaryKey().autoincrement(),
+  shopId: int("shop_id").notNull(),
   masterProductId: int("master_product_id").references(() => masterProducts.id),
   groupId: int("group_id")
     .notNull()
@@ -41,7 +43,7 @@ export const products = mysqlTable("products", {
   lastError: text("last_error"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => ({
-  uniqShopeeModelId: uniqueIndex("uniq_shopee_model_id").on(t.shopeeModelId)
+  uniqShopeeModelId: uniqueIndex("uniq_shopee_model_id").on(t.shopId, t.shopeeModelId)
 }));
 
 export const shopeeCredentials = mysqlTable("shopee_credentials", {
@@ -57,3 +59,28 @@ export const shopeeCredentials = mysqlTable("shopee_credentials", {
 }, (t) => ({
   uniqShopId: uniqueIndex("uniq_shop_id").on(t.shopId),
 }));
+
+export const shopeeOrders = mysqlTable("shopee_orders", {
+  id: int("id").primaryKey().autoincrement(),
+  shopId: int("shop_id").notNull(),
+  orderSn: varchar("order_sn", { length: 100 }).notNull().unique(),
+  orderStatus: varchar("order_status", { length: 50 }).notNull(),
+  totalAmount: int("total_amount").notNull().default(0),
+  buyerUsername: varchar("buyer_username", { length: 255 }),
+  shippingCarrier: varchar("shipping_carrier", { length: 100 }),
+  payTime: timestamp("pay_time"),
+  createTime: timestamp("create_time").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  uniqOrderSn: uniqueIndex("uniq_order_sn").on(t.orderSn),
+}));
+
+export const shopeeOrderItems = mysqlTable("shopee_order_items", {
+  id: int("id").primaryKey().autoincrement(),
+  orderSn: varchar("order_sn", { length: 100 }).notNull(),
+  itemName: varchar("item_name", { length: 500 }).notNull(),
+  modelName: varchar("model_name", { length: 500 }),
+  qty: int("qty").notNull().default(1),
+  itemPrice: int("item_price").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});

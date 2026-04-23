@@ -85,7 +85,7 @@ function EditModal({ product, onClose, onSave, saving }: any) {
         </div>
       </div>
       <div>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}><Edit3 size={14} /> Live Edit — SKU & Stok Variasi</div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}><Edit3 size={14} /> Live Edit — SKU &amp; Stok Variasi</div>
         <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
           <table className="variant-table">
             <thead>
@@ -111,11 +111,11 @@ function EditModal({ product, onClose, onSave, saving }: any) {
                     />
                   </td>
                   <td>
-                    <input 
-                      className="variant-input readonly" 
-                      value={`Rp ${v.origPrice.toLocaleString('id-ID')}`} 
-                      readOnly 
-                      style={{ textAlign: 'left', background: 'transparent', border: 'none' }} 
+                    <input
+                      className="variant-input readonly"
+                      value={`Rp ${v.origPrice.toLocaleString('id-ID')}`}
+                      readOnly
+                      style={{ textAlign: 'left', background: 'transparent', border: 'none' }}
                     />
                   </td>
                   <td>
@@ -140,7 +140,7 @@ function EditModal({ product, onClose, onSave, saving }: any) {
           </table>
         </div>
         <p className="form-hint" style={{ marginTop: 8, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-           <Info size={14} style={{ flexShrink: 0, marginTop: 2 }} /> 
+           <Info size={14} style={{ flexShrink: 0, marginTop: 2 }} />
            <span>MSKU digunakan untuk mapping ke Master Produk. Stok akan disinkronkan ke Shopee sesuai nilai Master.</span>
         </p>
       </div>
@@ -154,11 +154,12 @@ function EditModal({ product, onClose, onSave, saving }: any) {
 export function ProdukChannel() {
   const toast = useToast();
   const { data: catalogData, loading, refetch } = useApi(() => api.shopeeCatalog(), []);
-  
+  const { data: shopsData } = useApi(() => api.shopeeCredentialsList(), []);
+
   const [filter, setFilter] = useState('all'); // all | linked | unlinked
   const [shopFilter, setShopFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
-  
+
   const [editTarget, setEditTarget] = useState<any>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [reloadingId, setReloadingId] = useState<string | null>(null);
@@ -182,7 +183,6 @@ export function ProdukChannel() {
     setReloadingId(product.shopeeItemId);
     toast(`Memuat ulang data ${product.itemSku || product.name}...`, 'info');
     try {
-      // Biasanya menggunakan endpoint sinkronisasi per produk tunggal, namun untuk sementara menggunakan sinkronisasi global
       await syncMut.execute();
       toast(`${product.itemSku || product.name} berhasil diperbarui dari Shopee`, 'success');
     } catch {
@@ -207,7 +207,7 @@ export function ProdukChannel() {
         }
 
         if (v.stock !== orig.shopeeStock) {
-          await api.shopeeUpdateStock(product.shopeeItemId, v.id, v.stock);
+          await api.shopeeUpdateVariantStock(product.shopeeItemId, v.id, v.stock);
           changed = true;
         }
 
@@ -234,10 +234,19 @@ export function ProdukChannel() {
 
   const products: any[] = catalogData?.data || [];
 
-  const SHOPS = [{ id: 'all', label: 'Semua Toko' }];
+  // Build shop list from actual integrated shops (from credentials API), not just from products
+  const integratedShops: Array<{ id: string; label: string }> = [{ id: 'all', label: 'Semua Toko' }];
+  const credShops: any[] = shopsData?.data || [];
+  for (const s of credShops) {
+    integratedShops.push({
+      id: String(s.shop_id),
+      label: `${s.shop_name || `Toko #${s.shop_id}`} - Shopee`,
+    });
+  }
+  // Fallback: also include shops found in products but not in credentials list
   for (const p of products) {
-    if (p.shopId && !SHOPS.some(s => s.id === p.shopId)) {
-      SHOPS.push({ id: p.shopId, label: `Toko #${p.shopId}` });
+    if (p.shopId && !integratedShops.some(s => s.id === String(p.shopId))) {
+      integratedShops.push({ id: String(p.shopId), label: `${p.shopName || `Toko #${p.shopId}`} - Shopee` });
     }
   }
 
@@ -249,7 +258,7 @@ export function ProdukChannel() {
 
   const filtered = products
       .filter(p => filter === 'all' ? true : filter === 'linked' ? (p.mappedVariants === p.totalVariants && p.totalVariants > 0) : (p.mappedVariants < p.totalVariants || !p.mappedVariants))
-      .filter(p => shopFilter === 'all' ? true : p.shopId === shopFilter)
+      .filter(p => shopFilter === 'all' ? true : String(p.shopId) === shopFilter)
       .filter(p => {
         if (!search) return true;
         const q = search.toLowerCase();
@@ -274,7 +283,7 @@ export function ProdukChannel() {
         <div className="stat-card">
           <div className="stat-label">Total Produk</div>
           <div className="stat-value">{totalProducts}</div>
-          <div className="stat-sub">Dari {SHOPS.length - 1} toko aktif</div>
+          <div className="stat-sub">Dari {integratedShops.length - 1} toko aktif</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Total Variasi</div>
@@ -296,8 +305,12 @@ export function ProdukChannel() {
       </div>
 
       <div style={{ marginBottom: 16 }}>
-        <select value={shopFilter} onChange={e => setShopFilter(e.target.value)} style={{ padding: '7px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)', fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '220px' }}>
-          {SHOPS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+        <select
+          value={shopFilter}
+          onChange={e => setShopFilter(e.target.value)}
+          style={{ padding: '7px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)', fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '260px' }}
+        >
+          {integratedShops.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
       </div>
 
@@ -345,6 +358,8 @@ export function ProdukChannel() {
               }
             }
 
+            const displayShopName = product.shopName || `Toko #${product.shopId}`;
+
             return (
               <div key={product.shopeeItemId} className="prod-card">
                 <ProductThumb name={product.name || ''} imageUrl={product.imageUrl} />
@@ -355,7 +370,13 @@ export function ProdukChannel() {
                   </div>
                   <div className="prod-name" title={product.name}>{product.name}</div>
                   <div className="prod-sku">{product.itemSku || product.shopeeItemId}</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--text4)', marginBottom: 10 }}>Toko #{product.shopId} · {product.totalVariants} variasi</div>
+                  {/* Baris meta: nama toko kiri, jumlah variasi kanan */}
+                  <div className="prod-meta">
+                    <span className="prod-shop">{displayShopName} - Shopee</span>
+                    <span style={{ fontSize: 11, color: 'var(--text4)', background: 'var(--bg3)', padding: '2px 7px', borderRadius: 20, whiteSpace: 'nowrap' }}>
+                      {product.totalVariants} Variasi
+                    </span>
+                  </div>
                   <div className="prod-footer">
                     <button className="btn btn-ghost btn-xs" onClick={() => setEditTarget(product)}><Edit3 size={12} /> Edit Variasi</button>
                     <button className="btn btn-ghost btn-xs" style={{ padding: '4px' }} onClick={() => handleReload(product)} disabled={reloadingId === product.shopeeItemId}>

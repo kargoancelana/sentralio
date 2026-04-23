@@ -6,6 +6,7 @@ import { MasterProduk } from './pages/MasterProduk';
 import { ProdukChannel } from './pages/ProdukChannel';
 import { IntegrasiShopee } from './pages/IntegrasiShopee';
 import { ShopeeCallback } from './pages/ShopeeCallback';
+import { PesananSaya } from './pages/PesananSaya';
 import './styles/globals.css';
 
 function App() {
@@ -18,6 +19,7 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/produk/master" element={<MasterProduk />} />
             <Route path="/produk/channel" element={<ProdukChannel />} />
+            <Route path="/pesanan/saya" element={<PesananSaya />} />
             <Route path="/integrasi/shopee" element={<IntegrasiShopee />} />
             <Route path="/integrasi/shopee/callback" element={<ShopeeCallback />} />
             <Route path="/settings" element={
