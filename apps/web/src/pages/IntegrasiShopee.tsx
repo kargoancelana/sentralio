@@ -117,7 +117,7 @@ function ShopCard({ shop, onTest, onDisconnect, onSync, onReauth, testing, synci
         {shop.connected ? (
           <>
             <button className="btn btn-ghost btn-sm" onClick={() => onTest(shop)} disabled={testing}>
-              {testing ? <><Loader2 size={14} className="spin" /> Testing...</> : <><Zap size={14} /> Test API</>}
+              {testing ? <><Loader2 size={14} className="spin" /> Testing...</> : <><Zap size={14} /> Test Koneksi</>}
             </button>
             <button className="btn btn-shopee btn-sm" onClick={() => onSync(shop)} disabled={syncing}>
               {syncing ? <><Loader2 size={14} className="spin" /> Syncing...</> : <><CloudSync size={14} /> Sync Katalog</>}
