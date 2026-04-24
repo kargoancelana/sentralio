@@ -37,6 +37,8 @@ export const api = {
     fetchApi(`/master/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   masterUpdateStock: (masterProductId: number, stock: number) =>
     fetchApi('/master/update-stock', { method: 'POST', body: JSON.stringify({ master_product_id: masterProductId, stock }) }),
+  masterUpdateVariants: (masterProductId: number, variants: any[]) =>
+    fetchApi('/master/update-variants', { method: 'POST', body: JSON.stringify({ master_product_id: masterProductId, variants }) }),
   masterMap: (masterProductId: number, shopeeModelIds: string[]) =>
     fetchApi('/master/map', { method: 'POST', body: JSON.stringify({ master_product_id: masterProductId, shopee_model_ids: shopeeModelIds }) }),
   masterImport: (shopeeItemId: string) =>
@@ -56,8 +58,8 @@ export const api = {
 
   // Pesanan / Orders
   orderList: () => fetchApi<{ success: boolean; data: any[] }>('/orders'),
-  orderSync: (shopId?: number, daysBack: number = 15) => 
-    fetchApi('/orders/sync', { method: 'POST', body: JSON.stringify({ shop_id: shopId, days_back: daysBack }) }),
+  orderSync: (shopId?: number, daysBack: number = 15, cursor?: string, shopIndex?: number) => 
+    fetchApi('/orders/sync', { method: 'POST', body: JSON.stringify({ shop_id: shopId, days_back: daysBack, cursor, shop_index: shopIndex }) }),
 
   // Shopee — Otorisasi
   shopeeGetAuthUrl: () => fetchApi<{ auth_url: string }>('/shopee/auth/url'),

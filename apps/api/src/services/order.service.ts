@@ -5,41 +5,35 @@ import { eq } from "drizzle-orm";
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-export async function syncShopeeOrdersService(shopId: number, daysBack: number = 15) {
+export async function syncShopeeOrdersService(shopId: number, daysBack: number = 15, cursor: string = "") {
   // Hitung rentang waktu
   const now = Math.floor(Date.now() / 1000);
   const timeFrom = now - daysBack * 24 * 60 * 60;
   const timeTo = now;
 
-  let hasMore = true;
-  let cursor = "";
   let totalSynced = 0;
-  let pageNum = 0;
 
-  while (hasMore) {
-    pageNum++;
-    // Throttle: jeda 300ms antar halaman untuk menghindari rate limit Shopee
-    if (pageNum > 1) await sleep(300);
-
-    let listRes: any;
-    // Retry saat kena rate limit (error_too_frequent / 429)
-    for (let attempt = 0; attempt < 3; attempt++) {
-      listRes = await getShopeeOrderList(shopId, timeFrom, timeTo, cursor);
-      if (listRes?.error === "error_too_frequent") {
-        console.warn(`[order-sync] Rate limited on page ${pageNum}, retrying in 2s... (attempt ${attempt + 1})`);
-        await sleep(2000);
-        continue;
-      }
-      break;
+  let listRes: any;
+  // Retry saat kena rate limit (error_too_frequent / 429)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    listRes = await getShopeeOrderList(shopId, timeFrom, timeTo, cursor);
+    if (listRes?.error === "error_too_frequent") {
+      console.warn(`[order-sync] Rate limited on list fetch, retrying in 2s... (attempt ${attempt + 1})`);
+      await sleep(2000);
+      continue;
     }
+    break;
+  }
 
-    if (listRes.error) {
-      throw new Error(`Gagal menarik order list: ${listRes.message || listRes.error}`);
-    }
+  if (listRes.error) {
+    throw new Error(`Gagal menarik order list: ${listRes.message || listRes.error}`);
+  }
 
-    const orderList = listRes.response?.order_list || [];
-    if (orderList.length === 0) break;
+  const orderList = listRes.response?.order_list || [];
+  const next_cursor = listRes.response?.next_cursor || "";
+  const has_more = listRes.response?.more || false;
 
+  if (orderList.length > 0) {
     // Ekstrak SN pesanan
     const orderSns = orderList.map((o: any) => o.order_sn);
 
@@ -110,10 +104,7 @@ export async function syncShopeeOrdersService(shopId: number, daysBack: number =
         totalSynced++;
       }
     }
-
-    hasMore = listRes.response?.more || false;
-    cursor = listRes.response?.next_cursor || "";
   }
 
-  return { success: true, syncedCount: totalSynced };
+  return { success: true, syncedCount: totalSynced, has_more, next_cursor };
 }

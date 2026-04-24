@@ -8,6 +8,14 @@ export const masterProducts = mysqlTable("master_products", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const masterProductVariants = mysqlTable("master_product_variants", {
+  id: int("id").primaryKey().autoincrement(),
+  masterProductId: int("master_product_id").notNull().references(() => masterProducts.id, { onDelete: "cascade" }),
+  sku: varchar("sku", { length: 100 }).notNull().unique(),
+  name: varchar("name", { length: 255 }).notNull(),
+  stock: int("stock").notNull().default(0),
+});
+
 export const productGroups = mysqlTable("product_groups", {
   id: int("id").primaryKey().autoincrement(),
   shopId: int("shop_id").notNull(),

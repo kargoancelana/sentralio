@@ -9,6 +9,7 @@ import {
   updateMasterProduct,
   deleteMasterProduct,
   unlinkProductGroup,
+  updateMasterVariants,
 } from "../../services/master.service";
 
 export const masterRoutes = new Elysia({ prefix: "/master" })
@@ -30,6 +31,31 @@ export const masterRoutes = new Elysia({ prefix: "/master" })
       body: t.Object({
         master_product_id: t.Number(),
         stock: t.Number(),
+      }),
+    }
+  )
+
+  // ─── Update Master Variants ──────────────────────────
+  .post(
+    "/update-variants",
+    async ({ body, set }) => {
+      try {
+        const result = await updateMasterVariants(body.master_product_id, body.variants);
+        return { success: true, data: result };
+      } catch (error: any) {
+        set.status = 500;
+        return { success: false, message: error.message };
+      }
+    },
+    {
+      body: t.Object({
+        master_product_id: t.Number(),
+        variants: t.Array(t.Object({
+          id: t.Optional(t.Number()),
+          sku: t.String(),
+          name: t.String(),
+          stock: t.Number(),
+        })),
       }),
     }
   )

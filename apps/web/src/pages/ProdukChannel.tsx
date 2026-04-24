@@ -38,6 +38,8 @@ function EditModal({ product, onClose, onSave, saving }: any) {
         msku: v.modelSku || '',
         stock: v.shopeeStock ?? 0,
         origPrice: v.price,
+        isMapped: v.isMapped,
+        masterSku: v.master?.sku,
       }));
       uniqueVariants.sort((a: any, b: any) => a.varName.localeCompare(b.varName));
       setVariants(uniqueVariants);
@@ -97,9 +99,14 @@ function EditModal({ product, onClose, onSave, saving }: any) {
               </tr>
             </thead>
             <tbody>
-              {variants.map((v) => (
+              {variants.map((v) => {
+                const mismatch = !v.isMapped;
+                return (
                 <tr key={v.id}>
-                  <td style={{ color: 'var(--text3)', fontSize: 12.5 }}>{v.varName}</td>
+                  <td style={{ color: 'var(--text3)', fontSize: 12.5 }}>
+                    {v.varName}
+                    {mismatch && <div style={{ fontSize: 10, color: '#DC2626', marginTop: 2 }}>SKU variasi belum ter-mapping ke Master Produk</div>}
+                  </td>
                   <td>
                     <input
                       className="variant-input"
@@ -135,7 +142,8 @@ function EditModal({ product, onClose, onSave, saving }: any) {
                     />
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -345,7 +353,16 @@ export function ProdukChannel() {
       ) : (
         <div className="product-grid">
           {filtered.map(product => {
-            const isMapped = product.mappedVariants === product.totalVariants && product.totalVariants > 0;
+            let badgeClass = 'badge-red';
+            let badgeText = 'Unlinked';
+            
+            if (product.mappedVariants === product.totalVariants && product.totalVariants > 0) {
+              badgeClass = 'badge-green';
+              badgeText = 'Linked';
+            } else if (product.mappedVariants > 0 && product.mappedVariants < product.totalVariants) {
+              badgeClass = 'badge-orange';
+              badgeText = 'Sebagian';
+            }
             const prices = (product.variants || []).map((v: any) => v.price).filter((p: number) => p > 0);
             let priceStr = '';
             if (prices.length > 0) {
@@ -364,9 +381,9 @@ export function ProdukChannel() {
               <div key={product.shopeeItemId} className="prod-card">
                 <ProductThumb name={product.name || ''} imageUrl={product.imageUrl} />
                 <div className="prod-body">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6, marginBottom: 6 }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--shopee)' }}>{priceStr}</span>
-                    <span className={`badge ${isMapped ? 'badge-blue' : 'badge-yellow'}`}>{isMapped ? `Ter-link ${product.mappedVariants}` : 'Unlinked'}</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6, marginBottom: 6, height: 38 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--shopee)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{priceStr}</span>
+                    <span className={`badge ${badgeClass}`} style={{ flexShrink: 0 }}>{badgeText}</span>
                   </div>
                   <div className="prod-name" title={product.name}>{product.name}</div>
                   <div className="prod-sku">{product.itemSku || product.shopeeItemId}</div>

@@ -1,6 +1,6 @@
 import { eq, isNull, inArray } from "drizzle-orm";
 import { db } from "../db/client";
-import { masterProducts, products, productGroups } from "../db/schema";
+import { masterProducts, products, productGroups, masterProductVariants } from "../db/schema";
 import { 
   updateStockOnShopee, 
   updateStockOnShopeeBatch, 
@@ -73,50 +73,70 @@ export async function updateStockByMasterSku(masterProductId: number, newStock: 
     };
   }
 
-  // 4. Sync eligible variants to Shopee with retry
+  // 4. Sync eligible variants to Shopee with retry (Grouped by shopeeItemId)
   let syncCount = 0;
   const failedProducts: { id: number; error: string }[] = [];
 
-  for (const p of eligibleProducts) {
-    await db.update(products).set({ syncStatus: "pending" }).where(eq(products.id, p.id));
+  const groupedByItem = eligibleProducts.reduce((acc, p) => {
+    if (!acc[p.shopeeItemId]) acc[p.shopeeItemId] = [];
+    acc[p.shopeeItemId].push(p);
+    return acc;
+  }, {} as Record<string, typeof eligibleProducts>);
+
+  for (const itemId of Object.keys(groupedByItem)) {
+    const modelsToUpdate = groupedByItem[itemId];
+
+    // Tandai status pending
+    for (const p of modelsToUpdate) {
+      await db.update(products).set({ syncStatus: "pending" }).where(eq(products.id, p.id));
+    }
 
     let success = false;
     let lastError = "";
 
+    const payload = modelsToUpdate.map(p => ({
+      shopeeModelId: p.shopeeModelId,
+      stock: newStock
+    }));
+
     // Attempt 1
     try {
-      await updateShopeeVariantStock(p.shopeeItemId, p.shopeeModelId, newStock);
+      await updateStockOnShopeeBatch(itemId, payload);
       success = true;
     } catch (err: any) {
       lastError = err.message;
 
       // Attempt 2 (Retry x1 on transient errors)
       if (isRetryableError(lastError)) {
-        console.warn(`[MASTER SKU SYNC] sku=${master.sku} model_id=${p.shopeeModelId} failed, retrying... error=${lastError}`);
+        console.warn(`[MASTER SKU SYNC] sku=${master.sku} item_id=${itemId} failed, retrying... error=${lastError}`);
         try {
           await delay(env.syncDelayMs);
-          await updateShopeeVariantStock(p.shopeeItemId, p.shopeeModelId, newStock);
+          await updateStockOnShopeeBatch(itemId, payload);
           success = true;
         } catch (retryErr: any) {
           lastError = retryErr.message;
         }
       } else {
-        console.error(`[MASTER SKU SYNC] sku=${master.sku} model_id=${p.shopeeModelId} non-retryable error: ${lastError}`);
+        console.error(`[MASTER SKU SYNC] sku=${master.sku} item_id=${itemId} non-retryable error: ${lastError}`);
       }
     }
 
     if (success) {
-      await db.update(products)
-        .set({ syncStatus: "success", lastError: null })
-        .where(eq(products.id, p.id));
-      console.log(`[MASTER SKU SYNC] sku=${master.sku} model_id=${p.shopeeModelId} synced stock=${newStock}`);
-      syncCount++;
+      for (const p of modelsToUpdate) {
+        await db.update(products)
+          .set({ syncStatus: "success", lastError: null, shopeeStock: newStock })
+          .where(eq(products.id, p.id));
+        syncCount++;
+      }
+      console.log(`[MASTER SKU SYNC] sku=${master.sku} item_id=${itemId} synced stock=${newStock} for ${modelsToUpdate.length} models`);
     } else {
-      await db.update(products)
-        .set({ syncStatus: "failed", lastError })
-        .where(eq(products.id, p.id));
-      console.error(`[MASTER SKU SYNC] sku=${master.sku} model_id=${p.shopeeModelId} FAILED error=${lastError}`);
-      failedProducts.push({ id: p.id, error: lastError });
+      for (const p of modelsToUpdate) {
+        await db.update(products)
+          .set({ syncStatus: "failed", lastError })
+          .where(eq(products.id, p.id));
+        failedProducts.push({ id: p.id, error: lastError });
+      }
+      console.error(`[MASTER SKU SYNC] sku=${master.sku} item_id=${itemId} FAILED error=${lastError}`);
     }
 
     await delay(env.syncDelayMs);
@@ -146,6 +166,93 @@ export async function updateStockByMasterSku(masterProductId: number, newStock: 
     total_linked: allMapped.length,
     failed_models: failedProducts.length > 0 ? failedProducts.map(f => f.id) : undefined,
     failed: failedProducts.length > 0 ? failedProducts : undefined,
+  };
+}
+
+export async function updateMasterVariants(masterProductId: number, variants: any[]) {
+  const masterRows = await db.select().from(masterProducts).where(eq(masterProducts.id, masterProductId)).limit(1);
+  if (masterRows.length === 0) throw new Error("Master product not found");
+
+  // Upsert variants
+  for (const v of variants) {
+    if (v.id) {
+      await db.update(masterProductVariants)
+        .set({ sku: v.sku, name: v.name, stock: v.stock })
+        .where(eq(masterProductVariants.id, v.id));
+    } else {
+      await db.insert(masterProductVariants)
+        .values({ masterProductId, sku: v.sku, name: v.name, stock: v.stock });
+    }
+  }
+
+  // Find products matching these variant SKUs
+  const allMapped = await db.select().from(products)
+    .where(eq(products.masterProductId, masterProductId));
+
+  const groupedByItem: Record<string, { shopeeModelId: string; stock: number, dbId: number }[]> = {};
+
+  for (const v of variants) {
+    const eligibleProducts = allMapped.filter(p => p.modelSku === v.sku);
+    for (const p of eligibleProducts) {
+      if (!groupedByItem[p.shopeeItemId]) groupedByItem[p.shopeeItemId] = [];
+      groupedByItem[p.shopeeItemId].push({ shopeeModelId: p.shopeeModelId, stock: v.stock, dbId: p.id });
+    }
+  }
+
+  let syncCount = 0;
+  const failedProducts: { id: number; error: string }[] = [];
+
+  for (const itemId of Object.keys(groupedByItem)) {
+    const modelsToUpdate = groupedByItem[itemId];
+
+    for (const m of modelsToUpdate) {
+      await db.update(products).set({ syncStatus: "pending" }).where(eq(products.id, m.dbId));
+    }
+
+    const payload = modelsToUpdate.map(m => ({ shopeeModelId: m.shopeeModelId, stock: m.stock }));
+    let success = false;
+    let lastError = "";
+
+    try {
+      await updateStockOnShopeeBatch(itemId, payload);
+      success = true;
+    } catch (err: any) {
+      lastError = err.message;
+      if (isRetryableError(lastError)) {
+        console.warn(`[VARIANTS SYNC] item_id=${itemId} failed, retrying... error=${lastError}`);
+        try {
+          await delay(env.syncDelayMs);
+          await updateStockOnShopeeBatch(itemId, payload);
+          success = true;
+        } catch (retryErr: any) {
+          lastError = retryErr.message;
+        }
+      }
+    }
+
+    if (success) {
+      for (const m of modelsToUpdate) {
+        await db.update(products).set({ syncStatus: "success", lastError: null, shopeeStock: m.stock }).where(eq(products.id, m.dbId));
+        syncCount++;
+      }
+    } else {
+      for (const m of modelsToUpdate) {
+        await db.update(products).set({ syncStatus: "failed", lastError }).where(eq(products.id, m.dbId));
+        failedProducts.push({ id: m.dbId, error: lastError });
+      }
+    }
+    
+    if (Object.keys(groupedByItem).length > 1) await delay(env.syncDelayMs);
+  }
+
+  // Re-run auto mapping in case variant SKUs changed
+  await autoMapProducts();
+
+  return {
+    status: failedProducts.length === 0 ? "success" : "partial_success",
+    synced_listings: syncCount,
+    failed_listings: failedProducts.length,
+    failed_details: failedProducts,
   };
 }
 
@@ -205,6 +312,50 @@ export async function mapModelsToMaster(masterProductId: number, shopeeModelIds:
   };
 }
 
+/**
+ * Auto-maps all unmapped products based on SKU matching masterProductVariants.
+ * Call this after Shopee catalog sync or after updating variant SKUs.
+ */
+export async function autoMapProducts() {
+  const allVariants = await db.select().from(masterProductVariants);
+  const variantMap = new Map<string, number>(); // sku -> masterProductId
+  for (const v of allVariants) {
+    if (v.sku) variantMap.set(v.sku.trim().toUpperCase(), v.masterProductId);
+  }
+
+  const allProducts = await db.select().from(products);
+  let mappedCount = 0;
+  let unmappedCount = 0;
+
+  for (const p of allProducts) {
+    if (!p.modelSku) {
+      // If SKU is empty, it cannot be mapped. Clear it if previously mapped.
+      if (p.masterProductId !== null) {
+        await db.update(products).set({ masterProductId: null }).where(eq(products.id, p.id));
+        unmappedCount++;
+      }
+      continue;
+    }
+    
+    const cleanSku = p.modelSku.trim().toUpperCase();
+    const matchedMasterId = variantMap.get(cleanSku);
+    if (matchedMasterId) {
+      if (p.masterProductId !== matchedMasterId) {
+        await db.update(products).set({ masterProductId: matchedMasterId }).where(eq(products.id, p.id));
+        mappedCount++;
+      }
+    } else {
+      if (p.masterProductId !== null) {
+        await db.update(products).set({ masterProductId: null }).where(eq(products.id, p.id));
+        unmappedCount++;
+      }
+    }
+  }
+
+  console.log(`[AUTO MAP] Mapped ${mappedCount} products, unmapped ${unmappedCount} products`);
+  return { mapped: mappedCount, unmapped: unmappedCount };
+}
+
 // ─── IMPORT FROM LISTING ───────────────────────────────────────────
 
 /**
@@ -243,12 +394,39 @@ export async function importFromListing(shopeeItemId: string) {
   const masterId = (result as any).insertId as number;
   console.log(`[MASTER IMPORT] Created master id=${masterId} sku=${masterSku} name="${masterName}"`);
 
+  // 4. Import all variations under this listing as master product variants
+  const unmappedVariants = await db.select().from(products)
+    .where(eq(products.shopeeItemId, shopeeItemId));
+
+  let variantCount = 0;
+  for (const v of unmappedVariants) {
+    if (!v.modelSku) continue; // Skip variations without SKU
+    
+    // Check if variant already exists
+    const existingVar = await db.select().from(masterProductVariants)
+      .where(eq(masterProductVariants.sku, v.modelSku)).limit(1);
+      
+    if (existingVar.length === 0) {
+      await db.insert(masterProductVariants).values({
+        masterProductId: masterId,
+        sku: v.modelSku,
+        name: v.modelName || "Default",
+        stock: v.shopeeStock || 0,
+      });
+      variantCount++;
+    }
+  }
+
+  // Auto-map variations if they match
+  await autoMapProducts();
+
   return {
     status: "success",
     item_id: shopeeItemId,
     master_id: masterId,
     master_sku: masterSku,
-    message: "Master Product berhasil dibuat. Silakan mapping listing dari menu manual link."
+    variants_imported: variantCount,
+    message: `Master Product berhasil dibuat dengan ${variantCount} variasi.`
   };
 }
 
@@ -282,12 +460,16 @@ export async function listMasterProducts() {
       if (gRows.length > 0) groups.push(gRows[0]);
     }
 
+    const variants = await db.select().from(masterProductVariants)
+      .where(eq(masterProductVariants.masterProductId, m.id));
+
     result.push({
       id: m.id,
       sku: m.sku,
       name: m.name,
       stock: m.stock,
       imageUrl: groups[0]?.imageUrl || null,
+      variants: variants, // Return true master variants
       linked_models: linked,
       linked_groups: groups.map(g => ({
         id: g.id,

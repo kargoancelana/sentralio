@@ -19,7 +19,7 @@ export const orderRoutes = new Elysia({ prefix: "/orders" })
 
   // Sync orders from Shopee (Last 15 days)
   .post("/sync", async ({ body }) => {
-    const { shop_id, days_back } = body as { shop_id?: number, days_back?: number };
+    const { shop_id, days_back, cursor, shop_index = 0 } = body as { shop_id?: number, days_back?: number, cursor?: string, shop_index?: number };
     
     let shopsToSync = [];
     if (shop_id) {
@@ -32,13 +32,35 @@ export const orderRoutes = new Elysia({ prefix: "/orders" })
       throw new Error("Tidak ada toko yang terhubung untuk menarik pesanan.");
     }
 
+    if (shop_index >= shopsToSync.length) {
+      return { success: true, data: { fetched: 0, has_more: false, next_cursor: "", shop_index: 0 } };
+    }
+
     try {
-      let totalSynced = 0;
-      for (const shop of shopsToSync) {
-         const result = await syncShopeeOrdersService(shop.shopId, days_back || 15);
-         totalSynced += result.syncedCount;
+      const currentShopId = shopsToSync[shop_index].shopId;
+      const result = await syncShopeeOrdersService(currentShopId, days_back || 15, cursor || "");
+      
+      let next_cursor = result.next_cursor;
+      let has_more = result.has_more;
+      let next_shop_index = shop_index;
+
+      // Jika satu toko sudah selesai, lanjut ke toko berikutnya jika ada
+      if (!has_more && shop_index + 1 < shopsToSync.length) {
+         has_more = true;
+         next_cursor = "";
+         next_shop_index = shop_index + 1;
       }
-      return { success: true, message: `Berhasil menarik ${totalSynced} pesanan.`, syncedCount: totalSynced };
+
+      return { 
+        success: true, 
+        message: `Berhasil menarik ${result.syncedCount} pesanan.`, 
+        data: { 
+          fetched: result.syncedCount, 
+          has_more, 
+          next_cursor, 
+          shop_index: next_shop_index 
+        } 
+      };
     } catch (err: any) {
       return { success: false, message: err.message };
     }
@@ -46,5 +68,7 @@ export const orderRoutes = new Elysia({ prefix: "/orders" })
     body: t.Optional(t.Object({
       shop_id: t.Optional(t.Number()),
       days_back: t.Optional(t.Number()),
+      cursor: t.Optional(t.String()),
+      shop_index: t.Optional(t.Number()),
     }))
   });
