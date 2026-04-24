@@ -1,6 +1,7 @@
 import { Elysia, t } from "elysia";
 import { getShopInfo, getItemListRaw, syncShopeeProducts, getShopeeCatalog, updateShopeeItem, updateShopeePrice, updateShopeeVariantStock, toggleShopeeItemStatus, updateShopeeModel } from "../../services/shopee.service";
 import { getShopInfoRaw } from "../../services/shopee-raw";
+import { autoMapProducts } from "../../services/master.service";
 
 export const shopeeRoutes = new Elysia({ prefix: "/shopee" })
   .get("/test-shop", async () => {
@@ -18,9 +19,12 @@ export const shopeeRoutes = new Elysia({ prefix: "/shopee" })
   })
   .get("/sync-products", async ({ query }) => {
     const shop_id = query.shop_id ? parseInt(query.shop_id as string) : undefined;
-    return await syncShopeeProducts(shop_id);
+    const result = await syncShopeeProducts(shop_id);
+    await autoMapProducts(); // Auto map after sync
+    return result;
   })
   .get("/catalog", async () => {
+    await autoMapProducts(); // Ensure mapping is up to date
     const catalog = await getShopeeCatalog();
     return { success: true, data: catalog };
   })
@@ -110,6 +114,9 @@ export const shopeeRoutes = new Elysia({ prefix: "/shopee" })
           modelName: body.model_name,
           modelSku: body.model_sku,
         });
+        if (body.model_sku !== undefined) {
+          await autoMapProducts(); // Auto map after updating SKU
+        }
         return { success: true, data: result };
       } catch (error: any) {
         set.status = 500;

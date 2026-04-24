@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useToast } from '../components/ui/Toast';
-import { useApi, useApiMutation } from '../hooks/useApi';
+import { useApi } from '../hooks/useApi';
 import { api } from '../lib/api';
 import { Package, RefreshCw, Search, Truck } from 'lucide-react';
 import { format } from 'date-fns';
@@ -154,21 +154,41 @@ export function PesananSaya() {
   const [subFilter, setSubFilter]     = useState<SubFilter>('ALL');
   const [search, setSearch]           = useState('');
 
-  const syncMut = useApiMutation(async () => {
-    return await api.orderSync();
-  });
+  const [syncProgress, setSyncProgress] = useState<{ total: number, page: number } | null>(null);
 
   const handleSync = async () => {
     setSyncing(true);
-    toast('Memulai penarikan data pesanan Shopee (15 hari terakhir)...', 'info');
+    setSyncProgress({ total: 0, page: 1 });
+    toast('Memulai penarikan pesanan Shopee...', 'info');
+    
+    let currentCursor = '';
+    let totalSynced = 0;
+    let pageCount = 1;
+    let currentShopIndex = 0;
+
     try {
-      const res = await syncMut.execute();
-      toast(res.message || 'Berhasil menarik pesanan', 'success');
-      await refetch();
+      while (true) {
+        const res: any = await api.orderSync(undefined, 15, currentCursor, currentShopIndex);
+        const fetched = res.data?.fetched || 0;
+        totalSynced += fetched;
+        setSyncProgress({ total: totalSynced, page: pageCount });
+        
+        if (!res.data?.has_more) {
+          toast(`Berhasil menarik total ${totalSynced} pesanan`, 'success');
+          break;
+        }
+        
+        currentCursor = res.data.next_cursor;
+        currentShopIndex = res.data.shop_index || 0;
+        pageCount++;
+        await new Promise(r => setTimeout(r, 500)); // Delay between pages
+      }
     } catch (err: any) {
-      toast(err.message || 'Gagal menarik pesanan', 'error');
+      toast(err.message || 'Terputus. Silakan klik tarik lagi untuk resume penarikan.', 'error');
     } finally {
       setSyncing(false);
+      setSyncProgress(null);
+      await refetch();
     }
   };
 
@@ -208,8 +228,8 @@ export function PesananSaya() {
     return matchMain && matchSearch;
   });
 
-  const badgeDot = (count: number, color: string) =>
-    count > 0 ? <span style={{ marginLeft: 4, background: color, color: '#fff', fontSize: 10, padding: '0 5px', borderRadius: 10, fontWeight: 700 }}>{count}</span> : null;
+  const badgeDot = (count: number, badgeCls: string) =>
+    count > 0 ? <span className={`badge ${badgeCls}`} style={{ marginLeft: 6, padding: '2px 6px', fontSize: 10 }}>{count}</span> : null;
 
   return (
     <div className="wms-page animate-fade-in">
@@ -221,7 +241,7 @@ export function PesananSaya() {
         <div className="page-actions">
           <button className="btn btn-shopee" onClick={handleSync} disabled={syncing}>
             {syncing ? <RefreshCw size={14} className="spin" /> : <RefreshCw size={14} />}
-            {syncing ? 'Menarik...' : 'Tarik Pesanan (15 Hari)'}
+            {syncing ? `Menarik... (Hal ${syncProgress?.page || 1})` : 'Tarik Pesanan'}
           </button>
         </div>
       </div>
@@ -257,21 +277,21 @@ export function PesananSaya() {
               className={`filter-tab ${mainFilter === 'UNPAID' ? 'active' : ''}`}
               onClick={() => handleMainFilter('UNPAID')}
             >
-              Belum Bayar{badgeDot(countUnpaid, '#F59E0B')}
+              Belum Bayar{badgeDot(countUnpaid, 'badge-orange')}
             </button>
 
             <button
               className={`filter-tab ${mainFilter === 'NEED_SHIP' ? 'active' : ''}`}
               onClick={() => handleMainFilter('NEED_SHIP')}
             >
-              Perlu Dikirim{badgeDot(countNeedShip, '#3B82F6')}
+              Perlu Dikirim{badgeDot(countNeedShip, 'badge-primary')}
             </button>
 
             <button
               className={`filter-tab ${mainFilter === 'SHIPPED' ? 'active' : ''}`}
               onClick={() => handleMainFilter('SHIPPED')}
             >
-              Dikirim{badgeDot(countShipped, '#8B5CF6')}
+              Dikirim{badgeDot(countShipped, 'badge-purple')}
             </button>
 
             <button
