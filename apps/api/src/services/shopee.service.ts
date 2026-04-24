@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "../db/client";
-import { productGroups, products, masterProducts, shopeeCredentials } from "../db/schema";
+import { productGroups, products, masterProducts, masterProductVariants, shopeeCredentials } from "../db/schema";
 import { shopeeRequest } from "./shopee-raw";
 
 /**
