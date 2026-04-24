@@ -323,6 +323,10 @@ export async function getShopeeCatalog() {
     shopNameMap.set(s.shopId, s.shopName || `Toko #${s.shopId}`);
   }
 
+  // Pre-load all valid Master Produk SKUs
+  const allMasterVariants = await db.select({ sku: masterProductVariants.sku }).from(masterProductVariants);
+  const validMskus = new Set(allMasterVariants.map(v => v.sku?.trim().toUpperCase()).filter(Boolean));
+
   // 3. Build catalog
   const catalog = [];
   for (const group of groups) {
@@ -346,6 +350,9 @@ export async function getShopeeCatalog() {
           };
         }
       }
+      const vSkuClean = v.modelSku?.trim().toUpperCase();
+      const isIgnored = vSkuClean ? !validMskus.has(vSkuClean) : false;
+
       enrichedVariants.push({
         id: v.id,
         shopeeModelId: v.shopeeModelId,
@@ -356,6 +363,7 @@ export async function getShopeeCatalog() {
         syncStatus: v.syncStatus,
         lastError: v.lastError,
         isMapped: v.masterProductId !== null,
+        isIgnored,
         master,
       });
     }
@@ -375,6 +383,7 @@ export async function getShopeeCatalog() {
       imageUrl: group.imageUrl,
       lastSync: group.lastSync,
       totalVariants: enrichedVariants.length,
+      eligibleVariants: enrichedVariants.filter(v => !v.isIgnored).length,
       mappedVariants: enrichedVariants.filter(v => v.isMapped).length,
       variants: enrichedVariants,
     });
