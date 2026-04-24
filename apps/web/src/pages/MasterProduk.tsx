@@ -368,8 +368,8 @@ export function MasterProduk() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6, marginBottom: 8 }}>
                     <span className={`badge ${badgeClass}`}>{isMapped ? `☁ ${badgeText}` : '⚠ Unlinked'}</span>
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                      {product.variants && product.variants.length > 0 && (
-                        <span className="badge badge-purple" style={{ padding: '0 6px' }}>{product.variants.length} SKU</span>
+                      {isMapped && (
+                        <span className="badge badge-purple" style={{ padding: '0 6px' }}>🔗 {models.length} Linked SKUs</span>
                       )}
                     </div>
                   </div>

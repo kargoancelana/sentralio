@@ -39,6 +39,7 @@ function EditModal({ product, onClose, onSave, saving }: any) {
         stock: v.shopeeStock ?? 0,
         origPrice: v.price,
         isMapped: v.isMapped,
+        isIgnored: v.isIgnored,
         masterSku: v.master?.sku,
       }));
       uniqueVariants.sort((a: any, b: any) => a.varName.localeCompare(b.varName));
@@ -100,12 +101,14 @@ function EditModal({ product, onClose, onSave, saving }: any) {
             </thead>
             <tbody>
               {variants.map((v) => {
-                const mismatch = !v.isMapped;
+                const isKosong = !v.isMapped && !v.isIgnored;
+                const isTypo = v.isIgnored;
                 return (
                 <tr key={v.id}>
                   <td style={{ color: 'var(--text3)', fontSize: 12.5 }}>
                     {v.varName}
-                    {mismatch && <div style={{ fontSize: 10, color: '#DC2626', marginTop: 2 }}>SKU variasi belum ter-mapping ke Master Produk</div>}
+                    {isKosong && <div style={{ fontSize: 10, color: '#DC2626', marginTop: 2 }}>SKU variasi belum ter-mapping ke Master Produk</div>}
+                    {isTypo && <div style={{ fontSize: 10, color: 'var(--text4)', marginTop: 2 }}>Variasi Produk Belum ada di Master Produk</div>}
                   </td>
                   <td>
                     <input
@@ -260,12 +263,12 @@ export function ProdukChannel() {
 
   const totalProducts = products.length;
   const totalVariants = products.reduce((s, p) => s + (p.totalVariants || p.variants?.length || 0), 0);
-  const linked = products.filter(p => p.mappedVariants && p.mappedVariants === p.totalVariants && p.totalVariants > 0).length;
-  const unlinked = products.filter(p => !p.mappedVariants || p.mappedVariants < p.totalVariants).length;
+  const linked = products.filter(p => p.mappedVariants === p.eligibleVariants && p.eligibleVariants > 0).length;
+  const unlinked = products.filter(p => p.mappedVariants < p.eligibleVariants || !p.eligibleVariants).length;
   const linkedPct = totalProducts > 0 ? Math.round((linked / totalProducts) * 100) : 0;
 
   const filtered = products
-      .filter(p => filter === 'all' ? true : filter === 'linked' ? (p.mappedVariants === p.totalVariants && p.totalVariants > 0) : (p.mappedVariants < p.totalVariants || !p.mappedVariants))
+      .filter(p => filter === 'all' ? true : filter === 'linked' ? (p.mappedVariants === p.eligibleVariants && p.eligibleVariants > 0) : (p.mappedVariants < p.eligibleVariants || !p.eligibleVariants))
       .filter(p => shopFilter === 'all' ? true : String(p.shopId) === shopFilter)
       .filter(p => {
         if (!search) return true;
@@ -354,14 +357,14 @@ export function ProdukChannel() {
         <div className="product-grid">
           {filtered.map(product => {
             let badgeClass = 'badge-red';
-            let badgeText = 'Unlinked';
+            let badgeText = '☁ Unlinked';
             
-            if (product.mappedVariants === product.totalVariants && product.totalVariants > 0) {
+            if (product.mappedVariants === product.eligibleVariants && product.eligibleVariants > 0) {
               badgeClass = 'badge-green';
-              badgeText = 'Linked';
-            } else if (product.mappedVariants > 0 && product.mappedVariants < product.totalVariants) {
+              badgeText = '☁ Linked';
+            } else if (product.mappedVariants > 0 && product.mappedVariants < product.eligibleVariants) {
               badgeClass = 'badge-orange';
-              badgeText = 'Sebagian';
+              badgeText = '☁ Sebagian';
             }
             const prices = (product.variants || []).map((v: any) => v.price).filter((p: number) => p > 0);
             let priceStr = '';
