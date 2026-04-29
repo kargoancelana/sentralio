@@ -77,6 +77,8 @@ export const shopeeOrders = mysqlTable("shopee_orders", {
   buyerUsername: varchar("buyer_username", { length: 255 }),
   shippingCarrier: varchar("shipping_carrier", { length: 100 }),
   trackingNumber: varchar("tracking_number", { length: 100 }),
+  labelPrinted: int("label_printed").notNull().default(0), // 0 = belum dicetak, 1 = sudah dicetak
+  labelPrintedAt: timestamp("label_printed_at"), // Waktu label terakhir dicetak
   payTime: timestamp("pay_time"),
   createTime: timestamp("create_time").notNull(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -114,10 +116,10 @@ export const syncState = mysqlTable("sync_state", {
 export const labelCacheTable = mysqlTable("label_cache", {
   id: int("id").primaryKey().autoincrement(),
   orderSn: varchar("order_sn", { length: 100 }).notNull().unique(),
-  labelUrl: varchar("label_url", { length: 1000 }).notNull(),
+  labelUrl: text("label_url").notNull(), // MEDIUMTEXT: base64 PDF bisa 50-200KB
   format: varchar("format", { length: 10 }).notNull().default("pdf"),
   trackingNumber: varchar("tracking_number", { length: 100 }),
-  expiresAt: timestamp("expires_at").notNull(), // Label URL expires after 24 hours
+  expiresAt: timestamp("expires_at").notNull(), // Label URL expires after 14 days
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (t) => ({
   uniqOrderSn: uniqueIndex("uniq_label_order_sn").on(t.orderSn),

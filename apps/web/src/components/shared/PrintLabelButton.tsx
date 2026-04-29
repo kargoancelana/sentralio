@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Printer, Loader2 } from 'lucide-react';
+import { Printer, Loader2, Check } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 import { api } from '../../lib/api';
 import { openPrintDialog } from '../../utils/print';
@@ -12,20 +12,25 @@ import './PrintLabelButton.css';
  * Button component for printing shipping labels for individual orders.
  * Shows in order card when status is PROCESSED.
  * 
+ * When print is successful (tab opens), marks order as "sudah dicetak".
+ * If print fails (popup blocked etc), order remains "belum dicetak".
+ * 
  * **Validates: Requirements 2.1, 8.1, 8.2, 8.3, 8.4, 8.5, 8.6**
  */
 
 interface PrintLabelButtonProps {
   orderSn: string;
   disabled?: boolean;
+  labelPrinted?: boolean;
   onPrintStart?: () => void;
-  onPrintComplete?: () => void;
+  onPrintComplete?: (printed: boolean) => void;
   onPrintError?: (error: string) => void;
 }
 
 export function PrintLabelButton({
   orderSn,
   disabled = false,
+  labelPrinted = false,
   onPrintStart,
   onPrintComplete,
   onPrintError
@@ -56,12 +61,29 @@ export function PrintLabelButton({
       if (result.success && result.data) {
         // Open print dialog with label
         console.log('[PrintLabelButton] Opening print dialog with format:', result.data.format);
-        openPrintDialog(result.data.url, result.data.format);
-
-        // Show success toast
-        toast(`Label berhasil dicetak untuk pesanan #${orderSn}`, 'success');
-
-        onPrintComplete?.();
+        
+        try {
+          openPrintDialog(result.data.url, result.data.format);
+          
+          // Print tab opened successfully - mark as printed
+          console.log('[PrintLabelButton] Print tab opened successfully, marking as printed');
+          try {
+            await api.orderMarkLabelPrinted(orderSn, true);
+            console.log('[PrintLabelButton] Order marked as label printed');
+          } catch (markErr) {
+            console.warn('[PrintLabelButton] Failed to mark as printed (non-critical):', markErr);
+          }
+          
+          // Show success toast
+          toast(`Label berhasil dicetak untuk pesanan #${orderSn}`, 'success');
+          onPrintComplete?.(true);
+        } catch (printError: any) {
+          // Print tab failed to open (popup blocked etc) - mark as NOT printed
+          console.error('[PrintLabelButton] Print tab failed to open:', printError);
+          toast(printError.message || 'Gagal membuka tab cetak. Periksa popup blocker.', 'error');
+          onPrintComplete?.(false);
+          onPrintError?.(printError.message);
+        }
       } else {
         throw new Error(result.message || 'Gagal mengambil label');
       }
@@ -82,8 +104,8 @@ export function PrintLabelButton({
     <button
       onClick={handlePrint}
       disabled={disabled || loading}
-      title="Cetak Label Pengiriman"
-      aria-label="Cetak Label Pengiriman"
+      title={labelPrinted ? "Cetak Ulang Label Pengiriman" : "Cetak Label Pengiriman"}
+      aria-label={labelPrinted ? "Cetak Ulang Label Pengiriman" : "Cetak Label Pengiriman"}
       className="print-label-button"
       style={{
         padding: '6px 12px',
@@ -92,7 +114,7 @@ export function PrintLabelButton({
         fontSize: 12,
         fontWeight: 600,
         cursor: (disabled || loading) ? 'not-allowed' : 'pointer',
-        background: (disabled || loading) ? 'var(--bg3)' : 'var(--accent)',
+        background: (disabled || loading) ? 'var(--bg3)' : labelPrinted ? 'var(--success)' : 'var(--accent)',
         color: (disabled || loading) ? 'var(--text4)' : 'var(--accent-f)',
         display: 'flex',
         alignItems: 'center',
@@ -106,11 +128,13 @@ export function PrintLabelButton({
     >
       {loading ? (
         <Loader2 size={12} className="spin" />
+      ) : labelPrinted ? (
+        <Check size={12} />
       ) : (
         <Printer size={12} />
       )}
       <span className="print-label-button-text">
-        Cetak Label
+        {labelPrinted ? 'Cetak Ulang' : 'Cetak Label'}
       </span>
     </button>
   );

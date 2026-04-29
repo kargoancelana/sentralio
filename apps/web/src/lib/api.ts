@@ -110,6 +110,18 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ order_sns: orderSns })
     }),
+  
+  // Tandai label sudah/belum dicetak
+  orderMarkLabelPrinted: (orderSn: string, printed: boolean) =>
+    fetchApi<{ success: boolean; message?: string }>(`/orders/${orderSn}/label-printed`, {
+      method: 'PATCH',
+      body: JSON.stringify({ printed })
+    }),
+  orderMarkLabelPrintedBatch: (orderSns: string[], printed: boolean) =>
+    fetchApi<{ success: boolean; message?: string }>('/orders/batch/label-printed', {
+      method: 'PATCH',
+      body: JSON.stringify({ order_sns: orderSns, printed })
+    }),
 
   // Shopee — Otorisasi
   shopeeGetAuthUrl: () => fetchApi<{ auth_url: string }>('/shopee/auth/url'),

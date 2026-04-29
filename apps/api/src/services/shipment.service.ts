@@ -519,6 +519,24 @@ export async function shipSingleOrder(
       };
     }
 
+    // ── Background prefetch: cache label ASAP so reprint is instant ──
+    // Fire-and-forget — doesn't block the response to the user.
+    // 3s delay gives Shopee time to generate the shipping document.
+    setTimeout(async () => {
+      try {
+        const { getSingleLabel } = await import('./label.service');
+        const result = await getSingleLabel(orderSn);
+        if (result.success) {
+          console.log(`[shipment-service] ✅ Label prefetched & cached for ${orderSn}`);
+        } else {
+          console.warn(`[shipment-service] Label prefetch returned error for ${orderSn}:`, result.error);
+        }
+      } catch (e: any) {
+        console.warn(`[shipment-service] Label prefetch failed for ${orderSn}:`, e.message);
+        // Non-critical — user can still print manually later
+      }
+    }, 3000);
+
     return {
       success: true,
       orderSn,

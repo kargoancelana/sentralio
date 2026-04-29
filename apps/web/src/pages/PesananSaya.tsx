@@ -2,19 +2,20 @@ import { useState } from 'react';
 import { useToast } from '../components/ui/Toast';
 import { useApi } from '../hooks/useApi';
 import { api } from '../lib/api';
-import { Package, RefreshCw, Search, Truck, Loader2, Printer } from 'lucide-react';
+import { Package, RefreshCw, Search, Truck, Loader2, Printer, CheckCircle2, Circle } from 'lucide-react';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale/id';
 import { PrintLabelButton } from '../components/shared/PrintLabelButton';
 import { ShipmentProgressDialog, BatchShipmentProgressDialog } from '../components/shared/ShipmentProgressDialog';
 import { SyncStatusIndicator } from '../components/shared/SyncStatusIndicator';
-import { getBatchSummaryMessage } from '../utils/label-errors';
+import { getBatchSummaryMessage, mapLabelError } from '../utils/label-errors';
 import { openPDFsInSingleTab } from '../utils/pdf-merge';
 import './PesananSaya.css';
 
 /* ── Status mapping ── */
 type MainFilter = 'UNPAID' | 'NEED_SHIP' | 'SHIPPED' | 'COMPLETED';
 type SubFilter  = 'ALL' | 'READY_TO_SHIP' | 'PROCESSED';
+type PrintFilter = 'ALL' | 'PRINTED' | 'UNPRINTED';
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   UNPAID:              { label: 'Belum Bayar',    cls: 'badge-orange' },
@@ -46,7 +47,8 @@ function OrderCard({
   onToggleSelection,
   selectedLabelOrders,
   onToggleLabelSelection,
-  batchPrinting
+  batchPrinting,
+  onPrintComplete
 }: { 
   order: any; 
   onShipOrder: (orderSn: string) => void;
@@ -55,6 +57,7 @@ function OrderCard({
   selectedLabelOrders: string[];
   onToggleLabelSelection: (orderSn: string) => void;
   batchPrinting: boolean;
+  onPrintComplete: () => void;
 }) {
   const items: any[] = order.items || [];
   const hasItems = items.length > 0;
@@ -62,6 +65,7 @@ function OrderCard({
   const isReadyToShip = order.orderStatus === 'READY_TO_SHIP';
   const isLabelSelected = selectedLabelOrders.includes(order.orderSn);
   const isProcessed = order.orderStatus === 'PROCESSED';
+  const isLabelPrinted = order.labelPrinted === 1;
 
   return (
     <div style={{
@@ -149,7 +153,23 @@ function OrderCard({
 
               {/* Status: hanya di row pertama */}
               <div style={{ minWidth: 110, textAlign: 'center' }}>
-                {idx === 0 ? <StatusBadge status={order.orderStatus} /> : null}
+                {idx === 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                    <StatusBadge status={order.orderStatus} />
+                    {isProcessed && (
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 3,
+                        fontSize: 10, fontWeight: 500, padding: '1px 6px', borderRadius: 8,
+                        background: isLabelPrinted ? 'var(--success)' : 'var(--warning)',
+                        color: '#fff',
+                        opacity: 0.85,
+                      }}>
+                        {isLabelPrinted ? <CheckCircle2 size={9} /> : <Circle size={9} />}
+                        {isLabelPrinted ? 'Sudah Cetak' : 'Belum Cetak'}
+                      </span>
+                    )}
+                  </div>
+                ) : null}
               </div>
 
               {/* Jasa kirim + tracking number: hanya di row pertama */}
@@ -192,7 +212,11 @@ function OrderCard({
                     Atur Pengiriman
                   </button>
                 ) : idx === 0 && order.orderStatus === 'PROCESSED' ? (
-                  <PrintLabelButton orderSn={order.orderSn} />
+                  <PrintLabelButton
+                    orderSn={order.orderSn}
+                    labelPrinted={isLabelPrinted}
+                    onPrintComplete={() => onPrintComplete()}
+                  />
                 ) : idx === 0 ? (
                   <span style={{ fontSize: 11.5, color: 'var(--text4)' }}>—</span>
                 ) : null}
@@ -208,7 +232,21 @@ function OrderCard({
               {formatRp(order.totalAmount)}
             </div>
             <div style={{ minWidth: 110, textAlign: 'center' }}>
-              <StatusBadge status={order.orderStatus} />
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                <StatusBadge status={order.orderStatus} />
+                {isProcessed && (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 3,
+                    fontSize: 10, fontWeight: 500, padding: '1px 6px', borderRadius: 8,
+                    background: isLabelPrinted ? 'var(--success)' : 'var(--warning)',
+                    color: '#fff',
+                    opacity: 0.85,
+                  }}>
+                    {isLabelPrinted ? <CheckCircle2 size={9} /> : <Circle size={9} />}
+                    {isLabelPrinted ? 'Sudah Cetak' : 'Belum Cetak'}
+                  </span>
+                )}
+              </div>
             </div>
             <div style={{ minWidth: 100, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
               {order.shippingCarrier || order.trackingNumber ? (
@@ -245,7 +283,11 @@ function OrderCard({
                   Atur Pengiriman
                 </button>
               ) : order.orderStatus === 'PROCESSED' ? (
-                <PrintLabelButton orderSn={order.orderSn} />
+                <PrintLabelButton
+                  orderSn={order.orderSn}
+                  labelPrinted={isLabelPrinted}
+                  onPrintComplete={() => onPrintComplete()}
+                />
               ) : (
                 <span style={{ fontSize: 11.5, color: 'var(--text4)' }}>—</span>
               )}
@@ -266,6 +308,7 @@ export function PesananSaya() {
   const [syncing, setSyncing]         = useState(false);
   const [mainFilter, setMainFilter]   = useState<MainFilter>('NEED_SHIP');
   const [subFilter, setSubFilter]     = useState<SubFilter>('ALL');
+  const [printFilter, setPrintFilter] = useState<PrintFilter>('ALL');
   const [search, setSearch]           = useState('');
   
   // Batch selection state (for shipment)
@@ -427,8 +470,20 @@ export function PesananSaya() {
             
             await openPDFsInSingleTab(pdfUrls, orderSns);
             
+            // Successfully opened tab — mark all as printed
+            try {
+              await api.orderMarkLabelPrintedBatch(orderSns, true);
+              console.log('[PesananSaya] Batch labels marked as printed:', orderSns.length);
+            } catch (markErr) {
+              console.warn('[PesananSaya] Failed to mark batch as printed (non-critical):', markErr);
+            }
+            
             toast(`Membuka ${successfulLabels.length} label`, 'success');
+            
+            // Refresh order data to update UI
+            await refetch();
           } catch (openError: any) {
+            // Tab failed to open — do NOT mark as printed
             console.error('[PesananSaya] Error opening batch labels:', openError);
             toast(openError.message || 'Gagal membuka tab label. Periksa popup blocker browser Anda.', 'error');
           }
@@ -457,7 +512,15 @@ export function PesananSaya() {
 
   const handleMainFilter = (f: MainFilter) => {
     setMainFilter(f);
-    if (f !== 'NEED_SHIP') setSubFilter('ALL');
+    if (f !== 'NEED_SHIP') {
+      setSubFilter('ALL');
+      setPrintFilter('ALL');
+    }
+  };
+
+  const handleSubFilter = (sf: SubFilter) => {
+    setSubFilter(sf);
+    if (sf !== 'PROCESSED') setPrintFilter('ALL');
   };
 
   if (loading) {
@@ -480,6 +543,8 @@ export function PesananSaya() {
   const countNeedShip  = ordersWithoutTest.filter(o => ['READY_TO_SHIP', 'PROCESSED'].includes(o.orderStatus)).length;
   const countRts       = ordersWithoutTest.filter(o => o.orderStatus === 'READY_TO_SHIP').length;
   const countProcessed = ordersWithoutTest.filter(o => o.orderStatus === 'PROCESSED').length;
+  const countPrinted   = ordersWithoutTest.filter(o => o.orderStatus === 'PROCESSED' && o.labelPrinted === 1).length;
+  const countUnprinted = ordersWithoutTest.filter(o => o.orderStatus === 'PROCESSED' && o.labelPrinted !== 1).length;
   const countShipped   = ordersWithoutTest.filter(o => ['SHIPPED', 'TO_CONFIRM_RECEIVE', 'IN_CANCEL'].includes(o.orderStatus)).length;
   const countCompleted = ordersWithoutTest.filter(o => o.orderStatus === 'COMPLETED').length;
 
@@ -493,7 +558,12 @@ export function PesananSaya() {
     if (mainFilter === 'NEED_SHIP') {
       if (subFilter === 'ALL')           matchMain = ['READY_TO_SHIP', 'PROCESSED'].includes(o.orderStatus);
       if (subFilter === 'READY_TO_SHIP') matchMain = o.orderStatus === 'READY_TO_SHIP';
-      if (subFilter === 'PROCESSED')     matchMain = o.orderStatus === 'PROCESSED';
+      if (subFilter === 'PROCESSED') {
+        matchMain = o.orderStatus === 'PROCESSED';
+        // Apply print filter when PROCESSED is selected
+        if (matchMain && printFilter === 'PRINTED')   matchMain = o.labelPrinted === 1;
+        if (matchMain && printFilter === 'UNPRINTED') matchMain = o.labelPrinted !== 1;
+      }
     }
     const matchSearch = o.orderSn.toLowerCase().includes(search.toLowerCase()) ||
                         (o.buyerUsername || '').toLowerCase().includes(search.toLowerCase());
@@ -594,7 +664,7 @@ export function PesananSaya() {
           ]).map(item => (
             <button
               key={item.key}
-              onClick={() => setSubFilter(item.key)}
+              onClick={() => handleSubFilter(item.key)}
               style={{
                 padding: '4px 12px', borderRadius: 20, border: '1px solid',
                 fontSize: 12, fontFamily: 'inherit', cursor: 'pointer',
@@ -608,6 +678,45 @@ export function PesananSaya() {
               {item.label}
               {item.count > 0 && (
                 <span style={{ marginLeft: 5, opacity: subFilter === item.key ? 0.8 : 0.6, fontSize: 11 }}>
+                  ({item.count})
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── PRINT STATUS FILTER: hanya muncul saat Telah Diproses aktif ── */}
+      {mainFilter === 'NEED_SHIP' && subFilter === 'PROCESSED' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16, marginTop: -6 }}>
+          <span style={{ fontSize: 11.5, color: 'var(--text4)', marginRight: 4 }}>Cetak Label:</span>
+          {([
+            { key: 'ALL'       as PrintFilter, label: 'Semua', count: countProcessed, icon: null },
+            { key: 'UNPRINTED' as PrintFilter, label: 'Belum Dicetak', count: countUnprinted, icon: <Circle size={11} style={{ marginRight: 3 }} /> },
+            { key: 'PRINTED'   as PrintFilter, label: 'Sudah Dicetak', count: countPrinted, icon: <CheckCircle2 size={11} style={{ marginRight: 3 }} /> },
+          ]).map(item => (
+            <button
+              key={item.key}
+              onClick={() => setPrintFilter(item.key)}
+              style={{
+                padding: '4px 12px', borderRadius: 20, border: '1px solid',
+                fontSize: 12, fontFamily: 'inherit', cursor: 'pointer',
+                fontWeight: printFilter === item.key ? 600 : 400,
+                display: 'inline-flex', alignItems: 'center',
+                background: printFilter === item.key
+                  ? (item.key === 'PRINTED' ? 'var(--success)' : item.key === 'UNPRINTED' ? 'var(--warning)' : 'var(--accent)')
+                  : 'var(--bg)',
+                color: printFilter === item.key ? '#fff' : 'var(--text3)',
+                borderColor: printFilter === item.key
+                  ? (item.key === 'PRINTED' ? 'var(--success)' : item.key === 'UNPRINTED' ? 'var(--warning)' : 'var(--accent)')
+                  : 'var(--border)',
+                transition: 'all .15s',
+              }}
+            >
+              {item.icon}
+              {item.label}
+              {item.count > 0 && (
+                <span style={{ marginLeft: 5, opacity: printFilter === item.key ? 0.8 : 0.6, fontSize: 11 }}>
                   ({item.count})
                 </span>
               )}
@@ -777,6 +886,7 @@ export function PesananSaya() {
               selectedLabelOrders={selectedLabelOrders}
               onToggleLabelSelection={toggleLabelSelection}
               batchPrinting={batchPrinting}
+              onPrintComplete={() => refetch()}
             />
           ))}
 
