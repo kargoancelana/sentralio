@@ -58,8 +58,58 @@ export const api = {
 
   // Pesanan / Orders
   orderList: () => fetchApi<{ success: boolean; data: any[] }>('/orders'),
-  orderSync: (shopId?: number, daysBack: number = 15, cursor?: string, shopIndex?: number) => 
-    fetchApi('/orders/sync', { method: 'POST', body: JSON.stringify({ shop_id: shopId, days_back: daysBack, cursor, shop_index: shopIndex }) }),
+  orderSync: (shopId?: number, daysBack: number = 60, cursor?: string, shopIndex?: number, orderStatus?: string) => 
+    fetchApi('/orders/sync', { 
+      method: 'POST', 
+      body: JSON.stringify({ 
+        shop_id: shopId, 
+        days_back: daysBack, 
+        cursor, 
+        shop_index: shopIndex,
+        order_status: orderStatus
+      }) 
+    }),
+  orderShip: (orderSn: string, shipmentMethod: 'pickup' | 'dropoff') =>
+    fetchApi<{ success: boolean; message?: string; trackingNumber?: string }>(`/orders/ship/${orderSn}`, { method: 'POST', body: JSON.stringify({ shipment_method: shipmentMethod }) }),
+  orderShipBatch: (orderSns: string[], shipmentMethod: 'pickup' | 'dropoff') =>
+    fetchApi('/orders/ship/batch', { method: 'POST', body: JSON.stringify({ order_sns: orderSns, shipment_method: shipmentMethod }) }),
+  orderFetchTrackingNumber: (orderSn: string) =>
+    fetchApi<{ success: boolean; data?: { orderSn: string; trackingNumber: string }; message?: string }>(`/orders/${orderSn}/tracking-number`),
+  
+  // Label Pengiriman / Shipping Labels
+  orderLabel: (orderSn: string) =>
+    fetchApi<{
+      success: boolean;
+      data: {
+        orderSn: string;
+        url: string;
+        format: 'pdf' | 'png' | 'jpg';
+        trackingNumber: string;
+      };
+      message?: string;
+    }>(`/orders/${orderSn}/shipping-label`),
+  
+  orderLabelsBatch: (orderSns: string[]) =>
+    fetchApi<{
+      success: boolean;
+      data: {
+        total: number;
+        successful: number;
+        failed: number;
+        results: Array<{
+          orderSn: string;
+          success: boolean;
+          url?: string;
+          format?: 'pdf' | 'png' | 'jpg';
+          trackingNumber?: string;
+          error?: string;
+        }>;
+      };
+      message?: string;
+    }>('/orders/shipping-labels/batch', {
+      method: 'POST',
+      body: JSON.stringify({ order_sns: orderSns })
+    }),
 
   // Shopee — Otorisasi
   shopeeGetAuthUrl: () => fetchApi<{ auth_url: string }>('/shopee/auth/url'),

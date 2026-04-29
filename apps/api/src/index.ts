@@ -7,10 +7,12 @@ import { shopeeRoutes } from "./modules/shopee/shopee.route";
 import { shopeeAuthRoutes } from "./modules/shopee/shopee-auth.route";
 import { masterRoutes } from "./modules/master/master.route";
 import { orderRoutes } from "./modules/order/order.route";
+import { labelRoutes } from "./modules/order/label.route";
 import { healthRoutes } from "./routes/health";
 import { db } from "./db/client";
 import { shopeeCredentials } from "./db/schema";
 import { ensureAllTokensFresh } from "./services/shopee-auth";
+import { backgroundSyncService } from "./services/background-sync.service";
 
 const app = new Elysia()
   .use(cors({
@@ -37,6 +39,33 @@ const app = new Elysia()
   .use(shopeeAuthRoutes)
   .use(masterRoutes)
   .use(orderRoutes)
+  .use(labelRoutes)
+
+  // ─── Background Sync Status & Control ────────────────────────
+  .get("/sync/status", () => {
+    const stats = backgroundSyncService.getSyncStats();
+    return {
+      success: true,
+      data: stats
+    };
+  })
+
+  .post("/sync/force", async ({ body }) => {
+    const { order_status, days_back } = body as { order_status?: string, days_back?: number };
+    try {
+      const result = await backgroundSyncService.forceSyncOrders(order_status, days_back || 15);
+      return {
+        success: true,
+        message: `Force sync completed, synced ${result.totalSynced} orders`,
+        data: result
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err.message
+      };
+    }
+  })
 
   // ─── Multi-Seller: List all connected shops ─────────────────
   .get("/shopee/credentials/list", async () => {
@@ -117,6 +146,31 @@ const app = new Elysia()
   .listen(env.appPort);
 
 console.log(`Server running at http://${app.server?.hostname}:${app.server?.port}`);
+
+// ─── Background Sync: Auto-sync orders from Shopee ───────────
+// Start background sync service after server is ready
+setTimeout(async () => {
+  try {
+    console.log("[STARTUP] Initializing background sync service...");
+    await backgroundSyncService.startBackgroundSync();
+    console.log("[STARTUP] Background sync service started successfully");
+  } catch (err: any) {
+    console.error(`[STARTUP] Failed to start background sync: ${err.message}`);
+  }
+}, 5000); // Wait 5 seconds after server start
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+  console.log("\n[SHUTDOWN] Received SIGINT, shutting down gracefully...");
+  backgroundSyncService.stopBackgroundSync();
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  console.log("\n[SHUTDOWN] Received SIGTERM, shutting down gracefully...");
+  backgroundSyncService.stopBackgroundSync();
+  process.exit(0);
+});
 
 // ─── Cron: Auto-refresh Shopee tokens every 3 hours ──────────
 const TOKEN_REFRESH_INTERVAL = 3 * 60 * 60 * 1000; // 3 hours

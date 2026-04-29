@@ -114,30 +114,126 @@ if (require.main === module) {
   getShopInfoRaw().catch(console.error);
 }
 
-export async function getShopeeOrderList(shopId: number, timeFrom: number, timeTo: number, cursor: string = "") {
+export async function getShopeeOrderList(
+  shopId: number, 
+  timeFrom: number, 
+  timeTo: number, 
+  cursor: string = "",
+  orderStatus?: string, // Optional: filter by order status
+  timeRangeField: 'create_time' | 'update_time' = 'create_time' // Optional: time range field
+) {
+  const query: any = {
+    time_range_field: timeRangeField,
+    time_from: timeFrom,
+    time_to: timeTo,
+    page_size: 100, // Shopee max is 100 — fewer API calls = faster + less rate limiting
+    cursor,
+  };
+  
+  // Add order_status filter if provided
+  // This significantly reduces the number of orders fetched
+  if (orderStatus) {
+    query.order_status = orderStatus;
+  }
+  
   return shopeeRequest({
     shopId,
     method: "GET",
     path: "/api/v2/order/get_order_list",
-    query: {
-      time_range_field: "create_time",
-      time_from: timeFrom,
-      time_to: timeTo,
-      page_size: 50,
-      cursor,
-    },
+    query,
   });
 }
 
 export async function getShopeeOrderDetails(shopId: number, orderSnList: string[]) {
   // Shopee order details limits to 50 SNs per request
+  // CRITICAL: Keep response_optional_fields minimal to ensure pickup_done_time is returned
+  // Based on working Python implementation that successfully gets pickup_done_time
+  // Added package_list for shipping_carrier fallback
   return shopeeRequest({
     shopId,
     method: "GET",
     path: "/api/v2/order/get_order_detail",
     query: {
       order_sn_list: orderSnList.join(","),
-      response_optional_fields: "buyer_user_id,buyer_username,total_amount,pay_time,create_time,item_list,shipping_carrier,shipping_info",
+      response_optional_fields: "item_list,pay_time,buyer_username,total_amount,shipping_carrier,package_list,pickup_done_time",
     },
+  });
+}
+
+/**
+ * Arrange shipment for a Shopee order using the ship_order API endpoint.
+ * This marks the order as ready for pickup/delivery in Shopee's system.
+ * 
+ * Per Shopee docs: Should call v2.logistics.get_shipping_parameter to fetch 
+ * all required params first before calling this API.
+ * 
+ * @param shopId - Shop identifier
+ * @param orderSn - Order serial number
+ * @param shipmentMethod - Shipment method: 'pickup' or 'dropoff' (REQUIRED)
+ * @param shippingParams - Response from get_shipping_parameter (optional, used to populate required fields)
+ * @returns API response with success/error
+ */
+export async function shipShopeeOrder(
+  shopId: number, 
+  orderSn: string,
+  shipmentMethod: 'pickup' | 'dropoff',
+  shippingParams?: any
+) {
+  // Build request body based on shipment method
+  const body: any = {
+    order_sn: orderSn,
+  };
+
+  // Extract parameters from get_shipping_parameter response
+  const paramResult = shippingParams?.response || shippingParams?.result || shippingParams || {};
+
+  // Add the appropriate shipment method parameter with actual params from get_shipping_parameter
+  if (shipmentMethod === 'pickup') {
+    const pickupInfo = paramResult.pickup || {};
+    const pickupBody: any = {};
+    
+    // Use first available address from shipping params
+    const firstAddress = pickupInfo.address_list?.[0];
+    if (firstAddress?.address_id) {
+      pickupBody.address_id = firstAddress.address_id;
+    }
+    // time_slot_list is nested INSIDE each address, not at the pickup root
+    // Pick the first "recommended" slot, or the first available one
+    const timeSlots = firstAddress?.time_slot_list || [];
+    const recommendedSlot = timeSlots.find((s: any) => s.flags?.includes('recommended'));
+    const firstSlot = recommendedSlot || timeSlots[0];
+    if (firstSlot?.pickup_time_id) {
+      pickupBody.pickup_time_id = firstSlot.pickup_time_id;
+    }
+    
+    body.pickup = pickupBody;
+  } else if (shipmentMethod === 'dropoff') {
+    const dropoffInfo = paramResult.dropoff || {};
+    const dropoffBody: any = {};
+    
+    // Use first available branch from shipping params
+    if (dropoffInfo.branch_list?.[0]?.branch_id) {
+      dropoffBody.branch_id = dropoffInfo.branch_list[0].branch_id;
+    }
+    // Include sender real name if required
+    if (dropoffInfo.sender_real_name) {
+      dropoffBody.sender_real_name = dropoffInfo.sender_real_name;
+    }
+    
+    body.dropoff = dropoffBody;
+  }
+
+  console.log(`[shipShopeeOrder] Shipping order ${orderSn} with method: ${shipmentMethod}`, {
+    hasPickupParams: !!body.pickup?.address_id,
+    hasPickupTimeSlot: !!body.pickup?.pickup_time_id,
+    hasDropoffParams: !!body.dropoff?.branch_id,
+    body: JSON.stringify(body),
+  });
+
+  return shopeeRequest({
+    shopId,
+    method: "POST",
+    path: "/api/v2/logistics/ship_order",
+    body,
   });
 }
