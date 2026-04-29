@@ -1,0 +1,204 @@
+/**
+ * PesananSaya Responsive Styles
+ * 
+ * Mobile-responsive styles for batch action bars and order list.
+ * 
+ * **Validates: Requirements 14.1, 14.2, 14.4, 14.5**
+ */
+
+/* Batch Action Bar - Base Styles */
+.batch-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.batch-action-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.batch-action-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.batch-action-button {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.batch-action-button-primary {
+  padding: 6px 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Mobile Responsive Styles (max-width: 768px) */
+@media (max-width: 768px) {
+  .batch-action-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 16px;
+  }
+
+  .batch-action-bar-left {
+    justify-content: center;
+  }
+
+  .batch-action-bar-right {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .batch-action-button,
+  .batch-action-button-primary {
+    width: 100%;
+    justify-content: center;
+    padding: 12px 16px;
+    font-size: 13px;
+  }
+
+  /* Hide "Pilih Semua" button on mobile to save space */
+  .batch-action-button.select-all {
+    display: none;
+  }
+}
+
+/* Small Mobile Styles (max-width: 480px) */
+@media (max-width: 480px) {
+  .batch-action-bar {
+    padding: 12px;
+  }
+
+  .batch-action-bar-left {
+    font-size: 12px;
+  }
+
+  .batch-action-button,
+  .batch-action-button-primary {
+    padding: 10px 14px;
+    font-size: 12px;
+  }
+
+  /* Compact button text on very small screens */
+  .batch-action-button-text {
+    display: none;
+  }
+
+  .batch-action-button-text-short {
+    display: inline;
+  }
+}
+
+/* Progress Bar Mobile Styles */
+@media (max-width: 768px) {
+  .batch-progress-wrapper {
+    width: 100%;
+    margin-top: 8px;
+  }
+}
+
+/* Order List Header - Hide on mobile */
+@media (max-width: 768px) {
+  .order-list-header {
+    display: none;
+  }
+}
+
+/* Order Card - Mobile Responsive */
+@media (max-width: 768px) {
+  .order-card {
+    padding: 12px;
+  }
+
+  .order-card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .order-card-items {
+    flex-direction: column;
+  }
+
+  .order-card-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .order-card-item-details {
+    width: 100%;
+  }
+
+  .order-card-item-qty,
+  .order-card-item-total,
+  .order-card-item-status,
+  .order-card-item-shipping,
+  .order-card-item-action {
+    width: 100%;
+    text-align: left;
+    margin-top: 8px;
+  }
+}
+
+/* Batch Progress Modal - Mobile Responsive */
+@media (max-width: 768px) {
+  .batch-progress-modal {
+    max-height: 80vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .batch-progress-items {
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+}
+
+/* Ensure scrollability on mobile */
+@media (max-width: 768px) {
+  .wms-page {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .page-content {
+    padding: 12px;
+  }
+}
+
+/* Touch-friendly spacing */
+@media (max-width: 768px) {
+  button,
+  input[type="checkbox"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+  }
+}

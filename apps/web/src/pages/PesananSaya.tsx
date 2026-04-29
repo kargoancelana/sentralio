@@ -2,22 +2,29 @@ import { useState } from 'react';
 import { useToast } from '../components/ui/Toast';
 import { useApi } from '../hooks/useApi';
 import { api } from '../lib/api';
-import { Package, RefreshCw, Search, Truck } from 'lucide-react';
+import { Package, RefreshCw, Search, Truck, Loader2, Printer } from 'lucide-react';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale/id';
+import { PrintLabelButton } from '../components/shared/PrintLabelButton';
+import { ShipmentProgressDialog, BatchShipmentProgressDialog } from '../components/shared/ShipmentProgressDialog';
+import { SyncStatusIndicator } from '../components/shared/SyncStatusIndicator';
+import { getBatchSummaryMessage } from '../utils/label-errors';
+import { openPDFsInSingleTab } from '../utils/pdf-merge';
+import './PesananSaya.css';
 
 /* ── Status mapping ── */
 type MainFilter = 'UNPAID' | 'NEED_SHIP' | 'SHIPPED' | 'COMPLETED';
 type SubFilter  = 'ALL' | 'READY_TO_SHIP' | 'PROCESSED';
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
-  UNPAID:        { label: 'Belum Bayar',    cls: 'badge-orange' },
-  READY_TO_SHIP: { label: 'Perlu Diproses', cls: 'badge-primary' },
-  PROCESSED:     { label: 'Telah Diproses', cls: 'badge-purple' },
-  SHIPPED:       { label: 'Dikirim',        cls: 'badge-green' },
-  COMPLETED:     { label: 'Selesai',        cls: 'badge-green' },
-  IN_CANCEL:     { label: 'Dibatalkan',     cls: 'badge-red' },
-  CANCELLED:     { label: 'Dibatalkan',     cls: 'badge-red' },
+  UNPAID:              { label: 'Belum Bayar',    cls: 'badge-orange' },
+  READY_TO_SHIP:       { label: 'Perlu Diproses', cls: 'badge-primary' },
+  PROCESSED:           { label: 'Telah Diproses', cls: 'badge-purple' },
+  SHIPPED:             { label: 'Dikirim',        cls: 'badge-green' },
+  TO_CONFIRM_RECEIVE:  { label: 'Dikirim',        cls: 'badge-green' },
+  COMPLETED:           { label: 'Selesai',        cls: 'badge-green' },
+  IN_CANCEL:           { label: 'Dibatalkan',     cls: 'badge-red' },
+  CANCELLED:           { label: 'Dibatalkan',     cls: 'badge-red' },
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -32,24 +39,68 @@ const formatDate = (dateStr: string) => {
 };
 
 /* ── ORDER CARD ── */
-function OrderCard({ order }: { order: any }) {
+function OrderCard({ 
+  order, 
+  onShipOrder, 
+  selectedOrders,
+  onToggleSelection,
+  selectedLabelOrders,
+  onToggleLabelSelection,
+  batchPrinting
+}: { 
+  order: any; 
+  onShipOrder: (orderSn: string) => void;
+  selectedOrders: string[];
+  onToggleSelection: (orderSn: string) => void;
+  selectedLabelOrders: string[];
+  onToggleLabelSelection: (orderSn: string) => void;
+  batchPrinting: boolean;
+}) {
   const items: any[] = order.items || [];
   const hasItems = items.length > 0;
+  const isSelected = selectedOrders.includes(order.orderSn);
+  const isReadyToShip = order.orderStatus === 'READY_TO_SHIP';
+  const isLabelSelected = selectedLabelOrders.includes(order.orderSn);
+  const isProcessed = order.orderStatus === 'PROCESSED';
 
   return (
     <div style={{
       background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
       marginBottom: 10, overflow: 'hidden',
     }}>
-      {/* Header: tanggal kiri, no pesanan kanan */}
+      {/* Header: checkbox + tanggal kiri, no pesanan kanan */}
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         padding: '7px 16px', borderBottom: '1px solid var(--bg3)',
         background: 'var(--bg2)',
       }}>
-        <span style={{ fontSize: 11.5, color: 'var(--text4)' }}>
-          {formatDate(order.createTime)}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {isReadyToShip && (
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={() => onToggleSelection(order.orderSn)}
+              style={{ width: 14, height: 14, cursor: 'pointer' }}
+            />
+          )}
+          {isProcessed && (
+            <input
+              type="checkbox"
+              checked={isLabelSelected}
+              onChange={() => onToggleLabelSelection(order.orderSn)}
+              disabled={batchPrinting}
+              style={{
+                width: 14,
+                height: 14,
+                cursor: batchPrinting ? 'not-allowed' : 'pointer',
+                opacity: batchPrinting ? 0.6 : 1,
+              }}
+            />
+          )}
+          <span style={{ fontSize: 11.5, color: 'var(--text4)' }}>
+            {formatDate(order.createTime)}
+          </span>
+        </div>
         <span style={{ fontSize: 11.5, fontFamily: 'monospace', color: 'var(--text3)', userSelect: 'all' }}>
           #{order.orderSn}
         </span>
@@ -101,19 +152,49 @@ function OrderCard({ order }: { order: any }) {
                 {idx === 0 ? <StatusBadge status={order.orderStatus} /> : null}
               </div>
 
-              {/* Jasa kirim: hanya di row pertama */}
-              <div style={{ minWidth: 80, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+              {/* Jasa kirim + tracking number: hanya di row pertama */}
+              <div style={{ minWidth: 100, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                 {idx === 0 ? (
-                  order.shippingCarrier ? (
+                  order.shippingCarrier || order.trackingNumber ? (
                     <>
                       <Truck size={13} style={{ color: 'var(--text3)' }} />
-                      <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, textAlign: 'center' }}>
-                        {order.shippingCarrier}
-                      </span>
+                      {order.shippingCarrier && (
+                        <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, textAlign: 'center' }}>
+                          {order.shippingCarrier}
+                        </span>
+                      )}
+                      {order.trackingNumber && (
+                        <span style={{ fontSize: 10, color: 'var(--text4)', fontFamily: 'monospace', textAlign: 'center', marginTop: 2 }}>
+                          {order.trackingNumber}
+                        </span>
+                      )}
                     </>
                   ) : (
                     <span style={{ fontSize: 11.5, color: 'var(--text4)' }}>—</span>
                   )
+                ) : null}
+              </div>
+
+              {/* Action button: hanya di row pertama */}
+              <div style={{ minWidth: 120, textAlign: 'center' }}>
+                {idx === 0 && order.orderStatus === 'READY_TO_SHIP' ? (
+                  <button
+                    onClick={() => onShipOrder(order.orderSn)}
+                    style={{
+                      padding: '6px 12px', borderRadius: 6, border: 'none',
+                      fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                      background: 'var(--accent)', color: 'var(--accent-f)',
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      justifyContent: 'center', transition: 'all .15s',
+                    }}
+                  >
+                    <Truck size={12} />
+                    Atur Pengiriman
+                  </button>
+                ) : idx === 0 && order.orderStatus === 'PROCESSED' ? (
+                  <PrintLabelButton orderSn={order.orderSn} />
+                ) : idx === 0 ? (
+                  <span style={{ fontSize: 11.5, color: 'var(--text4)' }}>—</span>
                 ) : null}
               </div>
             </div>
@@ -129,9 +210,42 @@ function OrderCard({ order }: { order: any }) {
             <div style={{ minWidth: 110, textAlign: 'center' }}>
               <StatusBadge status={order.orderStatus} />
             </div>
-            <div style={{ minWidth: 80, textAlign: 'center' }}>
-              {order.shippingCarrier ? (
-                <span style={{ fontSize: 11.5, color: 'var(--text3)', fontWeight: 500 }}>{order.shippingCarrier}</span>
+            <div style={{ minWidth: 100, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+              {order.shippingCarrier || order.trackingNumber ? (
+                <>
+                  <Truck size={13} style={{ color: 'var(--text3)' }} />
+                  {order.shippingCarrier && (
+                    <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, textAlign: 'center' }}>
+                      {order.shippingCarrier}
+                    </span>
+                  )}
+                  {order.trackingNumber && (
+                    <span style={{ fontSize: 10, color: 'var(--text4)', fontFamily: 'monospace', textAlign: 'center', marginTop: 2 }}>
+                      {order.trackingNumber}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span style={{ fontSize: 11.5, color: 'var(--text4)' }}>—</span>
+              )}
+            </div>
+            <div style={{ minWidth: 120, textAlign: 'center' }}>
+              {order.orderStatus === 'READY_TO_SHIP' ? (
+                <button
+                  onClick={() => onShipOrder(order.orderSn)}
+                  style={{
+                    padding: '6px 12px', borderRadius: 6, border: 'none',
+                    fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    background: 'var(--accent)', color: 'var(--accent-f)',
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    justifyContent: 'center', transition: 'all .15s',
+                  }}
+                >
+                  <Truck size={12} />
+                  Atur Pengiriman
+                </button>
+              ) : order.orderStatus === 'PROCESSED' ? (
+                <PrintLabelButton orderSn={order.orderSn} />
               ) : (
                 <span style={{ fontSize: 11.5, color: 'var(--text4)' }}>—</span>
               )}
@@ -150,11 +264,26 @@ export function PesananSaya() {
   const toast = useToast();
   const { data: ordersData, loading, refetch } = useApi(() => api.orderList(), []);
   const [syncing, setSyncing]         = useState(false);
-  const [mainFilter, setMainFilter]   = useState<MainFilter>('NEED_SHIP');   // default: Perlu Dikirim
+  const [mainFilter, setMainFilter]   = useState<MainFilter>('NEED_SHIP');
   const [subFilter, setSubFilter]     = useState<SubFilter>('ALL');
   const [search, setSearch]           = useState('');
+  
+  // Batch selection state (for shipment)
+  const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
+
+  // Batch label printing state (for PROCESSED orders)
+  const [selectedLabelOrders, setSelectedLabelOrders] = useState<string[]>([]);
+  const [batchPrinting, setBatchPrinting] = useState(false);
 
   const [syncProgress, setSyncProgress] = useState<{ total: number, page: number } | null>(null);
+
+  // Unified shipment progress dialog state
+  const [showShipDialog, setShowShipDialog] = useState(false);
+  const [shipDialogOrderSn, setShipDialogOrderSn] = useState<string | null>(null);
+
+  // Batch shipment progress dialog state
+  const [showBatchShipDialog, setShowBatchShipDialog] = useState(false);
+  const [batchShipDialogOrderSns, setBatchShipDialogOrderSns] = useState<string[]>([]);
 
   const handleSync = async () => {
     setSyncing(true);
@@ -165,16 +294,24 @@ export function PesananSaya() {
     let totalSynced = 0;
     let pageCount = 1;
     let currentShopIndex = 0;
+    
+    // Manual sync strategy:
+    // 1. Fetch last 60 days to ensure we catch all recent orders
+    // 2. Use create_time (not update_time) because Shopee API doesn't reliably return
+    //    orders by update_time when status changes (e.g., READY_TO_SHIP → SHIPPED)
+    // 3. Fetch all statuses to ensure complete data
+    const daysBack = 60; // Fetch last 60 days for manual sync (catch all recent orders)
+    const orderStatusFilter = undefined; // Fetch all statuses
 
     try {
       while (true) {
-        const res: any = await api.orderSync(undefined, 15, currentCursor, currentShopIndex);
+        const res: any = await api.orderSync(undefined, daysBack, currentCursor, currentShopIndex, orderStatusFilter);
         const fetched = res.data?.fetched || 0;
         totalSynced += fetched;
         setSyncProgress({ total: totalSynced, page: pageCount });
         
         if (!res.data?.has_more) {
-          toast(`Berhasil menarik total ${totalSynced} pesanan`, 'success');
+          toast(`Berhasil menarik total ${totalSynced} pesanan (${daysBack} hari terakhir)`, 'success');
           break;
         }
         
@@ -192,6 +329,132 @@ export function PesananSaya() {
     }
   };
 
+  const handleShipOrder = (orderSn: string) => {
+    // Open unified shipment progress dialog — no blocking, all happens inside modal
+    setShipDialogOrderSn(orderSn);
+    setShowShipDialog(true);
+  };
+
+  // Batch selection functions (for shipment)
+  const toggleOrderSelection = (orderSn: string) => {
+    setSelectedOrders(prev => 
+      prev.includes(orderSn) 
+        ? prev.filter(sn => sn !== orderSn)
+        : [...prev, orderSn]
+    );
+  };
+
+  // Batch label selection functions (for PROCESSED orders)
+  const toggleLabelSelection = (orderSn: string) => {
+    setSelectedLabelOrders(prev => 
+      prev.includes(orderSn) 
+        ? prev.filter(sn => sn !== orderSn)
+        : [...prev, orderSn]
+    );
+  };
+
+  const selectAllReadyToShip = () => {
+    const readyToShipOrders = filtered.filter(o => o.orderStatus === 'READY_TO_SHIP');
+    const allSelected = readyToShipOrders.every(o => selectedOrders.includes(o.orderSn));
+    
+    if (allSelected) {
+      // Deselect all ready to ship orders
+      setSelectedOrders(prev => prev.filter(sn => !readyToShipOrders.some(o => o.orderSn === sn)));
+    } else {
+      // Select all ready to ship orders
+      const newSelections = readyToShipOrders.map(o => o.orderSn);
+      setSelectedOrders(prev => [...new Set([...prev, ...newSelections])]);
+    }
+  };
+
+  const selectAllProcessed = () => {
+    const processedOrders = filtered.filter(o => o.orderStatus === 'PROCESSED');
+    const allSelected = processedOrders.every(o => selectedLabelOrders.includes(o.orderSn));
+    
+    if (allSelected) {
+      // Deselect all processed orders
+      setSelectedLabelOrders(prev => prev.filter(sn => !processedOrders.some(o => o.orderSn === sn)));
+    } else {
+      // Select all processed orders
+      const newSelections = processedOrders.map(o => o.orderSn);
+      setSelectedLabelOrders(prev => [...new Set([...prev, ...newSelections])]);
+    }
+  };
+
+  const clearSelection = () => {
+    setSelectedOrders([]);
+  };
+
+  const clearLabelSelection = () => {
+    setSelectedLabelOrders([]);
+  };
+
+  const handleBatchShip = () => {
+    if (selectedOrders.length === 0) return;
+    // Open batch shipment progress dialog — everything happens inside the modal
+    setBatchShipDialogOrderSns([...selectedOrders]);
+    setShowBatchShipDialog(true);
+    clearSelection();
+  };
+
+  const handleBatchPrintLabels = async () => {
+    if (selectedLabelOrders.length === 0) return;
+    
+    setBatchPrinting(true);
+    toast('Mengambil semua label...', 'info');
+    
+    try {
+      // Call batch API to get all labels at once (FAST!)
+      const batchResult = await api.orderLabelsBatch(selectedLabelOrders);
+      
+      if (batchResult.success && batchResult.data) {
+        const { results, total, successful, failed } = batchResult.data;
+        
+        // Filter successful labels
+        const successfulLabels = results
+          .filter(r => r.success && r.url)
+          .map(r => ({
+            orderSn: r.orderSn,
+            url: r.url!,
+            format: r.format || 'pdf'
+          }));
+        
+        if (successfulLabels.length > 0) {
+          try {
+            // Open all labels in single merged PDF
+            const pdfUrls = successfulLabels.map(l => l.url);
+            const orderSns = successfulLabels.map(l => l.orderSn);
+            
+            await openPDFsInSingleTab(pdfUrls, orderSns);
+            
+            toast(`Membuka ${successfulLabels.length} label`, 'success');
+          } catch (openError: any) {
+            console.error('[PesananSaya] Error opening batch labels:', openError);
+            toast(openError.message || 'Gagal membuka tab label. Periksa popup blocker browser Anda.', 'error');
+          }
+        } else {
+          toast('Tidak ada label yang berhasil diambil', 'error');
+        }
+        
+        // Show summary
+        const summaryMessage = getBatchSummaryMessage(successful, failed, total);
+        if (failed > 0) {
+          toast(summaryMessage, 'warn');
+        }
+      } else {
+        toast('Gagal mengambil label batch', 'error');
+      }
+      
+      clearLabelSelection();
+      
+    } catch (err: any) {
+      const errorInfo = mapLabelError(err);
+      toast(errorInfo.message || 'Terjadi kesalahan saat memproses batch cetak label', 'error');
+    } finally {
+      setBatchPrinting(false);
+    }
+  };
+
   const handleMainFilter = (f: MainFilter) => {
     setMainFilter(f);
     if (f !== 'NEED_SHIP') setSubFilter('ALL');
@@ -203,20 +466,29 @@ export function PesananSaya() {
 
   const orders: any[] = ordersData?.data || [];
 
-  // Counts
-  const countUnpaid    = orders.filter(o => o.orderStatus === 'UNPAID').length;
-  const countNeedShip  = orders.filter(o => ['READY_TO_SHIP', 'PROCESSED'].includes(o.orderStatus)).length;
-  const countRts       = orders.filter(o => o.orderStatus === 'READY_TO_SHIP').length;
-  const countProcessed = orders.filter(o => o.orderStatus === 'PROCESSED').length;
-  const countShipped   = orders.filter(o => ['SHIPPED', 'IN_CANCEL'].includes(o.orderStatus)).length;
-  const countCompleted = orders.filter(o => o.orderStatus === 'COMPLETED').length;
+  // Filter out test_buyer from all counts and displays
+  const ordersWithoutTest = orders.filter(o => {
+    // Exclude test_buyer from READY_TO_SHIP
+    if (o.orderStatus === 'READY_TO_SHIP' && (o.buyerUsername || '').toLowerCase().includes('test_buyer')) {
+      return false;
+    }
+    return true;
+  });
 
-  // Filter logic
-  const filtered = orders.filter(o => {
+  // Counts - use filtered orders
+  const countUnpaid    = ordersWithoutTest.filter(o => o.orderStatus === 'UNPAID').length;
+  const countNeedShip  = ordersWithoutTest.filter(o => ['READY_TO_SHIP', 'PROCESSED'].includes(o.orderStatus)).length;
+  const countRts       = ordersWithoutTest.filter(o => o.orderStatus === 'READY_TO_SHIP').length;
+  const countProcessed = ordersWithoutTest.filter(o => o.orderStatus === 'PROCESSED').length;
+  const countShipped   = ordersWithoutTest.filter(o => ['SHIPPED', 'TO_CONFIRM_RECEIVE', 'IN_CANCEL'].includes(o.orderStatus)).length;
+  const countCompleted = ordersWithoutTest.filter(o => o.orderStatus === 'COMPLETED').length;
+
+  // Filter logic - use ordersWithoutTest as base
+  const filtered = ordersWithoutTest.filter(o => {
     // Main filter
     let matchMain = false;
     if (mainFilter === 'UNPAID')    matchMain = o.orderStatus === 'UNPAID';
-    if (mainFilter === 'SHIPPED')   matchMain = ['SHIPPED', 'IN_CANCEL'].includes(o.orderStatus);
+    if (mainFilter === 'SHIPPED')   matchMain = ['SHIPPED', 'TO_CONFIRM_RECEIVE', 'IN_CANCEL'].includes(o.orderStatus);
     if (mainFilter === 'COMPLETED') matchMain = o.orderStatus === 'COMPLETED';
     if (mainFilter === 'NEED_SHIP') {
       if (subFilter === 'ALL')           matchMain = ['READY_TO_SHIP', 'PROCESSED'].includes(o.orderStatus);
@@ -239,6 +511,7 @@ export function PesananSaya() {
           <p className="page-subtitle">Kelola pesanan dari toko Shopee Anda</p>
         </div>
         <div className="page-actions">
+          <SyncStatusIndicator />
           <button className="btn btn-shopee" onClick={handleSync} disabled={syncing}>
             {syncing ? <RefreshCw size={14} className="spin" /> : <RefreshCw size={14} />}
             {syncing ? `Menarik... (Hal ${syncProgress?.page || 1})` : 'Tarik Pesanan'}
@@ -343,6 +616,102 @@ export function PesananSaya() {
         </div>
       )}
 
+
+      {/* ── BATCH ACTIONS (Shipment) ── */}
+      {selectedOrders.length > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '12px 16px', marginBottom: 16,
+          background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+        }}>
+          <span style={{ fontSize: 13, color: 'var(--text2)', fontWeight: 500 }}>
+            {selectedOrders.length} pesanan dipilih
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              onClick={clearSelection}
+              style={{
+                padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)',
+                fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                background: 'var(--bg)', color: 'var(--text3)',
+              }}
+            >
+              Batal
+            </button>
+            <button
+              onClick={() => handleBatchShip()}
+              style={{
+                padding: '6px 16px', borderRadius: 6, border: 'none',
+                fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                background: 'var(--accent)', color: 'var(--accent-f)',
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              <Truck size={12} />
+              Atur Pengiriman ({selectedOrders.length})
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── BATCH ACTIONS (Label Printing) ── */}
+      {selectedLabelOrders.length > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '12px 16px', marginBottom: 16,
+          background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+        }}>
+          <span style={{ fontSize: 13, color: 'var(--text2)', fontWeight: 500 }}>
+              {selectedLabelOrders.length} pesanan dipilih
+            </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              onClick={selectAllProcessed}
+              disabled={batchPrinting}
+              style={{
+                padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)',
+                fontSize: 12, fontWeight: 500, cursor: batchPrinting ? 'not-allowed' : 'pointer',
+                background: 'var(--bg)', color: 'var(--text3)',
+                opacity: batchPrinting ? 0.6 : 1,
+              }}
+            >
+              Pilih Semua
+            </button>
+            <button
+              onClick={clearLabelSelection}
+              disabled={batchPrinting}
+              style={{
+                padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)',
+                fontSize: 12, fontWeight: 500, cursor: batchPrinting ? 'not-allowed' : 'pointer',
+                background: 'var(--bg)', color: 'var(--text3)',
+                opacity: batchPrinting ? 0.6 : 1,
+              }}
+            >
+              Batal
+            </button>
+            <button
+              onClick={handleBatchPrintLabels}
+              disabled={batchPrinting}
+              style={{
+                padding: '6px 16px', borderRadius: 6, border: 'none',
+                fontSize: 12, fontWeight: 600, cursor: batchPrinting ? 'not-allowed' : 'pointer',
+                background: batchPrinting ? 'var(--bg3)' : 'var(--accent)',
+                color: batchPrinting ? 'var(--text4)' : 'var(--accent-f)',
+                display: 'flex', alignItems: 'center', gap: 6,
+                opacity: batchPrinting ? 0.6 : 1,
+              }}
+            >
+              {batchPrinting ? (
+                <Loader2 size={12} className="spin" />
+              ) : (
+                <Printer size={12} />
+              )}
+              Cetak Label Batch ({selectedLabelOrders.length})
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── ORDER LIST ── */}
       {filtered.length === 0 ? (
         <div className="empty-state">
@@ -362,15 +731,53 @@ export function PesananSaya() {
             background: 'var(--bg3)',
             borderRadius: 6,
           }}>
-            <div style={{ flex: 1 }}>Pembeli &amp; Produk</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+              {countRts > 0 && (mainFilter === 'NEED_SHIP' && (subFilter === 'ALL' || subFilter === 'READY_TO_SHIP')) && (
+                <input
+                  type="checkbox"
+                  checked={filtered.filter(o => o.orderStatus === 'READY_TO_SHIP').length > 0 && 
+                           filtered.filter(o => o.orderStatus === 'READY_TO_SHIP').every(o => selectedOrders.includes(o.orderSn))}
+                  onChange={selectAllReadyToShip}
+                  style={{ width: 12, height: 12, cursor: 'pointer' }}
+                  title="Pilih semua pesanan yang perlu diproses"
+                />
+              )}
+              {countProcessed > 0 && (mainFilter === 'NEED_SHIP' && (subFilter === 'ALL' || subFilter === 'PROCESSED')) && (
+                <input
+                  type="checkbox"
+                  checked={filtered.filter(o => o.orderStatus === 'PROCESSED').length > 0 && 
+                           filtered.filter(o => o.orderStatus === 'PROCESSED').every(o => selectedLabelOrders.includes(o.orderSn))}
+                  onChange={selectAllProcessed}
+                  disabled={batchPrinting}
+                  style={{
+                    width: 12,
+                    height: 12,
+                    cursor: batchPrinting ? 'not-allowed' : 'pointer',
+                    opacity: batchPrinting ? 0.6 : 1,
+                  }}
+                  title="Pilih semua pesanan yang sudah diproses"
+                />
+              )}
+              <span>Pembeli &amp; Produk</span>
+            </div>
             <div style={{ minWidth: 40, textAlign: 'center' }}>Qty</div>
             <div style={{ minWidth: 100, textAlign: 'right' }}>Total</div>
             <div style={{ minWidth: 110, textAlign: 'center' }}>Status</div>
             <div style={{ minWidth: 80, textAlign: 'center' }}>Ekspedisi</div>
+            <div style={{ minWidth: 120, textAlign: 'center' }}>Aksi</div>
           </div>
 
           {filtered.map((order: any) => (
-            <OrderCard key={order.id} order={order} />
+            <OrderCard 
+              key={order.id} 
+              order={order} 
+              onShipOrder={handleShipOrder}
+              selectedOrders={selectedOrders}
+              onToggleSelection={toggleOrderSelection}
+              selectedLabelOrders={selectedLabelOrders}
+              onToggleLabelSelection={toggleLabelSelection}
+              batchPrinting={batchPrinting}
+            />
           ))}
 
           <div style={{ padding: '12px 0', textAlign: 'center', fontSize: 12, color: 'var(--text4)' }}>
@@ -378,6 +785,28 @@ export function PesananSaya() {
           </div>
         </div>
       )}
+      
+      {/* ── SHIPMENT PROGRESS DIALOG (Single) ── */}
+      <ShipmentProgressDialog
+        isOpen={showShipDialog}
+        orderSn={shipDialogOrderSn || ''}
+        onClose={() => {
+          setShowShipDialog(false);
+          setShipDialogOrderSn(null);
+        }}
+        onComplete={() => refetch()}
+      />
+
+      {/* ── SHIPMENT PROGRESS DIALOG (Batch) ── */}
+      <BatchShipmentProgressDialog
+        isOpen={showBatchShipDialog}
+        orderSns={batchShipDialogOrderSns}
+        onClose={() => {
+          setShowBatchShipDialog(false);
+          setBatchShipDialogOrderSns([]);
+        }}
+        onComplete={() => refetch()}
+      />
     </div>
   );
 }

@@ -1,0 +1,1 @@
+ALTER TABLE `shopee_orders` ADD `tracking_number` varchar(100);

@@ -76,6 +76,7 @@ export const shopeeOrders = mysqlTable("shopee_orders", {
   totalAmount: int("total_amount").notNull().default(0),
   buyerUsername: varchar("buyer_username", { length: 255 }),
   shippingCarrier: varchar("shipping_carrier", { length: 100 }),
+  trackingNumber: varchar("tracking_number", { length: 100 }),
   payTime: timestamp("pay_time"),
   createTime: timestamp("create_time").notNull(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -92,3 +93,32 @@ export const shopeeOrderItems = mysqlTable("shopee_order_items", {
   itemPrice: int("item_price").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+// Sync state table for background sync resilience
+export const syncState = mysqlTable("sync_state", {
+  id: int("id").primaryKey().autoincrement(),
+  jobName: varchar("job_name", { length: 100 }).notNull(),
+  shopId: int("shop_id").notNull(),
+  lastSyncTime: timestamp("last_sync_time").notNull(),
+  lastSyncEndTime: timestamp("last_sync_end_time").notNull(),
+  syncInProgress: int("sync_in_progress").notNull().default(0), // 0 = false, 1 = true (MySQL doesn't have boolean)
+  totalSynced: int("total_synced").notNull().default(0),
+  errors: int("errors").notNull().default(0),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  uniqJobShop: uniqueIndex("uniq_job_shop").on(t.jobName, t.shopId),
+}));
+
+// Label cache table for persistent label URL storage
+// Stores label URLs with expiry time to speed up re-printing
+export const labelCacheTable = mysqlTable("label_cache", {
+  id: int("id").primaryKey().autoincrement(),
+  orderSn: varchar("order_sn", { length: 100 }).notNull().unique(),
+  labelUrl: varchar("label_url", { length: 1000 }).notNull(),
+  format: varchar("format", { length: 10 }).notNull().default("pdf"),
+  trackingNumber: varchar("tracking_number", { length: 100 }),
+  expiresAt: timestamp("expires_at").notNull(), // Label URL expires after 24 hours
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => ({
+  uniqOrderSn: uniqueIndex("uniq_label_order_sn").on(t.orderSn),
+}));
