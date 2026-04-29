@@ -599,7 +599,7 @@ class BackgroundSyncService {
     }, intervalMs);
 
     this.activeJobs.set(jobName, intervalId);
-    console.log(`[background-sync] Scheduled job "${jobName}": Refresh stuck READY_TO_SHIP/PROCESSED/SHIPPED orders (every ${intervalMs / 1000}s)`);
+    console.log(`[background-sync] Scheduled job "${jobName}": Refresh stuck READY_TO_SHIP/PROCESSED/SHIPPED/TO_CONFIRM_RECEIVE orders (every ${intervalMs / 1000}s)`);
   }
 
   /**
@@ -630,7 +630,8 @@ class BackgroundSyncService {
           or(
             eq(shopeeOrders.orderStatus, 'READY_TO_SHIP'),
             eq(shopeeOrders.orderStatus, 'PROCESSED'),
-            eq(shopeeOrders.orderStatus, 'SHIPPED')
+            eq(shopeeOrders.orderStatus, 'SHIPPED'),
+            eq(shopeeOrders.orderStatus, 'TO_CONFIRM_RECEIVE')
           )
         );
 

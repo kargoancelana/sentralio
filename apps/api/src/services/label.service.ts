@@ -230,8 +230,9 @@ export async function getSingleLabel(orderSn: string): Promise<LabelResult> {
     
     console.log('[label-service] Starting complete Shopee workflow for order:', orderSn);
 
-    // Step 3a: Determine if order is already shipped (PROCESSED status)
-    const isAlreadyShipped = order.orderStatus === 'PROCESSED';
+    // Step 3a: Determine if order is already shipped
+    // PROCESSED, SHIPPED, TO_CONFIRM_RECEIVE are all already shipped — skip initLogistic & getShippingParameter
+    const isAlreadyShipped = ['PROCESSED', 'SHIPPED', 'TO_CONFIRM_RECEIVE'].includes(order.orderStatus);
 
     // Step 3b: Get shipping parameter to determine mode
     // SKIP for already PROCESSED orders - they don't need shipping parameter
@@ -356,21 +357,21 @@ export async function getSingleLabel(orderSn: string): Promise<LabelResult> {
     }
 
     // Step 3d: Get tracking number (ensure AWB exists)
-    let trackingInfo: any = null;
-    let trackingNumber: string | undefined;
+    // Skip API call if tracking number already available from DB or earlier fetch
+    let trackingNumber: string | undefined = order.trackingNumber || undefined;
     
-    try {
-      trackingInfo = await getTrackingNumber(shopId, orderSn);
-      
-      // Parse tracking number from response (Shopee returns it in response.response.tracking_number)
-      trackingNumber = trackingInfo?.response?.tracking_number 
-        || trackingInfo?.result?.tracking_number;
-      
-      if (trackingNumber) {
-        console.log('[label-service] Tracking number retrieved successfully:', trackingNumber);
+    if (trackingNumber) {
+      console.log('[label-service] Tracking number already available, skipping API call:', trackingNumber);
+    } else {
+      try {
+        const trackingInfo = await getTrackingNumber(shopId, orderSn);
         
-        // Update database if we got a new tracking number
-        if (!order.trackingNumber || order.trackingNumber !== trackingNumber) {
+        trackingNumber = trackingInfo?.response?.tracking_number 
+          || trackingInfo?.result?.tracking_number;
+        
+        if (trackingNumber) {
+          console.log('[label-service] Tracking number retrieved from API:', trackingNumber);
+          
           await db.update(shopeeOrders)
             .set({
               trackingNumber: trackingNumber,
@@ -379,15 +380,13 @@ export async function getSingleLabel(orderSn: string): Promise<LabelResult> {
             .where(eq(shopeeOrders.orderSn, orderSn));
           
           order.trackingNumber = trackingNumber;
-          console.log('[label-service] Tracking number updated in database');
+          console.log('[label-service] Tracking number saved to database');
+        } else {
+          console.warn('[label-service] No tracking number available from any source');
         }
-      } else {
-        console.warn('[label-service] No tracking number in response, using database value');
-        trackingNumber = order.trackingNumber || undefined;
+      } catch (trackingError: any) {
+        console.warn('[label-service] Could not get tracking number from API:', trackingError.message);
       }
-    } catch (trackingError: any) {
-      console.warn('[label-service] Could not get tracking number from API, using database value:', trackingError.message);
-      trackingNumber = order.trackingNumber || undefined;
     }
 
     // Step 3e: Get document parameters to determine correct document type
@@ -408,76 +407,116 @@ export async function getSingleLabel(orderSn: string): Promise<LabelResult> {
       console.warn('[label-service] Could not get shipping document parameter:', docParamError.message);
     }
 
-    // Step 3f: Create shipping document, then download
+    // Step 3f: Download or create shipping document
     let finalDocument: any = null;
     
-    console.log('[label-service] Using tracking number for label:', trackingNumber || 'NONE - THIS WILL LIKELY FAIL');
+    console.log('[label-service] Using tracking number for label:', trackingNumber || 'NONE');
     
-    if (!trackingNumber) {
-      console.error('[label-service] CRITICAL WARNING: No tracking number available. Label creation will likely fail.');
-    }
-    
-    try {
-      // CRITICAL FIX: Pass tracking_number to createShippingDocument
-      // This is REQUIRED for most logistics channels (SPX, etc)
-      await createShippingDocument(shopId, orderSn, documentType, packageNumber, trackingNumber);
-      console.log('[label-service] Shipping document creation initiated');
+    if (isAlreadyShipped) {
+      // ── FAST PATH: Order already shipped (PROCESSED/SHIPPED/TO_CONFIRM_RECEIVE)
+      // Label is almost certainly already created by Shopee after shipment.
+      // Try direct download FIRST to skip the expensive create+poll cycle (~10s savings).
+      console.log('[label-service] ⚡ Fast path: trying direct download first for already-shipped order');
       
-      // Poll get_shipping_document_result until READY (max 15 seconds for faster response)
-      let documentReady = false;
-      const maxAttempts = 5; // Reduced from 15 to 5 (10 seconds total)
-      
-      for (let attempts = 0; attempts < maxAttempts; attempts++) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        try {
-          // getShippingDocumentResult now only checks status, doesn't return document
-          await getShippingDocumentResult(shopId, orderSn, packageNumber);
-          console.log(`[label-service] Document ready after ${attempts + 1} attempts`);
-          documentReady = true;
-          break;
-        } catch (error: any) {
-          if (!error.message?.includes('belum tersedia')) throw error;
-          console.log(`[label-service] Document still processing, attempt ${attempts + 1}/${maxAttempts}`);
-        }
-      }
-
-      if (!documentReady) {
-        throw new Error('Timeout: Label pengiriman tidak siap setelah 10 detik.');
-      }
-
-      // Download the document
-      finalDocument = await downloadShippingDocument(shopId, orderSn, packageNumber, documentType);
-      console.log('[label-service] PDF document downloaded after create flow');
-
-    } catch (createError: any) {
-      // If create fails, the document might already exist (created by Shopee Seller Center 
-      // or automatically by Shopee's system). Try downloading directly.
-      const isTrackingInvalid = createError.message?.includes('tracking_number_invalid');
-      const isTimeout = createError.message?.includes('Timeout');
-      
-      if (isTrackingInvalid || isTimeout) {
-        console.log('[label-service] create_shipping_document failed, trying direct download as fallback...');
-        console.log('[label-service] Reason:', createError.message);
+      try {
+        finalDocument = await downloadShippingDocument(shopId, orderSn, packageNumber, documentType);
+        console.log('[label-service] ✅ Direct download succeeded — label already existed!');
+      } catch (downloadError: any) {
+        // Label doesn't exist yet (rare for shipped orders) — fallback to create+poll+download
+        console.log('[label-service] Direct download failed, falling back to create+poll:', downloadError.message);
         
         try {
-          // Try download directly - document may already exist
-          // MUST include shipping_document_type, package_number, AND tracking_number
-          finalDocument = await downloadShippingDocument(shopId, orderSn, packageNumber, documentType);
-          console.log('[label-service] Direct download succeeded - document already existed!');
-        } catch (downloadError: any) {
-          console.error('[label-service] Direct download also failed:', downloadError.message);
+          await createShippingDocument(shopId, orderSn, documentType, packageNumber, trackingNumber);
+          console.log('[label-service] Shipping document creation initiated (fallback)');
           
-          // Provide more helpful error message
+          // Poll with shorter interval (500ms instead of 2000ms)
+          let documentReady = false;
+          const maxAttempts = 10;
+          
+          for (let attempts = 0; attempts < maxAttempts; attempts++) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            try {
+              await getShippingDocumentResult(shopId, orderSn, packageNumber);
+              console.log(`[label-service] Document ready after ${attempts + 1} attempts (fallback)`);
+              documentReady = true;
+              break;
+            } catch (error: any) {
+              if (!error.message?.includes('belum tersedia')) throw error;
+              console.log(`[label-service] Document still processing, attempt ${attempts + 1}/${maxAttempts}`);
+            }
+          }
+          
+          if (!documentReady) {
+            throw new Error('Timeout: Label pengiriman tidak siap setelah polling.');
+          }
+          
+          finalDocument = await downloadShippingDocument(shopId, orderSn, packageNumber, documentType);
+          console.log('[label-service] PDF document downloaded after create+poll fallback');
+        } catch (createError: any) {
           const errorHint = !trackingNumber 
-            ? ' (Tracking number tidak tersedia - order mungkin belum di-ship oleh Shopee)'
+            ? ' (Tracking number tidak tersedia)'
             : !packageNumber
-            ? ' (Package number tidak tersedia - order mungkin belum di-package oleh Shopee)'
+            ? ' (Package number tidak tersedia)'
             : '';
           
-          throw new Error(`Gagal mencetak label${errorHint}. create: ${createError.message}. download: ${downloadError.message}`);
+          throw new Error(`Gagal mencetak label${errorHint}. download: ${downloadError.message}. create: ${createError.message}`);
         }
-      } else {
-        throw createError;
+      }
+    } else {
+      // ── STANDARD PATH: First-time shipment (creating label for the first time)
+      if (!trackingNumber) {
+        console.error('[label-service] CRITICAL WARNING: No tracking number available. Label creation will likely fail.');
+      }
+      
+      try {
+        await createShippingDocument(shopId, orderSn, documentType, packageNumber, trackingNumber);
+        console.log('[label-service] Shipping document creation initiated');
+        
+        // Poll with 500ms interval (was 2000ms)
+        let documentReady = false;
+        const maxAttempts = 10;
+        
+        for (let attempts = 0; attempts < maxAttempts; attempts++) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          try {
+            await getShippingDocumentResult(shopId, orderSn, packageNumber);
+            console.log(`[label-service] Document ready after ${attempts + 1} attempts`);
+            documentReady = true;
+            break;
+          } catch (error: any) {
+            if (!error.message?.includes('belum tersedia')) throw error;
+            console.log(`[label-service] Document still processing, attempt ${attempts + 1}/${maxAttempts}`);
+          }
+        }
+        
+        if (!documentReady) {
+          throw new Error('Timeout: Label pengiriman tidak siap setelah 5 detik.');
+        }
+        
+        finalDocument = await downloadShippingDocument(shopId, orderSn, packageNumber, documentType);
+        console.log('[label-service] PDF document downloaded after create flow');
+      } catch (createError: any) {
+        const isTrackingInvalid = createError.message?.includes('tracking_number_invalid');
+        const isTimeout = createError.message?.includes('Timeout');
+        
+        if (isTrackingInvalid || isTimeout) {
+          console.log('[label-service] create failed, trying direct download as fallback...');
+          
+          try {
+            finalDocument = await downloadShippingDocument(shopId, orderSn, packageNumber, documentType);
+            console.log('[label-service] Direct download succeeded - document already existed!');
+          } catch (downloadError: any) {
+            const errorHint = !trackingNumber 
+              ? ' (Tracking number tidak tersedia - order mungkin belum di-ship oleh Shopee)'
+              : !packageNumber
+              ? ' (Package number tidak tersedia - order mungkin belum di-package oleh Shopee)'
+              : '';
+            
+            throw new Error(`Gagal mencetak label${errorHint}. create: ${createError.message}. download: ${downloadError.message}`);
+          }
+        } else {
+          throw createError;
+        }
       }
     }
 
@@ -496,10 +535,6 @@ export async function getSingleLabel(orderSn: string): Promise<LabelResult> {
     let trackingNumberForLabel = 'Unknown';
     if (trackingNumber) {
       trackingNumberForLabel = trackingNumber;
-    } else if (trackingInfo?.response?.tracking_number) {
-      trackingNumberForLabel = trackingInfo.response.tracking_number;
-    } else if (trackingInfo?.result?.tracking_number) {
-      trackingNumberForLabel = trackingInfo.result.tracking_number;
     } else if (order.trackingNumber) {
       trackingNumberForLabel = order.trackingNumber;
     } else if (order.shippingCarrier) {
