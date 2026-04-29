@@ -155,8 +155,8 @@ export function ShipmentProgressDialog({ isOpen, orderSn, onClose, onComplete }:
     SHIPPING: { icon: <Loader2 size={20} className="spin" />, title: 'Memproses Pengiriman...', desc: 'Mengirim permintaan pengiriman ke Shopee' },
     FETCHING_TRACKING: { icon: <Loader2 size={20} className="spin" />, title: 'Mengambil Nomor Resi...', desc: 'Menunggu tracking number dari Shopee' },
     PREFETCHING_LABEL: { icon: <Loader2 size={20} className="spin" />, title: 'Menyiapkan Label...', desc: 'Mengunduh label pengiriman' },
-    READY: { icon: <CheckCircle2 size={20} style={{ color: '#16A34A' }} />, title: 'Pengiriman Berhasil!', desc: trackingNumber ? 'Label siap dicetak' : 'Tracking number belum tersedia, bisa diambil nanti' },
-    ERROR: { icon: <XCircle size={20} style={{ color: '#DC2626' }} />, title: 'Gagal Memproses', desc: error || '' },
+    READY: { icon: <CheckCircle2 size={20} style={{ color: 'var(--success)' }} />, title: 'Pengiriman Berhasil!', desc: trackingNumber ? 'Label siap dicetak' : 'Tracking number belum tersedia, bisa diambil nanti' },
+    ERROR: { icon: <XCircle size={20} style={{ color: 'var(--error)' }} />, title: 'Gagal Memproses', desc: error || '' },
   };
 
   const info = stepInfo[step];
@@ -257,10 +257,10 @@ export function ShipmentProgressDialog({ isOpen, orderSn, onClose, onComplete }:
         {/* ── ERROR ── */}
         {step === 'ERROR' && (
           <div style={{
-            padding: 14, background: '#FEF2F2', borderRadius: 8,
-            border: '1px solid #FECACA', marginBottom: 4,
+            padding: 14, background: 'var(--bg2)', borderRadius: 8,
+            border: '1px solid var(--border)', marginBottom: 4,
           }}>
-            <p style={{ margin: 0, fontSize: 13, color: '#991B1B', lineHeight: 1.5 }}>{error}</p>
+            <p style={{ margin: 0, fontSize: 13, color: 'var(--error)', lineHeight: 1.5 }}>{error}</p>
           </div>
         )}
 
@@ -468,7 +468,29 @@ export function BatchShipmentProgressDialog({ isOpen, orderSns, onClose, onCompl
   const readyCount = orders.filter(o => o.step === 'READY' && o.trackingNumber).length;
   const errorCount = orders.filter(o => o.step === 'ERROR').length;
   const doneCount = orders.filter(o => o.step === 'READY').length;
-  const totalShipped = orders.filter(o => o.step !== 'PENDING' && o.step !== 'ERROR').length;
+  const shippingCount = orders.filter(o => o.step === 'SHIPPING').length;
+  const trackingCount = orders.filter(o => o.step === 'FETCHING_TRACKING').length;
+
+  // Determine batch-level step for progress bar (same as single dialog)
+  type BatchStep = 'METHOD_SELECT' | 'SHIPPING' | 'FETCHING_TRACKING' | 'READY' | 'ERROR';
+  let batchStep: BatchStep = 'METHOD_SELECT';
+  if (!methodSelected) batchStep = 'METHOD_SELECT';
+  else if (shippingCount > 0) batchStep = 'SHIPPING';
+  else if (trackingCount > 0 || (isRunning && doneCount < orderSns.length)) batchStep = 'FETCHING_TRACKING';
+  else if (!isRunning) batchStep = 'READY';
+
+  const progressSteps = ['SHIPPING', 'FETCHING_TRACKING', 'READY'];
+  const currentIdx = progressSteps.indexOf(batchStep);
+
+  // Step info — same structure as single dialog
+  const batchStepInfo: Record<string, { icon: React.ReactNode; title: string; desc: string }> = {
+    METHOD_SELECT: { icon: <Truck size={20} />, title: 'Atur Pengiriman Batch', desc: `${orderSns.length} pesanan akan diproses. Pilih metode pengiriman:` },
+    SHIPPING: { icon: <Loader2 size={20} className="spin" />, title: 'Memproses Pengiriman...', desc: `Mengirim ${orderSns.length} pesanan ke Shopee` },
+    FETCHING_TRACKING: { icon: <Loader2 size={20} className="spin" />, title: 'Mengambil Nomor Resi...', desc: 'Menunggu tracking number dari Shopee' },
+    READY: { icon: <CheckCircle2 size={20} style={{ color: 'var(--success)' }} />, title: `Batch Selesai`, desc: `${doneCount - errorCount} berhasil${errorCount > 0 ? `, ${errorCount} gagal` : ''}` },
+    ERROR: { icon: <XCircle size={20} style={{ color: 'var(--error)' }} />, title: 'Gagal Memproses', desc: '' },
+  };
+  const info = batchStepInfo[batchStep];
 
   return (
     <div style={{
@@ -478,33 +500,47 @@ export function BatchShipmentProgressDialog({ isOpen, orderSns, onClose, onCompl
     }}>
       <div style={{
         background: 'var(--bg)', borderRadius: 'var(--radius)', padding: 24,
-        maxWidth: 560, width: '100%', maxHeight: '80vh', overflow: 'auto',
+        maxWidth: 500, width: '100%', maxHeight: '80vh',
         boxShadow: '0 10px 40px rgba(0,0,0,0.2)', border: '1px solid var(--border)',
+        display: 'flex', flexDirection: 'column',
       }}>
-        {/* Header */}
+        {/* Header — same as single */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--text1)' }}>
-            {!methodSelected ? 'Atur Pengiriman Batch' :
-             isRunning ? 'Memproses Pengiriman...' :
-             `Batch Selesai — ${doneCount}/${orderSns.length}`}
-          </h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ color: 'var(--accent)' }}>{info.icon}</span>
+            <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--text1)' }}>{info.title}</h3>
+          </div>
           <button onClick={handleSkip} style={{
             background: 'none', border: 'none', cursor: 'pointer', padding: 4,
             display: 'flex', alignItems: 'center', color: 'var(--text3)',
-          }}>
+          }} title="Tutup">
             <X size={20} />
           </button>
         </div>
 
-        <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--text3)' }}>
-          {!methodSelected
-            ? `${orderSns.length} pesanan akan diproses. Pilih metode pengiriman:`
-            : isRunning
-            ? 'Sedang memproses...'
-            : `${doneCount - errorCount} berhasil, ${errorCount} gagal`}
+        {/* Batch count badge */}
+        <div style={{ fontSize: 12, color: 'var(--text4)', marginBottom: 12 }}>
+          {orderSns.length} pesanan dipilih
+        </div>
+
+        {/* Progress bar — same as single */}
+        {methodSelected && (
+          <div style={{ display: 'flex', gap: 4, marginBottom: 20 }}>
+            {progressSteps.map((s, i) => (
+              <div key={s} style={{
+                flex: 1, height: 4, borderRadius: 2,
+                background: i <= currentIdx ? 'var(--accent)' : 'var(--bg3)',
+                transition: 'background .3s ease',
+              }} />
+            ))}
+          </div>
+        )}
+
+        <p style={{ margin: '0 0 16px', fontSize: 14, color: 'var(--text3)', lineHeight: 1.5 }}>
+          {info.desc}
         </p>
 
-        {/* Method select */}
+        {/* ── METHOD SELECT ── */}
         {!methodSelected && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <MethodButton emoji="🚚" label="Pickup" desc="Kurir mengambil dari alamat Anda" onClick={() => runBatchFlow('pickup')} />
@@ -512,9 +548,24 @@ export function BatchShipmentProgressDialog({ isOpen, orderSns, onClose, onCompl
           </div>
         )}
 
-        {/* Order progress list */}
+        {/* ── LOADING INDICATOR ── */}
+        {methodSelected && isRunning && (
+          <div style={{
+            padding: 16, background: 'var(--bg2)', borderRadius: 8,
+            display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12,
+          }}>
+            <Loader2 size={18} className="spin" style={{ color: 'var(--accent)', flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: 'var(--text2)' }}>
+              {shippingCount > 0 && `Mengirim pesanan ke Shopee... (${doneCount + errorCount + shippingCount}/${orderSns.length})`}
+              {shippingCount === 0 && trackingCount > 0 && `Mengambil tracking number... (${readyCount}/${doneCount + trackingCount})`}
+              {shippingCount === 0 && trackingCount === 0 && 'Menyiapkan label...'}
+            </span>
+          </div>
+        )}
+
+        {/* ── ORDER LIST with tracking numbers ── */}
         {methodSelected && (
-          <div style={{ maxHeight: 320, overflow: 'auto', marginBottom: 16 }}>
+          <div style={{ maxHeight: 280, overflow: 'auto', marginBottom: 16 }}>
             {orders.map(o => (
               <div key={o.orderSn} style={{
                 padding: '10px 12px', background: 'var(--bg2)', borderRadius: 6,
@@ -529,7 +580,7 @@ export function BatchShipmentProgressDialog({ isOpen, orderSns, onClose, onCompl
                     </div>
                   )}
                   {o.error && (
-                    <div style={{ fontSize: 12, color: '#DC2626', marginTop: 2 }}>{o.error}</div>
+                    <div style={{ fontSize: 12, color: 'var(--error)', marginTop: 2 }}>{o.error}</div>
                   )}
                 </div>
                 <div>
@@ -537,16 +588,16 @@ export function BatchShipmentProgressDialog({ isOpen, orderSns, onClose, onCompl
                   {(o.step === 'SHIPPING' || o.step === 'FETCHING_TRACKING') && (
                     <Loader2 size={14} className="spin" style={{ color: 'var(--accent)' }} />
                   )}
-                  {o.step === 'READY' && o.trackingNumber && <CheckCircle2 size={14} style={{ color: '#16A34A' }} />}
-                  {o.step === 'READY' && !o.trackingNumber && <CheckCircle2 size={14} style={{ color: '#F59E0B' }} />}
-                  {o.step === 'ERROR' && <XCircle size={14} style={{ color: '#DC2626' }} />}
+                  {o.step === 'READY' && o.trackingNumber && <CheckCircle2 size={14} style={{ color: 'var(--success)' }} />}
+                  {o.step === 'READY' && !o.trackingNumber && <CheckCircle2 size={14} style={{ color: 'var(--warning)' }} />}
+                  {o.step === 'ERROR' && <XCircle size={14} style={{ color: 'var(--error)' }} />}
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        {/* Summary */}
+        {/* ── SUMMARY ── */}
         {methodSelected && !isRunning && (
           <div style={{
             padding: 12, background: 'var(--bg2)', borderRadius: 6,
@@ -554,19 +605,19 @@ export function BatchShipmentProgressDialog({ isOpen, orderSns, onClose, onCompl
             justifyContent: 'center', marginBottom: 16,
           }}>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#16A34A' }}>{readyCount}</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--success)' }}>{readyCount}</div>
               <div style={{ fontSize: 11, color: 'var(--text4)' }}>Siap Cetak</div>
             </div>
             {errorCount > 0 && (
               <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 22, fontWeight: 700, color: '#DC2626' }}>{errorCount}</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--error)' }}>{errorCount}</div>
                 <div style={{ fontSize: 11, color: 'var(--text4)' }}>Gagal</div>
               </div>
             )}
           </div>
         )}
 
-        {/* Actions */}
+        {/* ── ACTIONS ── */}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: methodSelected ? 0 : 16 }}>
           <button onClick={handleSkip} disabled={printing} style={btnStyle(false, printing)}>
             {methodSelected ? 'Lewati' : 'Batal'}

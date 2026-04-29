@@ -333,4 +333,97 @@ export const orderRoutes = new Elysia({ prefix: "/orders" })
         message: "Internal server error occurred while fetching tracking number."
       };
     }
+  })
+
+  // Mark order label as printed / not printed
+  .patch("/:orderSn/label-printed", async ({ params, body, set }) => {
+    const { orderSn } = params;
+    const { printed } = body as { printed: boolean };
+
+    // Validate order SN format
+    if (!validateOrderSn(orderSn)) {
+      set.status = 400;
+      return {
+        success: false,
+        message: "Invalid order_sn format."
+      };
+    }
+
+    try {
+      // Update label_printed status
+      const updateData: any = {
+        labelPrinted: printed ? 1 : 0,
+      };
+      if (printed) {
+        updateData.labelPrintedAt = new Date();
+      }
+
+      await db.update(shopeeOrders)
+        .set(updateData)
+        .where(eq(shopeeOrders.orderSn, orderSn));
+
+      return {
+        success: true,
+        message: `Label pesanan ${orderSn} ditandai sebagai ${printed ? 'sudah dicetak' : 'belum dicetak'}.`,
+        data: { orderSn, labelPrinted: printed }
+      };
+    } catch (error: any) {
+      console.error('[order-routes] Mark label printed error:', {
+        timestamp: new Date().toISOString(),
+        orderSn,
+        printed,
+        error: error.message,
+      });
+
+      set.status = 500;
+      return {
+        success: false,
+        message: "Gagal mengupdate status cetak label."
+      };
+    }
+  }, {
+    body: t.Object({
+      printed: t.Boolean({ description: "true = sudah dicetak, false = belum dicetak" })
+    })
+  })
+
+  // Mark batch orders label as printed
+  .patch("/batch/label-printed", async ({ body, set }) => {
+    const { order_sns, printed } = body as { order_sns: string[]; printed: boolean };
+
+    if (!Array.isArray(order_sns) || order_sns.length === 0) {
+      set.status = 400;
+      return { success: false, message: "order_sns harus berupa array yang tidak kosong." };
+    }
+
+    try {
+      const updateData: any = {
+        labelPrinted: printed ? 1 : 0,
+      };
+      if (printed) {
+        updateData.labelPrintedAt = new Date();
+      }
+
+      for (const orderSn of order_sns) {
+        await db.update(shopeeOrders)
+          .set(updateData)
+          .where(eq(shopeeOrders.orderSn, orderSn));
+      }
+
+      return {
+        success: true,
+        message: `${order_sns.length} pesanan ditandai sebagai ${printed ? 'sudah dicetak' : 'belum dicetak'}.`,
+        data: { count: order_sns.length, labelPrinted: printed }
+      };
+    } catch (error: any) {
+      console.error('[order-routes] Batch mark label printed error:', error.message);
+      set.status = 500;
+      return { success: false, message: "Gagal mengupdate status cetak label batch." };
+    }
+  }, {
+    body: t.Object({
+      order_sns: t.Array(t.String()),
+      printed: t.Boolean()
+    })
   });
+

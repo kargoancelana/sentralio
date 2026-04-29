@@ -32,7 +32,7 @@ export interface CacheEntry {
  * - Periodic cleanup of expired entries
  */
 export class LabelCache {
-  private readonly TTL_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+  private readonly TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days in milliseconds
   private cleanupInterval: Timer | null = null;
 
   constructor() {
