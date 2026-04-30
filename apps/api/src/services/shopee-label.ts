@@ -823,3 +823,62 @@ export async function getTrackingNumber(
     throw error;
   }
 }
+
+/**
+ * Get tracking numbers for multiple packages at once (batch)
+ * 
+ * Calls /api/v2/logistics/get_mass_tracking_number endpoint.
+ * Much more efficient than calling get_tracking_number per order:
+ * - 10 orders = 1 API call instead of 10
+ * - Reduces rate limit risk significantly
+ * 
+ * @param shopId - Shop ID
+ * @param packageNumbers - Array of package numbers (from order's package_list)
+ * @returns Response with success_list (tracking numbers) and fail_list
+ */
+export async function getMassTrackingNumber(
+  shopId: number,
+  packageNumbers: string[]
+): Promise<any> {
+  const path = "/api/v2/logistics/get_mass_tracking_number";
+  
+  console.log('[shopee-label] getting mass tracking numbers:', {
+    timestamp: new Date().toISOString(),
+    shopId,
+    packageCount: packageNumbers.length,
+    operation: 'get_mass_tracking'
+  });
+
+  const body = {
+    package_list: packageNumbers.map(pn => ({ package_number: pn })),
+    response_optional_fields: "first_mile_tracking_number"
+  };
+
+  try {
+    const response = await makeShopeeRequest(path, shopId, body, 'POST');
+    
+    const successCount = response?.response?.success_list?.length || 0;
+    const failCount = response?.response?.fail_list?.length || 0;
+    
+    console.log('[shopee-label] mass tracking number response:', {
+      timestamp: new Date().toISOString(),
+      shopId,
+      operation: 'get_mass_tracking',
+      requested: packageNumbers.length,
+      success: successCount,
+      failed: failCount,
+    });
+
+    return response;
+  } catch (error: any) {
+    console.error('[shopee-label] failed to get mass tracking numbers:', {
+      timestamp: new Date().toISOString(),
+      shopId,
+      operation: 'get_mass_tracking',
+      errorType: 'shopee_api',
+      message: error.message,
+      stack: error.stack
+    });
+    throw error;
+  }
+}

@@ -2,8 +2,8 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { shopeeOrders } from "../db/schema";
 import { getValidToken } from "./shopee-auth";
-import { shipShopeeOrder } from "./shopee-raw";
-import { getTrackingNumber as getTrackingNumberFromLogistics, getShippingParameter } from "./shopee-label";
+import { shipShopeeOrder, getShopeeOrderDetails } from "./shopee-raw";
+import { getTrackingNumber as getTrackingNumberFromLogistics, getShippingParameter, getMassTrackingNumber } from "./shopee-label";
 
 /**
  * Result interface for shipment operations
@@ -310,11 +310,14 @@ export async function validateShopCredentials(shopId: number): Promise<{
  * Process shipment for a single order
  * @param orderSn - Shopee order serial number
  * @param shipmentMethod - Shipment method: 'pickup' or 'dropoff' (REQUIRED)
+ * @param options - Optional settings
+ * @param options.skipPrefetch - Skip background label prefetch (used in batch mode where batch tracking handles it)
  * @returns Result with success status and message
  */
 export async function shipSingleOrder(
   orderSn: string,
-  shipmentMethod: 'pickup' | 'dropoff'
+  shipmentMethod: 'pickup' | 'dropoff',
+  options?: { skipPrefetch?: boolean }
 ): Promise<ShipmentResult> {
   try {
     console.log('[shipment-service]', {
@@ -522,20 +525,25 @@ export async function shipSingleOrder(
     // ── Background prefetch: cache label ASAP so reprint is instant ──
     // Fire-and-forget — doesn't block the response to the user.
     // 3s delay gives Shopee time to generate the shipping document.
-    setTimeout(async () => {
-      try {
-        const { getSingleLabel } = await import('./label.service');
-        const result = await getSingleLabel(orderSn);
-        if (result.success) {
-          console.log(`[shipment-service] ✅ Label prefetched & cached for ${orderSn}`);
-        } else {
-          console.warn(`[shipment-service] Label prefetch returned error for ${orderSn}:`, result.error);
+    // SKIP in batch mode: batch tracking handles tracking numbers centrally,
+    // and 28 concurrent prefetches would hammer the Shopee API with 28 individual
+    // get_tracking_number calls, causing massive latency.
+    if (!options?.skipPrefetch) {
+      setTimeout(async () => {
+        try {
+          const { getSingleLabel } = await import('./label.service');
+          const result = await getSingleLabel(orderSn);
+          if (result.success) {
+            console.log(`[shipment-service] ✅ Label prefetched & cached for ${orderSn}`);
+          } else {
+            console.warn(`[shipment-service] Label prefetch returned error for ${orderSn}:`, result.error);
+          }
+        } catch (e: any) {
+          console.warn(`[shipment-service] Label prefetch failed for ${orderSn}:`, e.message);
+          // Non-critical — user can still print manually later
         }
-      } catch (e: any) {
-        console.warn(`[shipment-service] Label prefetch failed for ${orderSn}:`, e.message);
-        // Non-critical — user can still print manually later
-      }
-    }, 3000);
+      }, 3000);
+    }
 
     return {
       success: true,
@@ -561,6 +569,41 @@ export async function shipSingleOrder(
 }
 
 /**
+ * Get package numbers for multiple orders from Shopee order details.
+ * Returns a map of orderSn -> packageNumber.
+ * 
+ * @param shopId - Shop ID
+ * @param orderSns - Array of order serial numbers
+ * @returns Map of orderSn to packageNumber
+ */
+async function getPackageNumbersForOrders(
+  shopId: number,
+  orderSns: string[]
+): Promise<Map<string, string>> {
+  const packageMap = new Map<string, string>();
+  
+  // Shopee limits to 50 orders per request
+  const BATCH_SIZE = 50;
+  for (let i = 0; i < orderSns.length; i += BATCH_SIZE) {
+    const batch = orderSns.slice(i, i + BATCH_SIZE);
+    try {
+      const details = await getShopeeOrderDetails(shopId, batch);
+      const orderList = details?.response?.order_list || [];
+      
+      for (const order of orderList) {
+        if (order.package_list?.length > 0) {
+          packageMap.set(order.order_sn, order.package_list[0].package_number);
+        }
+      }
+    } catch (err: any) {
+      console.warn('[shipment-service] Failed to get package numbers for batch:', err.message);
+    }
+  }
+  
+  return packageMap;
+}
+
+/**
  * Process shipment for multiple orders with sequential processing and rate limiting
  * 
  * This function ensures tracking numbers are available for each order before marking
@@ -568,9 +611,8 @@ export async function shipSingleOrder(
  * get tracking numbers or encounter errors, the batch continues processing remaining
  * orders and returns clear success/failure status for each.
  * 
- * For batch operations with "print after shipment" option, this function guarantees
- * that all successfully processed orders have tracking numbers available before
- * label printing can begin.
+ * After all orders are shipped, uses get_mass_tracking_number to retrieve tracking
+ * numbers in a single batch API call instead of N individual calls.
  * 
  * @param orderSns - Array of order serial numbers
  * @param shipmentMethod - Shipment method: 'pickup' or 'dropoff' (REQUIRED)
@@ -593,12 +635,15 @@ export async function shipBatchOrders(
   });
 
   // Filter out orders that don't meet eligibility criteria before processing
+  // Also collect shopId during validation to avoid N separate DB queries later
   const eligibleOrders: string[] = [];
+  const orderShopIdMap = new Map<string, number>(); // orderSn -> shopId (collected once)
   
   for (const orderSn of orderSns) {
     const validation = await validateOrderEligibility(orderSn);
     if (validation.valid) {
       eligibleOrders.push(orderSn);
+      orderShopIdMap.set(orderSn, validation.order!.shopId);
     } else {
       results.push({
         success: false,
@@ -618,11 +663,13 @@ export async function shipBatchOrders(
   });
 
   // Process eligible orders sequentially with rate limiting
+  // skipPrefetch=true: batch tracking below handles tracking numbers centrally,
+  // preventing 28 individual background get_tracking_number calls
   for (let i = 0; i < eligibleOrders.length; i++) {
     const orderSn = eligibleOrders[i];
     
     try {
-      const result = await shipSingleOrder(orderSn, shipmentMethod);
+      const result = await shipSingleOrder(orderSn, shipmentMethod, { skipPrefetch: true });
       results.push(result);
     } catch (error: any) {
       console.error('[shipment-service] batch processing error:', {
@@ -643,6 +690,88 @@ export async function shipBatchOrders(
     // Apply rate limiting delay between orders (except for the last one)
     if (i < eligibleOrders.length - 1) {
       await new Promise(resolve => setTimeout(resolve, batchDelay));
+    }
+  }
+
+  // ── Batch tracking number retrieval ──
+  // After all orders are shipped, get tracking numbers in ONE batch API call
+  // instead of N individual get_tracking_number calls.
+  const successfulOrders = results.filter(r => r.success);
+  if (successfulOrders.length > 0) {
+    try {
+      console.log('[shipment-service] batch-tracking: starting batch tracking number retrieval', {
+        timestamp: new Date().toISOString(),
+        successfulCount: successfulOrders.length
+      });
+
+      // Group successful orders by shopId — using cached map, NO extra DB queries
+      const ordersByShop = new Map<number, string[]>();
+      for (const result of successfulOrders) {
+        const shopId = orderShopIdMap.get(result.orderSn);
+        if (shopId) {
+          if (!ordersByShop.has(shopId)) ordersByShop.set(shopId, []);
+          ordersByShop.get(shopId)!.push(result.orderSn);
+        }
+      }
+
+      // For each shop, get package numbers then batch tracking
+      for (const [shopId, shopOrderSns] of ordersByShop) {
+        try {
+          // Get package numbers for all orders in this shop
+          const packageMap = await getPackageNumbersForOrders(shopId, shopOrderSns);
+          const packageNumbers = Array.from(packageMap.values()).filter(Boolean);
+
+          if (packageNumbers.length === 0) {
+            console.warn('[shipment-service] batch-tracking: no package numbers found for shop', shopId);
+            continue;
+          }
+
+          // Brief delay for Shopee to finalize tracking numbers after ship_order
+          await new Promise(r => setTimeout(r, 2000));
+
+          // Batch get tracking numbers — 1 API call instead of N
+          const trackingResult = await getMassTrackingNumber(shopId, packageNumbers);
+          const successList = trackingResult?.response?.success_list || [];
+          const failList = trackingResult?.response?.fail_list || [];
+
+          // Build packageNumber -> trackingNumber map
+          const trackingMap = new Map<string, string>();
+          for (const item of successList) {
+            if (item.tracking_number) {
+              trackingMap.set(item.package_number, item.tracking_number);
+            }
+          }
+
+          // Bulk update DB with tracking numbers
+          let updatedCount = 0;
+          for (const [orderSn, packageNumber] of packageMap) {
+            const trackingNumber = trackingMap.get(packageNumber);
+            if (trackingNumber) {
+              await db.update(shopeeOrders)
+                .set({ trackingNumber, updatedAt: new Date() })
+                .where(eq(shopeeOrders.orderSn, orderSn));
+
+              // Update result object with tracking number
+              const result = results.find(r => r.orderSn === orderSn);
+              if (result) result.trackingNumber = trackingNumber;
+              updatedCount++;
+            }
+          }
+
+          console.log(`[shipment-service] batch-tracking: ✅ shop ${shopId}: ${updatedCount}/${packageNumbers.length} tracking numbers retrieved`, {
+            timestamp: new Date().toISOString(),
+            successCount: successList.length,
+            failCount: failList.length,
+            failReasons: failList.map((f: any) => `${f.package_number}: ${f.fail_reason}`).slice(0, 5)
+          });
+        } catch (shopTrackingError: any) {
+          console.warn(`[shipment-service] batch-tracking: failed for shop ${shopId}:`, shopTrackingError.message);
+          // Non-fatal: individual tracking will still work via label service
+        }
+      }
+    } catch (batchTrackingError: any) {
+      console.warn('[shipment-service] batch-tracking: overall batch tracking failed:', batchTrackingError.message);
+      // Non-fatal: individual tracking will still work via label service fallback
     }
   }
 
