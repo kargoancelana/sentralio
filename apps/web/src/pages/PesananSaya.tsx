@@ -9,7 +9,7 @@ import { PrintLabelButton } from '../components/shared/PrintLabelButton';
 import { ShipmentProgressDialog, BatchShipmentProgressDialog } from '../components/shared/ShipmentProgressDialog';
 import { SyncStatusIndicator } from '../components/shared/SyncStatusIndicator';
 import { getBatchSummaryMessage, mapLabelError } from '../utils/label-errors';
-import { openPDFsInSingleTab } from '../utils/pdf-merge';
+import { openPrintDialog } from '../utils/print';
 import './PesananSaya.css';
 
 /* ── Status mapping ── */
@@ -447,38 +447,28 @@ export function PesananSaya() {
     toast('Mengambil semua label...', 'info');
     
     try {
-      // Call batch API to get all labels at once (FAST!)
+      // Call batch custom label API — returns single multi-page PDF
       const batchResult = await api.orderLabelsBatch(selectedLabelOrders);
       
       if (batchResult.success && batchResult.data) {
-        const { results, total, successful, failed } = batchResult.data;
+        const { results, total, successful, failed, pdf } = batchResult.data;
         
-        // Filter successful labels
-        const successfulLabels = results
-          .filter(r => r.success && r.url)
-          .map(r => ({
-            orderSn: r.orderSn,
-            url: r.url!,
-            format: r.format || 'pdf'
-          }));
-        
-        if (successfulLabels.length > 0) {
+        if (pdf && successful > 0) {
           try {
-            // Open all labels in single merged PDF
-            const pdfUrls = successfulLabels.map(l => l.url);
-            const orderSns = successfulLabels.map(l => l.orderSn);
+            // Open single multi-page PDF
+            const pdfDataUrl = `data:application/pdf;base64,${pdf}`;
+            openPrintDialog(pdfDataUrl, 'pdf');
             
-            await openPDFsInSingleTab(pdfUrls, orderSns);
-            
-            // Successfully opened tab — mark all as printed
+            // Successfully opened — mark all successful orders as printed
+            const printedOrderSns = results.filter(r => r.success).map(r => r.orderSn);
             try {
-              await api.orderMarkLabelPrintedBatch(orderSns, true);
-              console.log('[PesananSaya] Batch labels marked as printed:', orderSns.length);
+              await api.orderMarkLabelPrintedBatch(printedOrderSns, true);
+              console.log('[PesananSaya] Batch labels marked as printed:', printedOrderSns.length);
             } catch (markErr) {
               console.warn('[PesananSaya] Failed to mark batch as printed (non-critical):', markErr);
             }
             
-            toast(`Membuka ${successfulLabels.length} label`, 'success');
+            toast(`Membuka ${successful} label`, 'success');
             
             // Refresh order data to update UI
             await refetch();

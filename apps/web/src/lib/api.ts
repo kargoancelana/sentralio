@@ -76,8 +76,21 @@ export const api = {
   orderFetchTrackingNumber: (orderSn: string) =>
     fetchApi<{ success: boolean; data?: { orderSn: string; trackingNumber: string }; message?: string }>(`/orders/${orderSn}/tracking-number`),
   
-  // Label Pengiriman / Shipping Labels
+  // Label Pengiriman / Shipping Labels (Custom Label via Puppeteer)
   orderLabel: (orderSn: string) =>
+    fetchApi<{
+      success: boolean;
+      data: {
+        orderSn: string;
+        pdf: string;        // base64 PDF
+        format: 'pdf';
+        trackingNumber: string;
+      };
+      message?: string;
+    }>(`/orders/${orderSn}/custom-label`),
+  
+  // Legacy Shopee label (fallback)
+  orderLabelShopee: (orderSn: string) =>
     fetchApi<{
       success: boolean;
       data: {
@@ -96,17 +109,16 @@ export const api = {
         total: number;
         successful: number;
         failed: number;
+        pdf?: string;       // base64 multi-page PDF
+        format?: 'pdf';
         results: Array<{
           orderSn: string;
           success: boolean;
-          url?: string;
-          format?: 'pdf' | 'png' | 'jpg';
-          trackingNumber?: string;
           error?: string;
         }>;
       };
       message?: string;
-    }>('/orders/shipping-labels/batch', {
+    }>('/orders/custom-labels/batch', {
       method: 'POST',
       body: JSON.stringify({ order_sns: orderSns })
     }),
