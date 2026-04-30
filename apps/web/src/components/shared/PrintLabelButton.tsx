@@ -51,19 +51,18 @@ export function PrintLabelButton({
       console.log('[PrintLabelButton] API response:', {
         success: result.success,
         hasData: !!result.data,
-        url: result.data?.url ? `${result.data.url.substring(0, 50)}...` : 'none',
+        hasPdf: !!result.data?.pdf,
         format: result.data?.format,
-        urlLength: result.data?.url?.length,
-        isDataUrl: result.data?.url?.startsWith('data:'),
-        isBlobUrl: result.data?.url?.startsWith('blob:')
+        pdfLength: result.data?.pdf?.length,
       });
 
       if (result.success && result.data) {
-        // Open print dialog with label
-        console.log('[PrintLabelButton] Opening print dialog with format:', result.data.format);
+        // Build data URL from base64 PDF
+        const pdfDataUrl = `data:application/pdf;base64,${result.data.pdf}`;
+        console.log('[PrintLabelButton] Opening print dialog with custom label PDF');
         
         try {
-          openPrintDialog(result.data.url, result.data.format);
+          openPrintDialog(pdfDataUrl, 'pdf');
           
           // Print tab opened successfully - mark as printed
           console.log('[PrintLabelButton] Print tab opened successfully, marking as printed');
