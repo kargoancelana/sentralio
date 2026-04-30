@@ -87,26 +87,33 @@ function generateBarcodeSvg(text: string): string {
       displayValue: false,
       margin: 0
     });
-    return new XMLSerializer().serializeToString(svgNode);
+    // Serialize and add width/height so it fits inside the .barcode container
+    let svgStr = new XMLSerializer().serializeToString(svgNode);
+    // Ensure the SVG fills its parent container
+    svgStr = svgStr.replace('<svg ', '<svg width="100%" height="100%" ');
+    return svgStr;
   } catch (err: any) {
-    console.warn('[custom-label] barcode generation failed:', err.message);
-    // Fallback: return empty SVG with text
-    return `<svg viewBox="0 0 280 60" xmlns="http://www.w3.org/2000/svg"><text x="140" y="30" text-anchor="middle" font-size="10">${text}</text></svg>`;
+    console.warn('[custom-label] barcode generation failed:', err.message, err.stack);
+    // Fallback: return placeholder barcode-like SVG
+    return `<svg viewBox="0 0 280 60" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg"><text x="140" y="30" text-anchor="middle" font-size="10">${text}</text></svg>`;
   }
 }
 
 // ─── QR Code Generation ─────────────────────────────────────────
 async function generateQrSvg(text: string): Promise<string> {
   try {
-    return await QRCode.toString(text, {
+    let svg = await QRCode.toString(text, {
       type: 'svg',
-      margin: 0,
-      width: 100,
+      margin: 1,
+      width: 70,
       errorCorrectionLevel: 'M'
     });
+    // Force width/height to fit .qr-code container (70x70px)
+    svg = svg.replace(/<svg /, '<svg width="70" height="70" ');
+    return svg;
   } catch (err: any) {
     console.warn('[custom-label] QR generation failed:', err.message);
-    return '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" fill="white" stroke="black"/></svg>';
+    return '<svg viewBox="0 0 100 100" width="70" height="70" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" fill="white" stroke="black"/></svg>';
   }
 }
 
@@ -164,6 +171,18 @@ async function collectLabelData(orderSn: string): Promise<CustomLabelData> {
     const detailRes = await getShopeeOrderDetails(shopId, [orderSn]);
     const orderDetail = detailRes?.response?.order_list?.[0];
     
+    // Debug: log what we got from the API
+    console.log(`[custom-label] order detail for ${orderSn}:`, {
+      hasOrderDetail: !!orderDetail,
+      hasRecipientAddress: !!orderDetail?.recipient_address,
+      recipientKeys: orderDetail?.recipient_address ? Object.keys(orderDetail.recipient_address) : [],
+      recipientName: orderDetail?.recipient_address?.name,
+      recipientPhone: orderDetail?.recipient_address?.phone,
+      hasFullAddress: !!orderDetail?.recipient_address?.full_address,
+      shipByDate: orderDetail?.ship_by_date,
+      packageList: orderDetail?.package_list?.length || 0,
+    });
+    
     if (orderDetail?.recipient_address) {
       const addr = orderDetail.recipient_address;
       recipientName = addr.name || recipientName;
@@ -193,7 +212,7 @@ async function collectLabelData(orderSn: string): Promise<CustomLabelData> {
       packageNumber = orderDetail.package_list[0].package_number;
     }
   } catch (err: any) {
-    console.warn(`[custom-label] failed to get order details for ${orderSn}:`, err.message);
+    console.error(`[custom-label] FAILED to get order details for ${orderSn}:`, err.message, err.stack);
   }
 
   // 4. Get logistics data from Shopee API (sort codes, weight, 3PL)
