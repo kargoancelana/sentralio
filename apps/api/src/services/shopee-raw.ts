@@ -155,7 +155,7 @@ export async function getShopeeOrderDetails(shopId: number, orderSnList: string[
     path: "/api/v2/order/get_order_detail",
     query: {
       order_sn_list: orderSnList.join(","),
-      response_optional_fields: "item_list,pay_time,buyer_username,total_amount,shipping_carrier,package_list,pickup_done_time",
+      response_optional_fields: "item_list,pay_time,buyer_username,total_amount,shipping_carrier,package_list,pickup_done_time,recipient_address,ship_by_date",
     },
   });
 }

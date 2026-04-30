@@ -881,4 +881,66 @@ export async function getMassTrackingNumber(
     });
     throw error;
   }
-}
+}
+
+/**
+ * Get shipping document data info for custom AWB printing
+ * 
+ * Calls /api/v2/logistics/get_shipping_document_data_info endpoint.
+ * Returns raw logistics data (sort codes, 3PL info, tracking, weight)
+ * that can be used to render a self-designed AWB label.
+ * 
+ * NOTE: We do NOT request recipient_address_info images here.
+ * Recipient address is fetched as text from get_order_detail instead,
+ * which produces smaller PDFs and crisper thermal prints.
+ * 
+ * @param shopId - Shop ID
+ * @param orderSn - Order serial number
+ * @param packageNumber - Package number (optional, for packaged orders)
+ * @returns Shipping document data with sort codes, 3PL info, etc.
+ */
+export async function getShippingDocumentDataInfo(
+  shopId: number,
+  orderSn: string,
+  packageNumber?: string
+): Promise<any> {
+  const path = "/api/v2/logistics/get_shipping_document_data_info";
+  
+  console.log('[shopee-label] getting shipping document data info:', {
+    timestamp: new Date().toISOString(),
+    shopId,
+    orderSn,
+    packageNumber: packageNumber || 'none',
+    operation: 'get_doc_data_info'
+  });
+
+  const body: any = { order_sn: orderSn };
+  if (packageNumber) body.package_number = packageNumber;
+
+  try {
+    const response = await makeShopeeRequest(path, shopId, body, 'POST');
+    
+    console.log('[shopee-label] shipping document data info response:', {
+      timestamp: new Date().toISOString(),
+      shopId,
+      orderSn,
+      operation: 'get_doc_data_info',
+      hasData: !!response?.response?.shipping_document_info,
+      success: true
+    });
+
+    return response;
+  } catch (error: any) {
+    console.error('[shopee-label] failed to get shipping document data info:', {
+      timestamp: new Date().toISOString(),
+      shopId,
+      orderSn,
+      operation: 'get_doc_data_info',
+      errorType: 'shopee_api',
+      message: error.message,
+      stack: error.stack
+    });
+    throw error;
+  }
+}
+

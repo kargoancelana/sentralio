@@ -160,15 +160,23 @@ setTimeout(async () => {
 }, 5000); // Wait 5 seconds after server start
 
 // Graceful shutdown
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.log("\n[SHUTDOWN] Received SIGINT, shutting down gracefully...");
   backgroundSyncService.stopBackgroundSync();
+  try {
+    const { closeBrowser } = await import('./services/pdf-generator.service');
+    await closeBrowser();
+  } catch (_) { /* ignore if not initialized */ }
   process.exit(0);
 });
 
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   console.log("\n[SHUTDOWN] Received SIGTERM, shutting down gracefully...");
   backgroundSyncService.stopBackgroundSync();
+  try {
+    const { closeBrowser } = await import('./services/pdf-generator.service');
+    await closeBrowser();
+  } catch (_) { /* ignore if not initialized */ }
   process.exit(0);
 });
 

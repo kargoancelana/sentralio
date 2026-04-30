@@ -224,4 +224,146 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
         error: "Terjadi kesalahan internal saat memproses permintaan label."
       };
     }
+  })
+
+  // ─── Custom Label Endpoints ─────────────────────────────────
+  // These use the custom HTML/CSS template rendered via Puppeteer
+  // instead of Shopee's default label PDF.
+
+  /**
+   * Get single custom shipping label PDF
+   * 
+   * Renders a custom 4×6 thermal label using the HTML template
+   * populated with real order data from Shopee API and local DB.
+   * Returns base64-encoded PDF.
+   * 
+   * @param orderSn - Order serial number (path parameter)
+   * @returns Custom label PDF as base64
+   */
+  .get("/:orderSn/custom-label", async ({ params, set }) => {
+    const { orderSn } = params;
+
+    if (!validateOrderSn(orderSn)) {
+      set.status = 422;
+      return {
+        success: false,
+        error: "Format order_sn tidak valid."
+      };
+    }
+
+    try {
+      const { getCustomLabel } = await import("../../services/custom-label.service");
+      const result = await getCustomLabel(orderSn);
+
+      if (result.success) {
+        set.status = 200;
+        return {
+          success: true,
+          data: {
+            orderSn,
+            pdf: result.pdf,
+            format: 'pdf',
+            trackingNumber: result.trackingNumber
+          }
+        };
+      } else {
+        set.status = 500;
+        return {
+          success: false,
+          error: result.error || "Gagal membuat custom label"
+        };
+      }
+    } catch (error: any) {
+      console.error('[label-routes] Custom label error:', {
+        timestamp: new Date().toISOString(),
+        orderSn,
+        error: error.message
+      });
+
+      set.status = 500;
+      return {
+        success: false,
+        error: "Terjadi kesalahan saat membuat custom label."
+      };
+    }
+  })
+
+  /**
+   * Get batch custom shipping labels as multi-page PDF
+   * 
+   * Renders custom labels for multiple orders, combined into
+   * a single multi-page PDF. Max 50 orders per request.
+   * 
+   * @param body - Request body with order_sns array
+   * @returns Multi-page PDF as base64 + per-order results
+   */
+  .post("/custom-labels/batch", async ({ body, set }) => {
+    try {
+      if (!body || typeof body !== 'object') {
+        set.status = 400;
+        return { success: false, error: "Request body tidak valid." };
+      }
+
+      const { order_sns } = body as { order_sns?: unknown };
+
+      if (!order_sns || !Array.isArray(order_sns)) {
+        set.status = 400;
+        return { success: false, error: "Field order_sns harus berupa array." };
+      }
+
+      if (order_sns.length === 0) {
+        set.status = 422;
+        return { success: false, error: "Array order_sns tidak boleh kosong." };
+      }
+
+      const MAX_BATCH_SIZE = 50;
+      if (order_sns.length > MAX_BATCH_SIZE) {
+        set.status = 422;
+        return {
+          success: false,
+          error: `Melebihi batas maksimal ${MAX_BATCH_SIZE} order. Diterima ${order_sns.length}.`
+        };
+      }
+
+      const invalidOrderSns = order_sns.filter((sn: any) =>
+        typeof sn !== 'string' || !validateOrderSn(sn)
+      );
+      if (invalidOrderSns.length > 0) {
+        set.status = 422;
+        return {
+          success: false,
+          error: `Format order_sn tidak valid: ${invalidOrderSns.slice(0, 3).join(', ')}`
+        };
+      }
+
+      const { getCustomBatchLabels } = await import("../../services/custom-label.service");
+      const result = await getCustomBatchLabels(order_sns);
+
+      const successful = result.results.filter(r => r.success).length;
+      const failed = result.results.filter(r => !r.success).length;
+
+      set.status = 200;
+      return {
+        success: result.success,
+        data: {
+          total: order_sns.length,
+          successful,
+          failed,
+          pdf: result.pdf,
+          format: 'pdf',
+          results: result.results
+        }
+      };
+    } catch (error: any) {
+      console.error('[label-routes] Batch custom label error:', {
+        timestamp: new Date().toISOString(),
+        error: error.message
+      });
+
+      set.status = 500;
+      return {
+        success: false,
+        error: "Terjadi kesalahan saat membuat batch custom labels."
+      };
+    }
   });
