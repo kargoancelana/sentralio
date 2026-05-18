@@ -19,17 +19,20 @@ const MAX_DAYS_PER_REQUEST = 15;
  * 
  * PROCESSED is a WMS-internal status (set after ship_order API call),
  * Shopee never returns it — it sits between READY_TO_SHIP and SHIPPED.
+ * 
+ * CANCELLED and IN_CANCEL are terminal states that override any status.
+ * When an order is cancelled, it must update regardless of current status.
  */
 const STATUS_PRIORITY: Record<string, number> = {
   'UNPAID': 0,
   'READY_TO_SHIP': 1,
   'PROCESSED': 2,     // WMS-internal: after ship_order, before Shopee confirms SHIPPED
   'SHIPPED': 3,
+  'TO_RETURN': 4,
   'TO_CONFIRM_RECEIVE': 4,
   'COMPLETED': 5,
-  'IN_CANCEL': 1,
-  'CANCELLED': 1,
-  'TO_RETURN': 4,
+  'IN_CANCEL': 99,    // Terminal state: always override
+  'CANCELLED': 99,    // Terminal state: always override
 };
 
 /**
@@ -232,8 +235,10 @@ export async function syncShopeeOrdersIncremental(
             console.log(`[order-sync] ✅ Status change: ${order.order_sn} ${oldStatus} → ${newStatus}`);
           }
           
+          // Always update existing orders (including CANCELLED status updates)
           await db.update(shopeeOrders).set(orderPayload).where(eq(shopeeOrders.orderSn, order.order_sn));
         } else {
+          // Insert all new orders (including UNPAID and CANCELLED) to match Shopee
           await db.insert(shopeeOrders).values(orderPayload);
         }
 
@@ -246,6 +251,7 @@ export async function syncShopeeOrdersIncremental(
               orderSn: order.order_sn,
               itemName: item.item_name || "—",
               modelName: item.model_name || null,
+              modelSku: item.model_sku || null,
               qty: item.model_quantity_purchased || item.quantity_purchased || 1,
               itemPrice: item.model_discounted_price
                 ? Math.round(item.model_discounted_price)

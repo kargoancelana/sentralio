@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Printer, X, Loader2, Truck, Package, CheckCircle2, XCircle } from 'lucide-react';
+import { Printer, X, Loader2, Truck, Package, CheckCircle2, XCircle, ChevronDown, Palette, FileText } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 import { api } from '../../lib/api';
-import { openPrintDialog } from '../../utils/print';
+import { printCustomLabels, printOfficialLabels } from '../../utils/printLabel';
 import { getOrderErrorMessage } from '../../utils/label-errors';
+import type { LabelData } from '../../types/label';
 
 /**
  * ShipmentProgressDialog — Unified dialog for shipping + tracking + label printing.
@@ -24,10 +25,10 @@ interface Props {
 export function ShipmentProgressDialog({ isOpen, orderSn, onClose, onComplete }: Props) {
   const [step, setStep] = useState<DialogStep>('METHOD_SELECT');
   const [trackingNumber, setTrackingNumber] = useState<string | null>(null);
-  const [labelUrl, setLabelUrl] = useState<string | null>(null);
-  const [labelFormat, setLabelFormat] = useState<'pdf' | 'png' | 'jpg'>('pdf');
+  const [labelData, setLabelData] = useState<LabelData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
+  const [showLabelMenu, setShowLabelMenu] = useState(false);
   const toast = useToast();
   const abortRef = useRef(false);
 
@@ -36,7 +37,7 @@ export function ShipmentProgressDialog({ isOpen, orderSn, onClose, onComplete }:
     if (isOpen) {
       setStep('METHOD_SELECT');
       setTrackingNumber(null);
-      setLabelUrl(null);
+      setLabelData(null);
       setError(null);
       setPrinting(false);
       abortRef.current = false;
@@ -79,7 +80,7 @@ export function ShipmentProgressDialog({ isOpen, orderSn, onClose, onComplete }:
       } catch { /* ignore and retry */ }
 
       if (i < maxAttempts - 1) {
-        await new Promise(r => setTimeout(r, 3000));
+        await new Promise(r => setTimeout(r, 1500));
       }
     }
 
@@ -92,13 +93,12 @@ export function ShipmentProgressDialog({ isOpen, orderSn, onClose, onComplete }:
       return;
     }
 
-    // ── Step 3: Prefetch Label ──
+    // ── Step 3: Prefetch Label Data ──
     setStep('PREFETCHING_LABEL');
     try {
-      const labelRes = await api.orderLabel(orderSn);
+      const labelRes = await api.orderLabelData(orderSn);
       if (labelRes.success && labelRes.data) {
-        setLabelUrl(labelRes.data.url);
-        setLabelFormat(labelRes.data.format);
+        setLabelData(labelRes.data);
       }
     } catch {
       // Label prefetch failed — still allow manual print later
@@ -110,23 +110,44 @@ export function ShipmentProgressDialog({ isOpen, orderSn, onClose, onComplete }:
 
   const handlePrint = async () => {
     setPrinting(true);
+    setShowLabelMenu(false);
     try {
-      if (labelUrl) {
-        // Already prefetched — instant!
-        openPrintDialog(labelUrl, labelFormat);
-        toast(`Label berhasil dicetak untuk pesanan #${orderSn}`, 'success');
-      } else {
+      let data = labelData;
+      if (!data) {
         // Fallback: fetch now
-        const result = await api.orderLabel(orderSn);
+        const result = await api.orderLabelData(orderSn);
         if (result.success && result.data) {
-          openPrintDialog(result.data.url, result.data.format);
-          toast(`Label berhasil dicetak untuk pesanan #${orderSn}`, 'success');
+          data = result.data;
         } else {
-          throw new Error(result.message || 'Gagal mengambil label');
+          throw new Error((result as any).error || 'Gagal mengambil label');
         }
       }
-      onComplete();
-      onClose();
+      await printCustomLabels(data, () => {
+        toast(`Label custom dibuka di tab baru untuk pesanan #${orderSn}`, 'success');
+        onComplete();
+        onClose();
+      });
+    } catch (err: any) {
+      toast(getOrderErrorMessage(orderSn, err), 'error');
+    } finally {
+      setPrinting(false);
+    }
+  };
+
+  const handlePrintOfficial = async () => {
+    setPrinting(true);
+    setShowLabelMenu(false);
+    try {
+      const result = await api.orderShippingLabel(orderSn);
+      if (result.success && result.data?.url) {
+        await printOfficialLabels(result.data.url, orderSn, () => {
+          toast(`Label asli dibuka di tab baru untuk pesanan #${orderSn}`, 'success');
+          onComplete();
+          onClose();
+        });
+      } else {
+        throw new Error((result as any).error || 'Gagal mengambil label resmi');
+      }
     } catch (err: any) {
       toast(getOrderErrorMessage(orderSn, err), 'error');
     } finally {
@@ -216,11 +237,11 @@ export function ShipmentProgressDialog({ isOpen, orderSn, onClose, onComplete }:
         {step === 'METHOD_SELECT' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <MethodButton
-              emoji="🚚" label="Pickup" desc="Kurir akan mengambil paket dari alamat Anda"
+              label="Pickup" desc="Kurir akan mengambil paket dari alamat Anda"
               onClick={() => runShipmentFlow('pickup')}
             />
             <MethodButton
-              emoji="📦" label="Dropoff" desc="Anda akan mengantar paket ke drop point"
+              label="Dropoff" desc="Anda akan mengantar paket ke drop point"
               onClick={() => runShipmentFlow('dropoff')}
             />
           </div>
@@ -278,10 +299,54 @@ export function ShipmentProgressDialog({ isOpen, orderSn, onClose, onComplete }:
             <button onClick={handleSkip} style={btnStyle(false, false)}>Batal</button>
           )}
           {step === 'READY' && trackingNumber && (
-            <button onClick={handlePrint} disabled={printing} style={btnStyle(true, printing)}>
-              {printing ? <Loader2 size={15} className="spin" /> : <Printer size={15} />}
-              Cetak Label
-            </button>
+            <div style={{ position: 'relative', display: 'inline-block' }}
+              onMouseEnter={() => setShowLabelMenu(true)}
+              onMouseLeave={() => setShowLabelMenu(false)}
+            >
+              <button onClick={() => { setShowLabelMenu(false); handlePrint(); }} disabled={printing} style={btnStyle(true, printing)}>
+                {printing ? <Loader2 size={15} className="spin" /> : <Printer size={15} />}
+                Cetak Label
+                <ChevronDown size={11} style={{ opacity: 0.6, marginLeft: 2 }} />
+              </button>
+              {showLabelMenu && !printing && (
+                <div style={{
+                  position: 'absolute', bottom: '100%', right: 0,
+                  marginBottom: 4, background: 'var(--bg1, #fff)', border: '1px solid var(--border)',
+                  borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+                  minWidth: 170, overflow: 'hidden', zIndex: 9999,
+                }}>
+                  <button onClick={() => { setShowLabelMenu(false); handlePrint(); }} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                    padding: '10px 14px', border: 'none', background: 'transparent',
+                    cursor: 'pointer', fontSize: 12, fontWeight: 500, color: 'var(--text1)', textAlign: 'left',
+                  }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg2)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <Palette size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                    <div>
+                      <div>Label Custom</div>
+                      <div style={{ fontSize: 10, color: 'var(--text4)', marginTop: 1 }}>Ada info item & SKU</div>
+                    </div>
+                  </button>
+                  <div style={{ height: 1, background: 'var(--border)', margin: '0 10px' }} />
+                  <button onClick={handlePrintOfficial} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                    padding: '10px 14px', border: 'none', background: 'transparent',
+                    cursor: 'pointer', fontSize: 12, fontWeight: 500, color: 'var(--text1)', textAlign: 'left',
+                  }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg2)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <FileText size={14} style={{ color: 'var(--warning, #f59e0b)', flexShrink: 0 }} />
+                    <div>
+                      <div>Label Asli</div>
+                      <div style={{ fontSize: 10, color: 'var(--text4)', marginTop: 1 }}>PDF resmi dari Shopee</div>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -302,8 +367,7 @@ interface OrderProgress {
   orderSn: string;
   step: 'PENDING' | 'SHIPPING' | 'FETCHING_TRACKING' | 'READY' | 'ERROR';
   trackingNumber?: string;
-  labelUrl?: string;
-  labelFormat?: 'pdf' | 'png' | 'jpg';
+  labelData?: LabelData;
   error?: string;
 }
 
@@ -312,6 +376,8 @@ export function BatchShipmentProgressDialog({ isOpen, orderSns, onClose, onCompl
   const [orders, setOrders] = useState<OrderProgress[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [printing, setPrinting] = useState(false);
+  const [currentChunk, setCurrentChunk] = useState(0);
+  const [totalChunks, setTotalChunks] = useState(0);
   const toast = useToast();
   const abortRef = useRef(false);
 
@@ -321,6 +387,8 @@ export function BatchShipmentProgressDialog({ isOpen, orderSns, onClose, onCompl
       setOrders(orderSns.map(sn => ({ orderSn: sn, step: 'PENDING' })));
       setIsRunning(false);
       setPrinting(false);
+      setCurrentChunk(0);
+      setTotalChunks(0);
       abortRef.current = false;
     }
   }, [isOpen, orderSns]);
@@ -334,71 +402,127 @@ export function BatchShipmentProgressDialog({ isOpen, orderSns, onClose, onCompl
     setIsRunning(true);
     abortRef.current = false;
 
-    // Ship orders sequentially (avoid rate limit)
-    for (const sn of orderSns) {
+    // Split into chunks of 500 orders
+    const CHUNK_SIZE = 500;
+    const chunks: string[][] = [];
+    for (let i = 0; i < orderSns.length; i += CHUNK_SIZE) {
+      chunks.push(orderSns.slice(i, i + CHUNK_SIZE));
+    }
+    
+    setTotalChunks(chunks.length);
+
+    // Process chunks sequentially
+    for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
       if (abortRef.current) break;
+      
+      setCurrentChunk(chunkIdx + 1);
+      const chunk = chunks[chunkIdx];
 
-      updateOrder(sn, { step: 'SHIPPING' });
-
+      // Call batch API for this chunk
       try {
-        const result = await api.orderShip(sn, method);
-        if (!result.success) {
-          updateOrder(sn, { step: 'ERROR', error: result.message || 'Gagal' });
-          continue;
+        const batchResult = await api.orderShipBatch(chunk, method);
+        
+        if (batchResult.success && batchResult.data) {
+          const { results } = batchResult.data;
+          
+          // Update order states based on batch results
+          // Backend already fetches tracking numbers in batch!
+          const readyOrderSns: string[] = [];
+          for (const result of results) {
+            if (result.success) {
+              // If tracking number is available from batch API, use it directly
+              if (result.trackingNumber) {
+                updateOrder(result.orderSn, { 
+                  step: 'READY', 
+                  trackingNumber: result.trackingNumber 
+                });
+                readyOrderSns.push(result.orderSn);
+              } else {
+                // No tracking number yet, mark as FETCHING_TRACKING for polling
+                updateOrder(result.orderSn, { step: 'FETCHING_TRACKING' });
+              }
+            } else {
+              updateOrder(result.orderSn, { step: 'ERROR', error: result.error || 'Gagal' });
+            }
+          }
+
+          // Batch prefetch label data for all ready orders (non-blocking)
+          if (readyOrderSns.length > 0) {
+            api.orderLabelDataBatch(readyOrderSns)
+              .then(batchLabelRes => {
+                if (batchLabelRes.success && batchLabelRes.data) {
+                  for (const r of batchLabelRes.data.results) {
+                    if (r.success && r.data) {
+                      updateOrder(r.orderSn, { labelData: r.data });
+                    }
+                  }
+                }
+              })
+              .catch(() => { /* ok — labels can be fetched later */ });
+          }
+        } else {
+          // If batch API fails, mark all orders in chunk as error
+          for (const sn of chunk) {
+            updateOrder(sn, { step: 'ERROR', error: 'Batch API gagal' });
+          }
         }
-        updateOrder(sn, { step: 'FETCHING_TRACKING' });
       } catch (err: any) {
-        updateOrder(sn, { step: 'ERROR', error: err.message || 'Network error' });
-        continue;
+        // Network error - mark all orders in chunk as error
+        for (const sn of chunk) {
+          updateOrder(sn, { step: 'ERROR', error: err.message || 'Network error' });
+        }
       }
 
-      // Small delay between ship calls
-      if (orderSns.indexOf(sn) < orderSns.length - 1) {
-        await new Promise(r => setTimeout(r, 500));
+      // Delay between chunks (300ms to respect rate limits)
+      if (chunkIdx < chunks.length - 1) {
+        await new Promise(r => setTimeout(r, 300));
       }
     }
 
     if (abortRef.current) { setIsRunning(false); return; }
 
-    // Fetch tracking numbers in parallel for all successfully shipped orders
-    const shippedSns = orderSns.filter(sn => {
-      const o = orders.find(x => x.orderSn === sn);
-      // Check current state from the latest closure - we need to use a ref or just check not ERROR
-      return true; // We'll handle inside
+    // Only poll for orders that don't have tracking numbers yet
+    // This should be rare since backend fetches them in batch
+    const ordersNeedingTracking = await new Promise<OrderProgress[]>(resolve => {
+      setOrders(prev => { 
+        resolve(prev.filter(o => o.step === 'FETCHING_TRACKING')); 
+        return prev; 
+      });
     });
 
-    await Promise.all(orderSns.map(async (sn) => {
-      // Get current state
-      const currentOrders = await new Promise<OrderProgress[]>(resolve => {
-        setOrders(prev => { resolve(prev); return prev; });
-      });
-      const order = currentOrders.find(o => o.orderSn === sn);
-      if (!order || order.step === 'ERROR' || order.step === 'PENDING') return;
+    if (ordersNeedingTracking.length > 0) {
+      console.log(`[BatchShipment] Polling ${ordersNeedingTracking.length} orders without tracking numbers`);
+      
+      // Poll for remaining tracking numbers (reduced attempts: 2 × 2s = 4s max)
+      await Promise.all(ordersNeedingTracking.map(async (order) => {
+        for (let i = 0; i < 2; i++) {
+          if (abortRef.current) return;
+          try {
+            const res = await api.orderFetchTrackingNumber(order.orderSn);
+            if (res.success && res.data?.trackingNumber) {
+              updateOrder(order.orderSn, { step: 'READY', trackingNumber: res.data.trackingNumber });
 
-      // Poll for tracking number
-      for (let i = 0; i < 6; i++) {
-        if (abortRef.current) return;
-        try {
-          const res = await api.orderFetchTrackingNumber(sn);
-          if (res.success && res.data?.trackingNumber) {
-            updateOrder(sn, { step: 'READY', trackingNumber: res.data.trackingNumber });
-
-            // Prefetch label
-            try {
-              const labelRes = await api.orderLabel(sn);
-              if (labelRes.success && labelRes.data) {
-                updateOrder(sn, { labelUrl: labelRes.data.url, labelFormat: labelRes.data.format });
-              }
-            } catch { /* ok */ }
-            return;
+              // Prefetch label data
+              try {
+                const labelRes = await api.orderLabelData(order.orderSn);
+                if (labelRes.success && labelRes.data) {
+                  updateOrder(order.orderSn, { labelData: labelRes.data });
+                }
+              } catch { /* ok */ }
+              return; // Early exit on success
+            }
+          } catch { /* retry */ }
+          
+          // Only delay if not last attempt
+          if (i < 1) {
+            await new Promise(r => setTimeout(r, 2000));
           }
-        } catch { /* retry */ }
-        await new Promise(r => setTimeout(r, 3000));
-      }
+        }
 
-      // Timeout — still mark as ready without tracking
-      updateOrder(sn, { step: 'READY' });
-    }));
+        // Timeout — still mark as ready without tracking
+        updateOrder(order.orderSn, { step: 'READY' });
+      }));
+    }
 
     setIsRunning(false);
   }, [orderSns]);
@@ -412,42 +536,72 @@ export function BatchShipmentProgressDialog({ isOpen, orderSns, onClose, onCompl
         return;
       }
 
-      // Split: orders with locally prefetched labels vs. ones that need API
-      const withLabel = readyOrders.filter(o => o.labelUrl);
-      const needFetch = readyOrders.filter(o => !o.labelUrl);
-      
-      let allLabels: { orderSn: string; url: string }[] = withLabel.map(o => ({
-        orderSn: o.orderSn, url: o.labelUrl!,
-      }));
+      // Collect prefetched label data
+      const withData = readyOrders.filter(o => o.labelData);
+      const needFetch = readyOrders.filter(o => !o.labelData);
+      const allLabelData: LabelData[] = withData.map(o => o.labelData!);
 
-      // Fetch any missing labels from backend (should be fast — cache hit)
+      // Fetch any missing labels
       if (needFetch.length > 0) {
         try {
-          const batchResult = await api.orderLabelsBatch(needFetch.map(o => o.orderSn));
+          const batchResult = await api.orderLabelDataBatch(needFetch.map(o => o.orderSn));
           if (batchResult.success && batchResult.data) {
             for (const r of batchResult.data.results) {
-              if (r.success && r.url) {
-                allLabels.push({ orderSn: r.orderSn, url: r.url });
+              if (r.success && r.data) {
+                allLabelData.push(r.data);
               }
             }
           }
         } catch { /* continue with whatever we have */ }
       }
 
-      if (allLabels.length > 0) {
-        const { openPDFsInSingleTab } = await import('../../utils/pdf-merge');
-        await openPDFsInSingleTab(
-          allLabels.map(l => l.url),
-          allLabels.map(l => l.orderSn)
-        );
-        toast(`Membuka ${allLabels.length} label`, 'success');
-        onComplete();
-        onClose();
+      if (allLabelData.length > 0) {
+        // Open in new tab — same flow as single
+        await printCustomLabels(allLabelData, () => {
+          toast(`${allLabelData.length} label custom dibuka di tab baru`, 'success');
+          onComplete();
+          onClose();
+        });
       } else {
         toast('Tidak ada label yang berhasil diambil', 'error');
       }
     } catch (err: any) {
       toast(err.message || 'Gagal mencetak label', 'error');
+    } finally {
+      setPrinting(false);
+    }
+  };
+
+  const handlePrintAllOfficial = async () => {
+    setPrinting(true);
+    try {
+      const readyOrders = orders.filter(o => o.step === 'READY' && o.trackingNumber);
+      if (readyOrders.length === 0) {
+        toast('Tidak ada pesanan yang siap dicetak', 'error');
+        setPrinting(false);
+        return;
+      }
+
+      // Use optimized batch endpoint
+      const orderSnList = readyOrders.map(o => o.orderSn);
+      const result = await api.orderShippingLabelBatch(orderSnList);
+
+      if (result.success && (result.data?.url || result.data?.urls)) {
+        const urls = result.data.urls || (result.data.url ? [result.data.url] : []);
+        await printOfficialLabels(urls, orderSnList, () => {
+          toast(`${orderSnList.length} label asli dibuka di tab baru`, 'success');
+          onComplete();
+          onClose();
+        });
+
+        if (result.data.failedOrders && result.data.failedOrders.length > 0) {
+          toast(`${result.data.failedOrders.length} order gagal diambil labelnya`, 'warn');
+        }
+      } else {
+        toast((result as any).error || 'Tidak ada label resmi yang berhasil diambil', 'error');
+      }
+    } catch (err: any) {
+      toast(err.message || 'Gagal mencetak label resmi', 'error');
     } finally {
       setPrinting(false);
     }
@@ -543,8 +697,8 @@ export function BatchShipmentProgressDialog({ isOpen, orderSns, onClose, onCompl
         {/* ── METHOD SELECT ── */}
         {!methodSelected && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <MethodButton emoji="🚚" label="Pickup" desc="Kurir mengambil dari alamat Anda" onClick={() => runBatchFlow('pickup')} />
-            <MethodButton emoji="📦" label="Dropoff" desc="Anda antar ke drop point" onClick={() => runBatchFlow('dropoff')} />
+            <MethodButton label="Pickup" desc="Kurir mengambil dari alamat Anda" onClick={() => runBatchFlow('pickup')} />
+            <MethodButton label="Dropoff" desc="Anda antar ke drop point" onClick={() => runBatchFlow('dropoff')} />
           </div>
         )}
 
@@ -556,9 +710,10 @@ export function BatchShipmentProgressDialog({ isOpen, orderSns, onClose, onCompl
           }}>
             <Loader2 size={18} className="spin" style={{ color: 'var(--accent)', flexShrink: 0 }} />
             <span style={{ fontSize: 13, color: 'var(--text2)' }}>
+              {totalChunks > 1 && currentChunk > 0 && shippingCount === 0 && trackingCount === 0 && `Memproses chunk ${currentChunk} dari ${totalChunks} (${orderSns.length} pesanan)`}
               {shippingCount > 0 && `Mengirim pesanan ke Shopee... (${doneCount + errorCount + shippingCount}/${orderSns.length})`}
               {shippingCount === 0 && trackingCount > 0 && `Mengambil tracking number... (${readyCount}/${doneCount + trackingCount})`}
-              {shippingCount === 0 && trackingCount === 0 && 'Menyiapkan label...'}
+              {shippingCount === 0 && trackingCount === 0 && totalChunks <= 1 && 'Menyiapkan label...'}
             </span>
           </div>
         )}
@@ -623,10 +778,60 @@ export function BatchShipmentProgressDialog({ isOpen, orderSns, onClose, onCompl
             {methodSelected ? 'Lewati' : 'Batal'}
           </button>
           {methodSelected && readyCount > 0 && !isRunning && (
-            <button onClick={handlePrintAll} disabled={printing} style={btnStyle(true, printing)}>
-              {printing ? <Loader2 size={15} className="spin" /> : <Printer size={15} />}
-              Cetak Label ({readyCount})
-            </button>
+            <div style={{ position: 'relative', display: 'inline-block' }}
+              onMouseEnter={(e) => {
+                const dd = e.currentTarget.querySelector('.batch-label-dropdown') as HTMLElement;
+                if (dd) dd.style.display = 'block';
+              }}
+              onMouseLeave={(e) => {
+                const dd = e.currentTarget.querySelector('.batch-label-dropdown') as HTMLElement;
+                if (dd) dd.style.display = 'none';
+              }}
+            >
+              <button onClick={handlePrintAll} disabled={printing} style={btnStyle(true, printing)}>
+                {printing ? <Loader2 size={15} className="spin" /> : <Printer size={15} />}
+                Cetak Label ({readyCount})
+                <ChevronDown size={11} style={{ opacity: 0.6, marginLeft: 2 }} />
+              </button>
+              {!printing && (
+                <div className="batch-label-dropdown" style={{
+                  display: 'none', position: 'absolute', bottom: '100%', right: 0,
+                  marginBottom: 4, background: 'var(--bg1, #fff)', border: '1px solid var(--border)',
+                  borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+                  minWidth: 170, overflow: 'hidden', zIndex: 9999,
+                }}>
+                  <button onClick={handlePrintAll} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                    padding: '10px 14px', border: 'none', background: 'transparent',
+                    cursor: 'pointer', fontSize: 12, fontWeight: 500, color: 'var(--text1)', textAlign: 'left',
+                  }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg2)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <Palette size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                    <div>
+                      <div>Label Custom</div>
+                      <div style={{ fontSize: 10, color: 'var(--text4)', marginTop: 1 }}>Ada info item & SKU</div>
+                    </div>
+                  </button>
+                  <div style={{ height: 1, background: 'var(--border)', margin: '0 10px' }} />
+                  <button onClick={handlePrintAllOfficial} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                    padding: '10px 14px', border: 'none', background: 'transparent',
+                    cursor: 'pointer', fontSize: 12, fontWeight: 500, color: 'var(--text1)', textAlign: 'left',
+                  }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg2)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <FileText size={14} style={{ color: 'var(--warning, #f59e0b)', flexShrink: 0 }} />
+                    <div>
+                      <div>Label Asli</div>
+                      <div style={{ fontSize: 10, color: 'var(--text4)', marginTop: 1 }}>PDF resmi dari Shopee</div>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -636,7 +841,7 @@ export function BatchShipmentProgressDialog({ isOpen, orderSns, onClose, onCompl
 
 /* ── Shared UI helpers ── */
 
-function MethodButton({ emoji, label, desc, onClick }: { emoji: string; label: string; desc: string; onClick: () => void }) {
+function MethodButton({ label, desc, onClick }: { label: string; desc: string; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -656,7 +861,7 @@ function MethodButton({ emoji, label, desc, onClick }: { emoji: string; label: s
         e.currentTarget.style.borderColor = 'var(--border)';
       }}
     >
-      <div style={{ fontWeight: 600, marginBottom: 3 }}>{emoji} {label}</div>
+      <div style={{ fontWeight: 600, marginBottom: 3 }}>{label}</div>
       <div style={{ fontSize: 12, opacity: 0.8 }}>{desc}</div>
     </button>
   );

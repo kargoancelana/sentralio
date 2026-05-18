@@ -10,7 +10,6 @@ import { PesananSaya } from './pages/PesananSaya';
 import './styles/globals.css';
 
 function App() {
-  console.log("DEBUG: VERSI BARU LOADED");
   return (
     <ThemeProvider>
       <BrowserRouter>

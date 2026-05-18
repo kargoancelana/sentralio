@@ -76,49 +76,49 @@ export const api = {
   orderFetchTrackingNumber: (orderSn: string) =>
     fetchApi<{ success: boolean; data?: { orderSn: string; trackingNumber: string }; message?: string }>(`/orders/${orderSn}/tracking-number`),
   
-  // Label Pengiriman / Shipping Labels (Custom Label via Puppeteer)
-  orderLabel: (orderSn: string) =>
+  // Official Shopee Label (PDF from API)
+  orderShippingLabel: (orderSn: string) =>
     fetchApi<{
       success: boolean;
-      data: {
-        orderSn: string;
-        pdf: string;        // base64 PDF
-        format: 'pdf';
-        trackingNumber: string;
-      };
-      message?: string;
-    }>(`/orders/${orderSn}/custom-label`),
-  
-  // Legacy Shopee label (fallback)
-  orderLabelShopee: (orderSn: string) =>
-    fetchApi<{
-      success: boolean;
-      data: {
-        orderSn: string;
-        url: string;
-        format: 'pdf' | 'png' | 'jpg';
-        trackingNumber: string;
-      };
-      message?: string;
+      data?: { orderSn: string; url: string; format: string; trackingNumber: string; retrievedAt: string };
+      error?: string;
     }>(`/orders/${orderSn}/shipping-label`),
-  
-  orderLabelsBatch: (orderSns: string[]) =>
+
+  // Official Shopee Label BATCH (optimized — 1 merged PDF for all orders)
+  orderShippingLabelBatch: (orderSns: string[]) =>
+    fetchApi<{
+      success: boolean;
+      data?: { url?: string; urls?: string[]; format: string; successCount: number; failedOrders: Array<{ orderSn: string; error: string }> };
+      error?: string;
+    }>('/orders/shipping-labels/batch-download', {
+      method: 'POST',
+      body: JSON.stringify({ order_sns: orderSns })
+    }),
+
+  // Custom Label Data (Frontend Rendering)
+  orderLabelData: (orderSn: string) =>
+    fetchApi<{
+      success: boolean;
+      data: import('../types/label').LabelData;
+      message?: string;
+    }>(`/orders/${orderSn}/label-data`),
+
+  orderLabelDataBatch: (orderSns: string[]) =>
     fetchApi<{
       success: boolean;
       data: {
-        total: number;
-        successful: number;
-        failed: number;
-        pdf?: string;       // base64 multi-page PDF
-        format?: 'pdf';
         results: Array<{
           orderSn: string;
           success: boolean;
+          data?: import('../types/label').LabelData;
           error?: string;
         }>;
+        successful: number;
+        failed: number;
+        total: number;
       };
       message?: string;
-    }>('/orders/custom-labels/batch', {
+    }>('/orders/label-data/batch', {
       method: 'POST',
       body: JSON.stringify({ order_sns: orderSns })
     }),

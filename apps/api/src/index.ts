@@ -1,5 +1,6 @@
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
+import { rateLimit } from "elysia-rate-limit";
 import { eq } from "drizzle-orm";
 import { env } from "./config/env";
 import { productRoutes } from "./modules/product/product.route";
@@ -16,9 +17,28 @@ import { backgroundSyncService } from "./services/background-sync.service";
 
 const app = new Elysia()
   .use(cors({
-    origin: ["http://localhost:5173", "http://localhost:3000", "http://localhost:5175"],
+    origin: env.nodeEnv === 'production' 
+      ? (env.frontendUrl ? [env.frontendUrl] : ["https://yourdomain.com"]) // Production: Use FRONTEND_URL from .env
+      : ["http://localhost:5173", "http://localhost:3000", "http://localhost:5175"], // Development: Allow localhost
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     credentials: true,
+  }))
+  .use(rateLimit({
+    duration: 60000, // 1 minute window
+    max: 100, // 100 requests per minute per IP
+    errorResponse: {
+      success: false,
+      message: "Terlalu banyak permintaan. Silakan coba lagi dalam beberapa saat.",
+      error: "RATE_LIMIT_EXCEEDED"
+    },
+    generator: (req, server) => {
+      // Use IP address as identifier
+      return server?.requestIP(req)?.address || 'unknown';
+    },
+    skip: (req) => {
+      // Skip rate limiting for health check endpoint
+      return req.url.endsWith('/health');
+    }
   }))
   .onError(({ code, error, set }) => {
     if (code === "VALIDATION") {

@@ -10,14 +10,16 @@
  * - Lock system (prevent concurrent sync)
  * - Chunking for large gaps (avoid timeout)
  * 
- * Strategy (based on ChatGPT recommendation):
- * - Active orders: Sync every 5 min with 15 min overlap
- * - Realtime boost: Sync every 1 min (last 10 min)
- * - Active safety net: Sync every 10 min (last 7 days)
- * - Completed orders: Sync every 6 hours (last 90 days)
+ * OPTIMIZED STRATEGY (2024-05-07):
+ * - Active orders: Sync every 2 min with 6 min overlap (near-realtime)
+ * - Active safety net: Sync every 30 min (last 10 days) - safety net only
+ * - Completed orders: Sync every 2 hours (last 30 days)
+ * - Stuck orders: Refresh every 30 min (direct DB query + batch fetch)
+ * 
+ * API Usage: ~34.5 calls/hour (was ~98) - 65% reduction
  * 
  * Core Principle:
- * - Overlap >= 2x interval (prevent gaps)
+ * - Overlap >= 3x interval (prevent gaps)
  * - State tracking in database (survive restart)
  * - Better duplicate than miss data
  */
@@ -169,18 +171,17 @@ class BackgroundSyncService {
   /**
    * Start background sync for all shops
    * 
-   * Runs multiple sync jobs with different strategies:
-   * 1. Active orders sync (every 5 min) - UNPAID, READY_TO_SHIP, SHIPPED with 15 min overlap
-   * 2. Realtime boost (every 1 min) - ALL statuses, last 10 min (catch recent changes)
-   * 3. Active safety net (every 10 min) - Active statuses, last 7 days (prevent miss)
-   * 4. Completed orders (every 6 hours) - COMPLETED, last 90 days with 1 day overlap
+   * OPTIMIZED STRATEGY (2024-05-07):
+   * 1. Active orders sync (every 2 min) - Near-realtime with 6 min overlap
+   * 2. Active safety net (every 30 min) - Full scan 10 days (prevent miss)
+   * 3. Completed orders (every 2 hours) - 30 days with 1 day overlap
+   * 4. Stuck orders refresh (every 30 min) - Direct DB query + batch fetch
    * 
    * This ensures:
-   * - Active orders monitored closely (5 min + 15 min overlap)
-   * - Recent changes caught immediately (1 min realtime)
-   * - No data missed (safety net every 10 min)
-   * - Completed orders synced periodically (6 hours)
-   * - Efficient API usage (incremental sync with state tracking)
+   * - Near-realtime monitoring (2 min, avg 1 min delay)
+   * - No data missed (6 min overlap + 30 min safety net)
+   * - Efficient API usage (~34.5 calls/hour vs ~98 before)
+   * - Safe rate limits (well below Shopee's ~100-200 calls/hour limit)
    */
   async startBackgroundSync() {
     console.log('[background-sync] Starting background sync service...');
@@ -196,13 +197,16 @@ class BackgroundSyncService {
     console.log(`[background-sync] Found ${shops.length} shop(s) to sync`);
 
     // Job 1: Active orders - High priority, incremental with overlap
-    // Catches: New orders, payment updates, ready to ship, shipped
-    // CRITICAL FIX: Uses update_time to catch status changes on old orders
+    // OPTIMIZED: 2 minutes for near-realtime sync
+    // Catches: New orders, payment updates, status changes, CANCELLED
+    // CRITICAL: Uses update_time to catch status changes on orders
+    // INCLUDES daysBack for first run to prevent missing orders after restart
     this.scheduleJob('active-orders', {
-      intervalMs: 5 * 60 * 1000,     // 5 minutes
-      overlapSeconds: 15 * 60,       // 15 minutes overlap (3x interval)
-      orderStatus: undefined,        // ALL statuses (Shopee API limitation)
-      description: 'Active orders (incremental with 15min overlap, update_time)',
+      intervalMs: 2 * 60 * 1000,     // 2 minutes (30 calls/hour)
+      overlapSeconds: 6 * 60,        // 6 minutes overlap (3x interval)
+      daysBack: 7,                   // First run: fetch last 7 days
+      orderStatus: undefined,        // ALL statuses including CANCELLED
+      description: 'Active orders (incremental with 6min overlap, update_time, 7 days first run)',
       isIncremental: true,
       timeRangeField: 'update_time',
     }, shops);
@@ -210,26 +214,17 @@ class BackgroundSyncService {
     // Stagger: wait 2s between job starts to avoid rate limit burst
     await new Promise(r => setTimeout(r, 2000));
 
-    // Job 2: Realtime boost - Ultra high priority, catch recent changes
-    // Catches: Status changes in last 10 minutes
-    this.scheduleJob('realtime-boost', {
-      intervalMs: 60 * 1000,         // 1 minute
-      overlapSeconds: 2 * 60,        // 2 minutes overlap
-      orderStatus: undefined,        // ALL statuses
-      description: 'Realtime boost (last 10 min, all statuses, update_time)',
-      isIncremental: true,
-      timeRangeField: 'update_time',
-    }, shops);
-
-    await new Promise(r => setTimeout(r, 2000));
+    // Job 2: Realtime boost - REMOVED (redundant with 2-min active-orders)
+    // The 2-minute active-orders job is already fast enough for near-realtime sync
 
     // Job 3: Active safety net - Medium priority, full scan
-    // Safety net: Ensures no data is missed for active orders
+    // OPTIMIZED: 30 minutes (was 10 min) - safety net only
+    // Safety net: Ensures no data is missed for active orders including CANCELLED
     this.scheduleJob('active-safety-net', {
-      intervalMs: 10 * 60 * 1000,    // 10 minutes
-      daysBack: 15,                   // 15 days (Shopee API max)
-      orderStatus: undefined,        // ALL statuses
-      description: 'Active safety net (last 15 days, update_time)',
+      intervalMs: 30 * 60 * 1000,    // 30 minutes (2 calls/hour)
+      daysBack: 10,                   // 10 days (reduced from 15)
+      orderStatus: undefined,        // ALL statuses including CANCELLED
+      description: 'Active safety net (last 10 days, update_time, includes CANCELLED)',
       isIncremental: false,
       timeRangeField: 'update_time',
     }, shops);
@@ -237,13 +232,14 @@ class BackgroundSyncService {
     await new Promise(r => setTimeout(r, 2000));
 
     // Job 4: Completed orders - Low priority, periodic sync
-    // Catches: SHIPPED → COMPLETED transitions for older orders (>15 days)
+    // Catches: SHIPPED → COMPLETED transitions for older orders (>10 days)
+    // Also catches: PROCESSED → CANCELLED transitions for older orders
     this.scheduleJob('completed-orders', {
-      intervalMs: 2 * 60 * 60 * 1000, // 2 hours (was 6h — too slow for status updates)
+      intervalMs: 2 * 60 * 60 * 1000, // 2 hours (0.5 calls/hour)
       overlapSeconds: 24 * 60 * 60,   // 1 day overlap
       daysBack: 30,                   // 30 days (will be auto-chunked)
-      orderStatus: undefined,        // ALL statuses
-      description: 'Completed orders (30 days with auto-chunking, update_time)',
+      orderStatus: undefined,        // ALL statuses including CANCELLED
+      description: 'Completed orders (30 days with auto-chunking, update_time, includes CANCELLED)',
       isIncremental: true,
       timeRangeField: 'update_time',
     }, shops);
@@ -251,6 +247,7 @@ class BackgroundSyncService {
     await new Promise(r => setTimeout(r, 2000));
 
     // Job 5: Stuck orders refresh - Directly query DB for orders stuck in
+    // OPTIMIZED: 30 minutes (was 15 min)
     // READY_TO_SHIP, PROCESSED, or SHIPPED that should have progressed.
     // This bypasses get_order_list and directly fetches details for stuck orders.
     this.scheduleStuckOrdersJob(shops);
@@ -313,9 +310,11 @@ class BackgroundSyncService {
     try {
       // Sync each shop sequentially to avoid rate limits
       for (const shop of shops) {
+        // CRITICAL: Use try-finally to ensure lock is ALWAYS released
+        let lockAcquired = false;
         try {
           // Check and set lock
-          const lockAcquired = await this.setSyncLock(jobName, shop.shopId, true);
+          lockAcquired = await this.setSyncLock(jobName, shop.shopId, true);
           if (!lockAcquired) {
             console.log(`[background-sync] Job "${jobName}" - shop ${shop.shopId}: Skipped (already in progress)`);
             continue;
@@ -364,8 +363,7 @@ class BackgroundSyncService {
                     0
                   );
                   
-                  // Release lock
-                  await this.setSyncLock(jobName, shop.shopId, false);
+                  console.log(`[background-sync] Job "${jobName}" synced ${synced} orders from shop ${shop.shopId} (chunked catch-up)`);
                   continue;
                 } else {
                   // Small gap: normal catch-up
@@ -403,9 +401,6 @@ class BackgroundSyncService {
               );
               
               totalSynced += result.syncedCount;
-              
-              // Release lock
-              await this.setSyncLock(jobName, shop.shopId, false);
               
               console.log(`[background-sync] Job "${jobName}" synced ${result.syncedCount} orders from shop ${shop.shopId} (chunked)`);
               continue;
@@ -465,16 +460,10 @@ class BackgroundSyncService {
             );
           }
 
-          // Release lock
-          await this.setSyncLock(jobName, shop.shopId, false);
-
           console.log(`[background-sync] Job "${jobName}" synced ${totalSynced} orders from shop ${shop.shopId}`);
         } catch (shopError: any) {
           console.error(`[background-sync] Error syncing shop ${shop.shopId} in job "${jobName}":`, shopError.message);
           stats.errors++;
-          
-          // Release lock on error
-          await this.setSyncLock(jobName, shop.shopId, false);
           
           // Update error count in database
           const state = await this.getSyncState(jobName, shop.shopId);
@@ -487,6 +476,12 @@ class BackgroundSyncService {
               0,
               1
             );
+          }
+        } finally {
+          // CRITICAL: Always release lock, even if error or continue was called
+          if (lockAcquired) {
+            await this.setSyncLock(jobName, shop.shopId, false);
+            console.log(`[background-sync] Job "${jobName}" - shop ${shop.shopId}: Lock released`);
           }
         }
       }
@@ -573,13 +568,14 @@ class BackgroundSyncService {
 
   /**
    * Schedule the stuck orders refresh job.
+   * OPTIMIZED: 30 minutes (was 15 min) - reduced frequency for API efficiency
    * This job directly queries the WMS database for orders stuck in READY_TO_SHIP or PROCESSED,
    * then batch-fetches their current status from Shopee API.
    * This handles the edge case where both create_time and update_time are outside the sync window.
    */
   private scheduleStuckOrdersJob(shops: { shopId: number }[]) {
     const jobName = 'stuck-orders-refresh';
-    const intervalMs = 15 * 60 * 1000; // Every 15 minutes
+    const intervalMs = 30 * 60 * 1000; // Every 30 minutes (was 15 min)
 
     this.syncStats.set(jobName, {
       lastSyncTime: new Date(),
@@ -606,6 +602,8 @@ class BackgroundSyncService {
    * Directly refresh orders that are stuck in READY_TO_SHIP or PROCESSED status.
    * Instead of querying Shopee's get_order_list (which requires time ranges),
    * this queries our DB for stuck orders and batch-fetches their details directly.
+   * 
+   * INCLUDES CANCELLED: Also catches orders that were PROCESSED but got cancelled.
    */
   private async runStuckOrdersRefresh(shops: { shopId: number }[]) {
     const jobName = 'stuck-orders-refresh';
@@ -682,11 +680,12 @@ class BackgroundSyncService {
               }
 
               // Only update if status actually changed AND is not a downgrade
+              // CRITICAL: CANCELLED has priority 99, so it will always override PROCESSED
               if (finalStatus !== oldStatus) {
                 const STATUS_PRIORITY: Record<string, number> = {
                   'UNPAID': 0, 'READY_TO_SHIP': 1, 'PROCESSED': 2,
-                  'SHIPPED': 3, 'TO_CONFIRM_RECEIVE': 4, 'COMPLETED': 5,
-                  'IN_CANCEL': 1, 'CANCELLED': 1, 'TO_RETURN': 4,
+                  'SHIPPED': 3, 'TO_RETURN': 4, 'TO_CONFIRM_RECEIVE': 4, 'COMPLETED': 5,
+                  'IN_CANCEL': 99, 'CANCELLED': 99,  // Terminal states: always override
                 };
                 const oldP = STATUS_PRIORITY[oldStatus] ?? 0;
                 const newP = STATUS_PRIORITY[finalStatus] ?? 0;

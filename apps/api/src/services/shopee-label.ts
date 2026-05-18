@@ -426,10 +426,12 @@ export async function downloadShippingDocument(
 
   const orderItem: any = { order_sn: orderSn };
   if (packageNumber) orderItem.package_number = packageNumber;
-  if (shippingDocumentType) orderItem.shipping_document_type = shippingDocumentType;
-  const body = {
+  const body: any = {
     order_list: [orderItem]
   };
+  // CRITICAL: shipping_document_type must be TOP-LEVEL, not inside order_list items
+  // Per Shopee API spec: { "shipping_document_type": "...", "order_list": [...] }
+  if (shippingDocumentType) body.shipping_document_type = shippingDocumentType;
 
   try {
     // CRITICAL FIX: download_shipping_document returns PDF binary, NOT JSON
@@ -890,14 +892,13 @@ export async function getMassTrackingNumber(
  * Returns raw logistics data (sort codes, 3PL info, tracking, weight)
  * that can be used to render a self-designed AWB label.
  * 
- * NOTE: We do NOT request recipient_address_info images here.
- * Recipient address is fetched as text from get_order_detail instead,
- * which produces smaller PDFs and crisper thermal prints.
+ * Requests recipient_address_info images (nameImg, phoneImg, addressImg)
+ * as base64-encoded images from Shopee API for display on custom labels.
  * 
  * @param shopId - Shop ID
  * @param orderSn - Order serial number
  * @param packageNumber - Package number (optional, for packaged orders)
- * @returns Shipping document data with sort codes, 3PL info, etc.
+ * @returns Shipping document data with sort codes, 3PL info, and recipient images
  */
 export async function getShippingDocumentDataInfo(
   shopId: number,
@@ -916,6 +917,29 @@ export async function getShippingDocumentDataInfo(
 
   const body: any = { order_sn: orderSn };
   if (packageNumber) body.package_number = packageNumber;
+  
+  // Request recipient address as images (Shopee masks text in get_order_detail)
+  // Optimized for 4x6 thermal label with proper sizing
+  // Note: phone is masked by Shopee so we don't request it
+  body.recipient_address_info = [
+    { 
+      key: "name",
+      style: {
+        text_style: ["bold"],
+        font_size: 9,         // 9pt font for name (smaller, proportional to label)
+        image_width: 6.0,     // 6 cm width
+        h_align: "left"
+      }
+    },
+    { 
+      key: "full_address",
+      style: {
+        font_size: 8,         // 8pt for address
+        image_width: 7.0,     // 7 cm width (back to 7cm, better wrapping)
+        h_align: "left"
+      }
+    }
+  ];
 
   try {
     const response = await makeShopeeRequest(path, shopId, body, 'POST');
@@ -943,4 +967,283 @@ export async function getShippingDocumentDataInfo(
     throw error;
   }
 }
-
+
+
+/**
+ * Get address list (pickup and return addresses)
+ * 
+ * Calls /api/v2/logistics/get_address_list endpoint
+ * to retrieve pickup and return address information including city.
+ * 
+ * @param shopId - Shop ID
+ * @returns Address list with pickup and return addresses
+ */
+export async function getAddressList(
+  shopId: number
+): Promise<any> {
+  const path = "/api/v2/logistics/get_address_list";
+  
+  console.log('[shopee-label] getting address list:', {
+    timestamp: new Date().toISOString(),
+    shopId,
+    operation: 'get_address_list'
+  });
+
+  try {
+    const response = await makeShopeeRequest(path, shopId, {}, 'GET');
+    
+    console.log('[shopee-label] address list response:', {
+      timestamp: new Date().toISOString(),
+      shopId,
+      operation: 'get_address_list',
+      addressCount: response?.response?.address_list?.length || 0,
+      success: true
+    });
+
+    return response;
+  } catch (error: any) {
+    console.error('[shopee-label] failed to get address list:', {
+      timestamp: new Date().toISOString(),
+      shopId,
+      operation: 'get_address_list',
+      errorType: 'shopee_api',
+      message: error.message,
+      stack: error.stack
+    });
+    throw error;
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// BATCH LABEL APIs — Optimized for multiple orders (up to 50 per call)
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Batch create shipping documents for multiple orders (up to 50)
+ * Per API spec (13.md): order_list limit [1, 50]
+ *
+ * Classifies items from response.result_list:
+ * - Items with non-empty `fail_error` → failedOrders
+ * - Items without `fail_error` → successOrders
+ *
+ * Handles top-level error `common.batch_api_all_failed` by extracting
+ * per-order errors from response.result_list.
+ *
+ * @param shopId - Shop identifier
+ * @param orders - Array of 1-50 order objects
+ * @returns Categorized results: successOrders and failedOrders
+ * @throws Error if orders array is empty or exceeds 50
+ */
+export async function createShippingDocumentBatch(
+  shopId: number,
+  orders: Array<{ order_sn: string; package_number?: string; tracking_number?: string; shipping_document_type?: string }>
+): Promise<{ successOrders: string[]; failedOrders: Array<{ order_sn: string; fail_error: string; fail_message: string }> }> {
+  if (orders.length === 0 || orders.length > 50) {
+    throw new Error(`Batch order list must contain 1 to 50 items, received: ${orders.length}`);
+  }
+
+  const path = "/api/v2/logistics/create_shipping_document";
+
+  console.log('[shopee-label] batch creating shipping documents:', {
+    shopId, count: orders.length, operation: 'create_document_batch'
+  });
+
+  const body = {
+    order_list: orders.map(o => {
+      const item: any = { order_sn: o.order_sn };
+      if (o.package_number) item.package_number = o.package_number;
+      if (o.tracking_number) item.tracking_number = o.tracking_number;
+      if (o.shipping_document_type) item.shipping_document_type = o.shipping_document_type;
+      return item;
+    })
+  };
+
+  try {
+    const response = await makeShopeeRequest(path, shopId, body);
+    const resultList = response?.response?.result_list || response?.result?.result_list || [];
+
+    const successOrders: string[] = [];
+    const failedOrders: Array<{ order_sn: string; fail_error: string; fail_message: string }> = [];
+
+    for (const item of resultList) {
+      if (item.fail_error) {
+        failedOrders.push({
+          order_sn: item.order_sn,
+          fail_error: item.fail_error,
+          fail_message: item.fail_message || ''
+        });
+      } else {
+        successOrders.push(item.order_sn);
+      }
+    }
+
+    // Orders not in result_list are assumed successful (Shopee only returns failures in some cases)
+    if (resultList.length === 0 && !response?.error) {
+      for (const o of orders) successOrders.push(o.order_sn);
+    }
+
+    console.log('[shopee-label] batch create result:', { success: successOrders.length, failed: failedOrders.length });
+    return { successOrders, failedOrders };
+  } catch (error: any) {
+    console.error('[shopee-label] batch create failed:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Batch check shipping document status for multiple orders (up to 50)
+ * Per API spec (14.md): order_list limit [1, 50]
+ * Returns which orders are READY, PROCESSING, or FAILED
+ *
+ * Classification logic:
+ * - status === 'READY' → ready
+ * - status === 'PROCESSING' → processing
+ * - items with fail_error → failed
+ *
+ * **Validates: Requirements 4.1, 9.2**
+ */
+export async function getShippingDocumentResultBatch(
+  shopId: number,
+  orders: Array<{ order_sn: string; package_number?: string }>
+): Promise<{ ready: string[]; processing: string[]; failed: Array<{ order_sn: string; fail_error: string; fail_message: string }> }> {
+  if (orders.length === 0 || orders.length > 50) {
+    throw new Error(`Batch order list must contain 1 to 50 items, received: ${orders.length}`);
+  }
+
+  const path = "/api/v2/logistics/get_shipping_document_result";
+
+  const body = {
+    order_list: orders.map(o => {
+      const item: any = { order_sn: o.order_sn };
+      if (o.package_number) item.package_number = o.package_number;
+      return item;
+    })
+  };
+
+  try {
+    const response = await makeShopeeRequest(path, shopId, body);
+    const resultList = response?.response?.result_list || response?.result?.result_list || [];
+
+    const ready: string[] = [];
+    const processing: string[] = [];
+    const failed: Array<{ order_sn: string; fail_error: string; fail_message: string }> = [];
+
+    for (const item of resultList) {
+      if (item.fail_error) {
+        failed.push({ order_sn: item.order_sn, fail_error: item.fail_error, fail_message: item.fail_message || '' });
+      } else if (item.status === 'READY') {
+        ready.push(item.order_sn);
+      } else {
+        processing.push(item.order_sn);
+      }
+    }
+
+    return { ready, processing, failed };
+  } catch (error: any) {
+    console.error('[shopee-label] batch get_result failed:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Error codes that indicate the caller should fall back to create-poll-download flow.
+ * These are NOT fatal errors — they mean the label isn't ready for direct download yet.
+ */
+const FALLBACK_ERROR_CODES = [
+  'logistics.shipping_document_should_print_first',
+  'logistics.download_later',
+];
+
+/**
+ * Batch download shipping documents for multiple orders (up to 50)
+ * Per API spec (15.md): Returns a single merged PDF file for all orders
+ * shipping_document_type is TOP-LEVEL (not inside order_list)
+ *
+ * Error discrimination:
+ * - If Shopee returns a JSON error with a fallback-triggering code, throws an error
+ *   prefixed with `[FALLBACK_REQUIRED]` so the caller can detect it.
+ * - If Shopee returns any other JSON error, throws a generic error with the API message.
+ *
+ * @throws Error with `[FALLBACK_REQUIRED]` prefix for recoverable "not ready" errors
+ * @throws Error for other API errors or timeout
+ */
+export async function downloadShippingDocumentBatch(
+  shopId: number,
+  orders: Array<{ order_sn: string; package_number?: string }>,
+  shippingDocumentType?: string
+): Promise<{ base64: string; format: 'pdf' }> {
+  if (orders.length === 0 || orders.length > 50) {
+    throw new Error(`Batch order list must contain 1 to 50 items, received: ${orders.length}`);
+  }
+
+  const path = "/api/v2/logistics/download_shipping_document";
+
+  console.log('[shopee-label] batch downloading shipping documents:', {
+    shopId, count: orders.length, operation: 'download_document_batch'
+  });
+
+  // CRITICAL: shipping_document_type is TOP-LEVEL, NOT inside order_list items
+  const body: any = {
+    order_list: orders.map(o => {
+      const item: any = { order_sn: o.order_sn };
+      if (o.package_number) item.package_number = o.package_number;
+      return item;
+    })
+  };
+  if (shippingDocumentType) body.shipping_document_type = shippingDocumentType;
+
+  // Direct fetch (not makeShopeeRequest) because response is binary PDF
+  const credentials = await getValidToken(shopId);
+  const timestamp = Math.floor(Date.now() / 1000);
+  const sign = generateSignature(credentials.partnerId, path, timestamp, credentials.partnerKey, credentials.accessToken, shopId);
+  const url = `${SHOPEE_API_BASE}${path}?partner_id=${credentials.partnerId}&timestamp=${timestamp}&access_token=${credentials.accessToken}&shop_id=${shopId}&sign=${sign}`;
+
+  // 30-second timeout for batch download (PDF generation for many labels can be slow)
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30_000);
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      throw new Error('Batch download timeout: request exceeded 30 seconds');
+    }
+    throw err;
+  }
+  clearTimeout(timeoutId);
+
+  const contentType = res.headers.get('content-type') || '';
+
+  if (contentType.includes('application/pdf') || contentType.includes('octet-stream')) {
+    const arrayBuffer = await res.arrayBuffer();
+    const base64Data = Buffer.from(arrayBuffer).toString('base64');
+    console.log('[shopee-label] batch download success (PDF):', { sizeBytes: arrayBuffer.byteLength, orderCount: orders.length });
+    return { base64: base64Data, format: 'pdf' };
+  }
+
+  // JSON error response — discriminate fallback-triggering errors from fatal errors
+  const data = await res.json();
+
+  if (data.error) {
+    const errorCode = data.error as string;
+    const errorMessage = data.message || data.error;
+
+    if (FALLBACK_ERROR_CODES.includes(errorCode)) {
+      // Recoverable: caller should fall back to create-poll-download
+      throw new Error(`[FALLBACK_REQUIRED] ${errorCode}: ${errorMessage}`);
+    }
+
+    // Non-recoverable API error
+    throw new Error(errorMessage);
+  }
+
+  throw new Error('Batch download: unexpected response format');
+}

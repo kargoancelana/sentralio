@@ -706,3 +706,555 @@ export async function getBatchLabels(orderSns: string[]): Promise<LabelResult[]>
     return [...results, ...remainingResults];
   }
 }
+
+
+// ═══════════════════════════════════════════════════════════════════
+// OPTIMIZED BATCH LABEL ASLI — Uses batch APIs (6-8 calls for 50 orders)
+// ═══════════════════════════════════════════════════════════════════
+
+import {
+  createShippingDocumentBatch,
+  getShippingDocumentResultBatch,
+  downloadShippingDocumentBatch
+} from "./shopee-label";
+
+/**
+ * Split an array into chunks of a given size.
+ * Used to respect Shopee's 50-item-per-call limit for batch APIs.
+ *
+ * @param arr - The array to split
+ * @param size - Maximum chunk size (must be > 0)
+ * @returns Array of chunks, each with at most `size` items
+ */
+export function chunkArray<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
+/**
+ * Helper: Create shipping documents, poll for readiness, and download PDFs.
+ * Used as fallback when direct download fails (labels not yet created).
+ * Early-exits if all failures are tracking_number_invalid (orders need more time after ship).
+ */
+async function createPollAndDownload(
+  shopId: number,
+  orders: Array<{ order_sn: string; package_number: string }>,
+  channelMap: Map<string, number>,
+  failedOrders: Array<{ orderSn: string; error: string }>,
+  batchChunkSize: number
+): Promise<string[]> {
+  const pdfBuffers: string[] = [];
+
+  // ── Pre-step: Fetch tracking numbers for orders that don't have them ──
+  // This prevents "tracking_number_invalid" errors during create_shipping_document
+  // Uses getMassTrackingNumber (1 API call for all orders) — no spam
+  try {
+    const { getMassTrackingNumber } = await import("./shopee-label");
+    const packageNumbers = orders.map(o => o.package_number);
+    
+    console.log('[label-service] createPollAndDownload: fetching tracking numbers for', orders.length, 'orders');
+    const trackingResult = await getMassTrackingNumber(shopId, packageNumbers);
+    const successList = trackingResult?.response?.success_list || [];
+    
+    // Build tracking map: package_number → tracking_number
+    const trackingMap = new Map<string, string>();
+    for (const item of successList) {
+      if (item.tracking_number) {
+        trackingMap.set(item.package_number, item.tracking_number);
+      }
+    }
+
+    // Update DB with tracking numbers (fire-and-forget, non-blocking)
+    if (trackingMap.size > 0) {
+      const { db } = await import("../db/client");
+      const { shopeeOrders } = await import("../db/schema");
+      const { eq } = await import("drizzle-orm");
+      
+      for (const order of orders) {
+        const tn = trackingMap.get(order.package_number);
+        if (tn) {
+          // Attach tracking to order object for use in create_shipping_document
+          (order as any).tracking_number = tn;
+          db.update(shopeeOrders)
+            .set({ trackingNumber: tn })
+            .where(eq(shopeeOrders.orderSn, order.order_sn))
+            .execute()
+            .catch(() => {});
+        }
+      }
+      console.log('[label-service] createPollAndDownload: got tracking numbers for', trackingMap.size, '/', orders.length, 'orders');
+    }
+  } catch (e: any) {
+    // Non-fatal: if tracking fetch fails, create_shipping_document will still try
+    console.warn('[label-service] createPollAndDownload: tracking fetch failed (non-fatal):', e.message);
+  }
+
+  // Create shipping documents (with tracking numbers from pre-step)
+  const createOrders = orders.map(o => ({
+    order_sn: o.order_sn,
+    package_number: o.package_number,
+    tracking_number: (o as any).tracking_number || undefined,
+    shipping_document_type: 'THERMAL_AIR_WAYBILL'
+  }));
+
+  const createChunks = chunkArray(createOrders, batchChunkSize);
+  const mergedCreateResult: { successOrders: string[]; failedOrders: Array<{ order_sn: string; fail_error: string; fail_message: string }> } = {
+    successOrders: [],
+    failedOrders: []
+  };
+
+  for (const chunk of createChunks) {
+    const chunkResult = await createShippingDocumentBatch(shopId, chunk as any);
+    mergedCreateResult.successOrders.push(...chunkResult.successOrders);
+    mergedCreateResult.failedOrders.push(...chunkResult.failedOrders);
+  }
+
+  // Record create failures
+  for (const fail of mergedCreateResult.failedOrders) {
+    failedOrders.push({ orderSn: fail.order_sn, error: `${fail.fail_error}: ${fail.fail_message}` });
+  }
+
+  // Early-exit: if ALL failures are tracking_number_invalid, skip polling
+  const allTrackingInvalid = mergedCreateResult.failedOrders.length > 0 &&
+    mergedCreateResult.failedOrders.every(f =>
+      f.fail_error?.includes('tracking_number_invalid') || f.fail_message?.includes('tracking number is invalid')
+    );
+
+  if (allTrackingInvalid && mergedCreateResult.successOrders.length === 0) {
+    console.log('[label-service] createPollAndDownload: all failures are tracking_number_invalid, skipping poll');
+    return pdfBuffers;
+  }
+
+  // Filter to only successfully created orders
+  const ordersToDownload = orders.filter(o =>
+    mergedCreateResult.successOrders.includes(o.order_sn)
+  );
+
+  if (ordersToDownload.length === 0) return pdfBuffers;
+
+  // Poll for readiness (max 6 polls × 800ms = 4.8s max)
+  const maxPolls = 6;
+  const readyOrders: string[] = [];
+  let processingOrders = [...ordersToDownload];
+
+  for (let poll = 0; poll < maxPolls; poll++) {
+    await new Promise(r => setTimeout(r, 800));
+    if (processingOrders.length === 0) break;
+
+    const pollChunks = chunkArray(processingOrders, batchChunkSize);
+    const newReady: string[] = [];
+    const stillProcessing: Array<{ order_sn: string; package_number: string }> = [];
+
+    for (const chunk of pollChunks) {
+      try {
+        const status = await getShippingDocumentResultBatch(
+          shopId,
+          chunk as Array<{ order_sn: string; package_number?: string }>
+        );
+        newReady.push(...status.ready);
+        for (const fail of status.failed) {
+          failedOrders.push({ orderSn: fail.order_sn, error: `${fail.fail_error}: ${fail.fail_message}` });
+        }
+        // Keep only processing orders
+        const doneSet = new Set([...status.ready, ...status.failed.map(f => f.order_sn)]);
+        stillProcessing.push(...chunk.filter(o => !doneSet.has(o.order_sn)));
+      } catch {
+        stillProcessing.push(...chunk);
+      }
+    }
+
+    readyOrders.push(...newReady);
+    processingOrders = stillProcessing;
+  }
+
+  // Timeout remaining
+  for (const order of processingOrders) {
+    failedOrders.push({ orderSn: order.order_sn, error: 'Timeout: label belum siap setelah polling' });
+  }
+
+  // Download ready orders grouped by channel
+  const finalOrders = ordersToDownload.filter(o => readyOrders.includes(o.order_sn));
+  if (finalOrders.length === 0) return pdfBuffers;
+
+  const byChannel = new Map<number | 'unknown', Array<{ order_sn: string; package_number: string }>>();
+  for (const order of finalOrders) {
+    const ch = channelMap.get(order.order_sn) || 'unknown';
+    if (!byChannel.has(ch)) byChannel.set(ch, []);
+    byChannel.get(ch)!.push(order);
+  }
+
+  for (const [, channelOrders] of byChannel) {
+    const chunks = chunkArray(channelOrders, batchChunkSize);
+    for (const chunk of chunks) {
+      try {
+        const result = await downloadShippingDocumentBatch(
+          shopId,
+          chunk as Array<{ order_sn: string; package_number?: string }>,
+          'THERMAL_AIR_WAYBILL'
+        );
+        pdfBuffers.push(result.base64);
+      } catch (err: any) {
+        for (const order of chunk) {
+          failedOrders.push({ orderSn: order.order_sn, error: err.message });
+        }
+      }
+    }
+  }
+
+  return pdfBuffers;
+}
+
+/**
+ * Optimized batch retrieval of official Shopee labels (PDF).
+ * Uses batch APIs to minimize API calls:
+ * 1. get_order_detail (batch 50) → package_numbers
+ * 2. Try download_shipping_document (batch) → if labels already exist
+ * 3. If not: create_shipping_document (batch) → poll get_shipping_document_result (batch) → download (batch)
+ * 
+ * Returns a single merged PDF containing all labels.
+ * 
+ * @param orderSns - Array of order serial numbers (max 50)
+ * @returns Result with merged PDF base64 URL or per-order errors
+ */
+export async function getBatchLabelsOptimized(orderSns: string[]): Promise<{
+  success: boolean;
+  pdfUrl?: string;
+  pdfUrls?: string[];
+  successCount: number;
+  failedOrders: Array<{ orderSn: string; error: string }>;
+}> {
+  const startTime = Date.now();
+  const failedOrders: Array<{ orderSn: string; error: string }> = [];
+
+  console.log('[label-service] getBatchLabelsOptimized started:', { count: orderSns.length });
+
+  try {
+    // ── Step 0: Check cache for all orders — instant reprint if all cached ──
+    const cachedPdfs: string[] = [];
+    const uncachedOrderSns: string[] = [];
+
+    for (const orderSn of orderSns) {
+      const cached = await labelCache.get(orderSn);
+      if (cached && cached.url) {
+        // Extract base64 from data URL
+        const base64Match = cached.url.match(/^data:application\/pdf;base64,(.+)$/);
+        if (base64Match && base64Match[1]) {
+          cachedPdfs.push(base64Match[1]);
+        } else {
+          uncachedOrderSns.push(orderSn);
+        }
+      } else {
+        uncachedOrderSns.push(orderSn);
+      }
+    }
+
+    // If ALL orders are cached, merge and return immediately (0 API calls)
+    if (uncachedOrderSns.length === 0 && cachedPdfs.length > 0) {
+      const { mergePdfBuffers } = await import('./pdf-merge');
+      const mergedBase64 = await mergePdfBuffers(cachedPdfs);
+      const pdfUrl = `data:application/pdf;base64,${mergedBase64}`;
+      const duration = Date.now() - startTime;
+      console.log('[label-service] ⚡ batch reprint ALL from cache:', { duration: `${duration}ms`, orders: orderSns.length });
+      return { success: true, pdfUrl, successCount: orderSns.length, failedOrders: [] };
+    }
+
+    // If MOST are cached (>50%), merge cached + only fetch uncached from Shopee
+    // This avoids re-downloading already-cached labels
+    if (cachedPdfs.length > 0 && uncachedOrderSns.length > 0) {
+      console.log('[label-service] batch: partial cache hit, fetching only uncached orders from Shopee:', { cached: cachedPdfs.length, uncached: uncachedOrderSns.length, total: orderSns.length });
+      
+      // Recursively fetch only uncached orders
+      const uncachedResult = await getBatchLabelsOptimized(uncachedOrderSns);
+      
+      // Merge cached PDFs with freshly fetched ones (maintain original order)
+      const allPdfBuffers: string[] = [];
+      let uncachedIdx = 0;
+      const uncachedPdfBuffers: string[] = [];
+      
+      // Extract base64 from uncached result
+      if (uncachedResult.pdfUrl) {
+        const match = uncachedResult.pdfUrl.match(/^data:application\/pdf;base64,(.+)$/);
+        if (match) uncachedPdfBuffers.push(match[1]);
+      }
+      
+      // Build merged PDF in original order: cached first, then uncached
+      // (Shopee batch download already handles ordering within each group)
+      allPdfBuffers.push(...cachedPdfs);
+      allPdfBuffers.push(...uncachedPdfBuffers);
+      
+      // Merge all
+      if (allPdfBuffers.length > 0) {
+        const { mergePdfBuffers } = await import('./pdf-merge');
+        const mergedBase64 = await mergePdfBuffers(allPdfBuffers);
+        const pdfUrl = `data:application/pdf;base64,${mergedBase64}`;
+        const duration = Date.now() - startTime;
+        const totalSuccess = cachedPdfs.length + uncachedResult.successCount;
+        console.log('[label-service] ⚡ batch partial cache merge:', { duration: `${duration}ms`, cached: cachedPdfs.length, fetched: uncachedResult.successCount, total: totalSuccess });
+        return { success: true, pdfUrl, successCount: totalSuccess, failedOrders: uncachedResult.failedOrders };
+      }
+      
+      // If no PDFs at all, return uncached result as-is
+      return uncachedResult;
+    }
+
+    console.log('[label-service] batch cache check:', { cached: cachedPdfs.length, uncached: uncachedOrderSns.length, total: orderSns.length });
+
+    // ── Step 1: Validate orders and get shopId ──
+    const validOrders: Array<{ orderSn: string; shopId: number; trackingNumber?: string; shippingCarrier?: string }> = [];
+
+    for (const orderSn of orderSns) {
+      const validation = await validateLabelEligibility(orderSn);
+      if (validation.valid) {
+        validOrders.push({
+          orderSn,
+          shopId: validation.order!.shopId,
+          trackingNumber: (validation.order as any).trackingNumber || undefined,
+          shippingCarrier: (validation.order as any).shippingCarrier || undefined
+        });
+      } else {
+        failedOrders.push({ orderSn, error: validation.error || 'Validation failed' });
+      }
+    }
+
+    if (validOrders.length === 0) {
+      return { success: false, successCount: 0, failedOrders };
+    }
+
+    // ── Shop ID consistency check ──
+    const uniqueShopIds = new Set(validOrders.map(o => o.shopId));
+    if (uniqueShopIds.size > 1) {
+      return {
+        success: false,
+        successCount: 0,
+        failedOrders: validOrders.map(o => ({
+          orderSn: o.orderSn,
+          error: 'Semua order dalam batch harus dari shop yang sama'
+        }))
+      };
+    }
+    const shopId = validOrders[0].shopId;
+
+    // ── Step 2: Get package_numbers via batch get_order_detail (1 API call for up to 50) ──
+    const { getShopeeOrderDetails } = await import("./shopee-raw");
+
+    const ORDER_DETAIL_TIMEOUT_MS = 15_000;
+    let orderDetails: any;
+    try {
+      orderDetails = await Promise.race([
+        getShopeeOrderDetails(shopId, validOrders.map(o => o.orderSn)),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('__TIMEOUT__')), ORDER_DETAIL_TIMEOUT_MS)
+        )
+      ]);
+    } catch (err: any) {
+      if (err?.message === '__TIMEOUT__') {
+        return {
+          success: false,
+          successCount: 0,
+          failedOrders: [{ orderSn: 'batch', error: 'Timeout saat mengambil detail order' }]
+        };
+      }
+      throw err;
+    }
+
+    // Check for API-level error (non-empty error field in response)
+    if (orderDetails?.error) {
+      return {
+        success: false,
+        successCount: 0,
+        failedOrders: [{ orderSn: 'batch', error: orderDetails.error }]
+      };
+    }
+
+    const orderDetailList = orderDetails?.response?.order_list || [];
+
+    // Build package map and channel map, track orders present in the response
+    const packageMap = new Map<string, string>();
+    const channelMap = new Map<string, number>(); // orderSn → logistics_channel_id
+    const responseOrderSns = new Set<string>();
+    for (const detail of orderDetailList) {
+      responseOrderSns.add(detail.order_sn);
+      if (detail.package_list && detail.package_list.length > 0 && detail.package_list[0].package_number) {
+        packageMap.set(detail.order_sn, detail.package_list[0].package_number);
+        // Extract logistics_channel_id from package_list (primary source)
+        if (detail.package_list[0].logistics_channel_id) {
+          channelMap.set(detail.order_sn, detail.package_list[0].logistics_channel_id);
+        }
+      }
+      // Fallback: logistics_channel_id at order level (some Shopee responses have it here)
+      if (!channelMap.has(detail.order_sn) && detail.logistics_channel_id) {
+        channelMap.set(detail.order_sn, detail.logistics_channel_id);
+      }
+    }
+
+    // Secondary fallback: use shipping_carrier from DB as channel proxy
+    // Orders with same carrier name are likely same channel
+    if (channelMap.size < packageMap.size) {
+      const carrierToChannel = new Map<string, number>();
+      let syntheticChannelId = -1;
+      for (const order of validOrders) {
+        if (packageMap.has(order.orderSn) && !channelMap.has(order.orderSn)) {
+          // Look up carrier from DB (already loaded in validOrders)
+          const carrier = order.shippingCarrier || 'unknown';
+          if (!carrierToChannel.has(carrier)) {
+            carrierToChannel.set(carrier, syntheticChannelId--);
+          }
+          channelMap.set(order.orderSn, carrierToChannel.get(carrier)!);
+        }
+      }
+      console.log('[label-service] batch: used carrier-based channel fallback for', packageMap.size - (channelMap.size - carrierToChannel.size), 'orders');
+    }
+
+    // Check for orders absent from API response or missing package_number
+    for (const order of validOrders) {
+      if (!responseOrderSns.has(order.orderSn)) {
+        // Order was in request but not in get_order_detail response
+        failedOrders.push({ orderSn: order.orderSn, error: `Order ${order.orderSn} tidak ditemukan di Shopee` });
+      } else if (!packageMap.has(order.orderSn)) {
+        // Order is in response but has empty/missing package_list or missing package_number
+        failedOrders.push({ orderSn: order.orderSn, error: `Package number tidak tersedia untuk order ${order.orderSn}` });
+      }
+    }
+
+    console.log('[label-service] batch: package_numbers fetched:', { found: packageMap.size, total: validOrders.length });
+
+    // ── Step 3: Build order list for batch download ──
+    const batchOrders = validOrders
+      .filter(o => packageMap.has(o.orderSn))
+      .map(o => ({
+        order_sn: o.orderSn,
+        package_number: packageMap.get(o.orderSn)!
+      }));
+
+    if (batchOrders.length === 0) {
+      return { success: false, successCount: 0, failedOrders };
+    }
+
+    // ── Step 4: Try direct batch download first (fast path) ──
+    // If labels were already created (e.g., by Shopee after ship_order), this returns immediately
+    // CRITICAL: Shopee cannot merge labels from different logistics channels into 1 PDF.
+    // We must group orders by logistics_channel_id and download each group separately.
+    const BATCH_CHUNK_SIZE = 50;
+
+    // Group batchOrders by logistics_channel_id
+    const ordersByChannel = new Map<number | 'unknown', Array<{ order_sn: string; package_number: string }>>();
+    for (const order of batchOrders) {
+      const channelId = channelMap.get(order.order_sn) || 'unknown';
+      if (!ordersByChannel.has(channelId)) ordersByChannel.set(channelId, []);
+      ordersByChannel.get(channelId)!.push(order);
+    }
+
+    console.log('[label-service] batch: orders grouped by channel:', 
+      Array.from(ordersByChannel.entries()).map(([ch, orders]) => ({ channel: ch, count: orders.length }))
+    );
+
+    try {
+      const allPdfBuffers: string[] = [];
+      const fallbackOrders: Array<{ order_sn: string; package_number: string }> = []; // orders that need create+poll
+
+      for (const [, channelOrders] of ordersByChannel) {
+        const chunks = chunkArray(channelOrders, BATCH_CHUNK_SIZE);
+        for (const chunk of chunks) {
+          try {
+            const result = await downloadShippingDocumentBatch(
+              shopId,
+              chunk as Array<{ order_sn: string; package_number?: string }>,
+              'THERMAL_AIR_WAYBILL'
+            );
+            allPdfBuffers.push(result.base64);
+          } catch (chunkError: any) {
+            // If "packages_can_not_download_together" → download each order individually
+            if (chunkError.message?.includes('packages_can_not_download_together') || chunkError.message?.includes('can not download together')) {
+              console.log('[label-service] batch: channel group download failed (mixed channels), falling back to per-order download for this chunk');
+              for (const order of chunk) {
+                try {
+                  const singleResult = await downloadShippingDocumentBatch(
+                    shopId,
+                    [order as { order_sn: string; package_number?: string }],
+                    'THERMAL_AIR_WAYBILL'
+                  );
+                  allPdfBuffers.push(singleResult.base64);
+                } catch (singleErr: any) {
+                  // If fallback required for this order, queue it for create+poll
+                  if (singleErr.message?.includes('[FALLBACK_REQUIRED]')) {
+                    fallbackOrders.push(order as { order_sn: string; package_number: string });
+                  } else {
+                    failedOrders.push({ orderSn: order.order_sn, error: singleErr.message });
+                  }
+                }
+              }
+            } else if (chunkError.message?.includes('[FALLBACK_REQUIRED]')) {
+              // These orders need create+poll — queue them but don't discard already-downloaded PDFs
+              console.log('[label-service] batch: chunk needs create+poll, queuing', chunk.length, 'orders for fallback');
+              fallbackOrders.push(...(chunk as Array<{ order_sn: string; package_number: string }>));
+            } else {
+              // Other error — record all orders in chunk as failed
+              for (const order of chunk) {
+                failedOrders.push({ orderSn: order.order_sn, error: chunkError.message });
+              }
+            }
+          }
+        }
+      }
+
+      // If we have some PDFs from fast path AND some orders need fallback
+      if (allPdfBuffers.length > 0 && fallbackOrders.length > 0) {
+        console.log('[label-service] batch: partial fast path success, attempting create+poll for remaining', fallbackOrders.length, 'orders');
+        
+        // Try create+poll for fallback orders only
+        const fallbackPdfs = await createPollAndDownload(shopId, fallbackOrders, channelMap, failedOrders, BATCH_CHUNK_SIZE);
+        allPdfBuffers.push(...fallbackPdfs);
+      } else if (allPdfBuffers.length === 0 && fallbackOrders.length > 0) {
+        // All orders need fallback
+        const fallbackPdfs = await createPollAndDownload(shopId, fallbackOrders, channelMap, failedOrders, BATCH_CHUNK_SIZE);
+        allPdfBuffers.push(...fallbackPdfs);
+      }
+
+      if (allPdfBuffers.length > 0) {
+        const { mergePdfBuffers } = await import('./pdf-merge');
+        const mergedBase64 = await mergePdfBuffers(allPdfBuffers);
+        const pdfUrl = `data:application/pdf;base64,${mergedBase64}`;
+        const successCount = batchOrders.length - failedOrders.filter(f => batchOrders.some(b => b.order_sn === f.orderSn)).length;
+        const duration = Date.now() - startTime;
+        console.log('[label-service] ⚡ batch download completed:', { duration: `${duration}ms`, orders: successCount, pdfs: allPdfBuffers.length, channels: ordersByChannel.size, fallback: fallbackOrders.length });
+
+        // Fire-and-forget: cache each order's label individually for instant reprints
+        // getSingleLabel will fast-path download (label exists) and save to cache
+        Promise.resolve().then(async () => {
+          for (const order of batchOrders) {
+            try {
+              await getSingleLabel(order.order_sn);
+            } catch { /* non-critical */ }
+          }
+          console.log('[label-service] batch: background cache population complete for', batchOrders.length, 'orders');
+        }).catch(() => { /* ignore */ });
+
+        return { success: true, pdfUrl, successCount, failedOrders };
+      }
+
+      // No PDFs at all
+      if (failedOrders.length === 0) {
+        failedOrders.push({ orderSn: 'batch', error: 'No labels could be downloaded' });
+      }
+      return { success: false, successCount: 0, failedOrders };
+
+    } catch (downloadError: any) {
+      console.error('[label-service] batch download: unexpected error:', downloadError.message);
+      return {
+        success: false,
+        successCount: 0,
+        failedOrders: [...failedOrders, { orderSn: 'batch', error: downloadError.message }]
+      };
+    }
+
+  } catch (error: any) {
+    console.error('[label-service] getBatchLabelsOptimized failed:', error.message);
+    const allFailed = failedOrders.length > 0
+      ? [...failedOrders, { orderSn: 'batch', error: error.message }]
+      : [{ orderSn: 'batch', error: error.message }];
+    return { success: false, successCount: 0, failedOrders: allFailed };
+  }
+}

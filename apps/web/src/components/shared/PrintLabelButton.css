@@ -1,5 +1,5 @@
 /**
- * PrintLabelButton Responsive Styles
+ * PrintLabelButton Styles
  */
 
 .print-label-button {
@@ -8,6 +8,21 @@
 
 .print-label-button-text {
   display: inline;
+}
+
+.print-label-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+/* Dropdown item hover */
+.print-label-dropdown-item:hover {
+  background: var(--bg2) !important;
+}
+
+/* Shipment dialog dropdown item hover */
+.shipment-label-dropdown button:hover {
+  background: var(--bg2) !important;
 }
 
 /* Mobile responsive */
