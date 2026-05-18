@@ -2,18 +2,18 @@ import { useState } from 'react';
 import { useToast } from '../components/ui/Toast';
 import { useApi } from '../hooks/useApi';
 import { api } from '../lib/api';
-import { Package, RefreshCw, Search, Truck, Loader2, Printer, CheckCircle2, Circle } from 'lucide-react';
+import { Package, RefreshCw, Search, Truck, Loader2, Printer, CheckCircle2, Circle, ChevronDown, Palette, FileText } from 'lucide-react';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale/id';
 import { PrintLabelButton } from '../components/shared/PrintLabelButton';
 import { ShipmentProgressDialog, BatchShipmentProgressDialog } from '../components/shared/ShipmentProgressDialog';
 import { SyncStatusIndicator } from '../components/shared/SyncStatusIndicator';
 import { getBatchSummaryMessage, mapLabelError } from '../utils/label-errors';
-import { openPrintDialog } from '../utils/print';
+import { printCustomLabels, printOfficialLabels } from '../utils/printLabel';
 import './PesananSaya.css';
 
 /* ── Status mapping ── */
-type MainFilter = 'UNPAID' | 'NEED_SHIP' | 'SHIPPED' | 'COMPLETED';
+type MainFilter = 'UNPAID' | 'NEED_SHIP' | 'SHIPPED' | 'COMPLETED' | 'CANCELLED';
 type SubFilter  = 'ALL' | 'READY_TO_SHIP' | 'PROCESSED';
 type PrintFilter = 'ALL' | 'PRINTED' | 'UNPRINTED';
 
@@ -305,11 +305,13 @@ function OrderCard({
 export function PesananSaya() {
   const toast = useToast();
   const { data: ordersData, loading, refetch } = useApi(() => api.orderList(), []);
+  const { data: shopsData } = useApi(() => api.shopeeCredentialsList(), []);
   const [syncing, setSyncing]         = useState(false);
   const [mainFilter, setMainFilter]   = useState<MainFilter>('NEED_SHIP');
   const [subFilter, setSubFilter]     = useState<SubFilter>('ALL');
   const [printFilter, setPrintFilter] = useState<PrintFilter>('ALL');
   const [search, setSearch]           = useState('');
+  const [shopFilter, setShopFilter]   = useState<string>('all');
   
   // Batch selection state (for shipment)
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
@@ -447,54 +449,118 @@ export function PesananSaya() {
     toast('Mengambil semua label...', 'info');
     
     try {
-      // Call batch custom label API — returns single multi-page PDF
-      const batchResult = await api.orderLabelsBatch(selectedLabelOrders);
+      // Split into chunks of 50 (backend limit)
+      const CHUNK_SIZE = 50;
+      const chunks: string[][] = [];
+      for (let i = 0; i < selectedLabelOrders.length; i += CHUNK_SIZE) {
+        chunks.push(selectedLabelOrders.slice(i, i + CHUNK_SIZE));
+      }
+
+      console.log(`[PesananSaya] Fetching ${selectedLabelOrders.length} labels in ${chunks.length} chunks`);
+
+      // Fetch all chunks
+      const allResults: Array<{ orderSn: string; success: boolean; data?: any; error?: string }> = [];
       
-      if (batchResult.success && batchResult.data) {
-        const { results, total, successful, failed, pdf } = batchResult.data;
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        console.log(`[PesananSaya] Fetching chunk ${i + 1}/${chunks.length} (${chunk.length} orders)`);
         
-        if (pdf && successful > 0) {
-          try {
-            // Open single multi-page PDF
-            const pdfDataUrl = `data:application/pdf;base64,${pdf}`;
-            openPrintDialog(pdfDataUrl, 'pdf');
-            
-            // Successfully opened — mark all successful orders as printed
-            const printedOrderSns = results.filter(r => r.success).map(r => r.orderSn);
-            try {
-              await api.orderMarkLabelPrintedBatch(printedOrderSns, true);
-              console.log('[PesananSaya] Batch labels marked as printed:', printedOrderSns.length);
-            } catch (markErr) {
-              console.warn('[PesananSaya] Failed to mark batch as printed (non-critical):', markErr);
+        try {
+          const batchResult = await api.orderLabelDataBatch(chunk);
+          
+          if (batchResult.success && batchResult.data) {
+            allResults.push(...batchResult.data.results);
+          } else {
+            // Mark all orders in failed chunk as failed
+            for (const orderSn of chunk) {
+              allResults.push({
+                orderSn,
+                success: false,
+                error: 'Gagal mengambil label untuk chunk ini'
+              });
             }
-            
-            toast(`Membuka ${successful} label`, 'success');
-            
-            // Refresh order data to update UI
-            await refetch();
-          } catch (openError: any) {
-            // Tab failed to open — do NOT mark as printed
-            console.error('[PesananSaya] Error opening batch labels:', openError);
-            toast(openError.message || 'Gagal membuka tab label. Periksa popup blocker browser Anda.', 'error');
           }
-        } else {
-          toast('Tidak ada label yang berhasil diambil', 'error');
+        } catch (chunkError: any) {
+          console.error(`[PesananSaya] Chunk ${i + 1} error:`, chunkError);
+          // Mark all orders in failed chunk as failed
+          for (const orderSn of chunk) {
+            allResults.push({
+              orderSn,
+              success: false,
+              error: chunkError.message || 'Network error'
+            });
+          }
         }
-        
-        // Show summary
-        const summaryMessage = getBatchSummaryMessage(successful, failed, total);
-        if (failed > 0) {
-          toast(summaryMessage, 'warn');
+
+        // Small delay between chunks
+        if (i < chunks.length - 1) {
+          await new Promise(r => setTimeout(r, 200));
+        }
+      }
+
+      // Aggregate results
+      const successfulLabels = allResults.filter(r => r.success && r.data).map(r => r.data!);
+      const successful = allResults.filter(r => r.success).length;
+      const failed = allResults.filter(r => !r.success).length;
+      const total = allResults.length;
+      
+      if (successfulLabels.length > 0) {
+        try {
+          // Open in new tab — no preview modal
+          await printCustomLabels(successfulLabels, async () => {
+            toast(`${successful} label custom dibuka di tab baru`, 'success');
+            await refetch();
+          });
+        } catch (openError: any) {
+          console.error('[PesananSaya] Error opening batch labels:', openError);
+          toast(openError.message || 'Gagal membuka label di tab baru', 'error');
         }
       } else {
-        toast('Gagal mengambil label batch', 'error');
+        toast('Tidak ada label yang berhasil diambil', 'error');
       }
+      
+      const summaryMessage = getBatchSummaryMessage(successful, failed, total);
+      if (failed > 0) toast(summaryMessage, 'warn');
       
       clearLabelSelection();
       
     } catch (err: any) {
       const errorInfo = mapLabelError(err);
       toast(errorInfo.message || 'Terjadi kesalahan saat memproses batch cetak label', 'error');
+    } finally {
+      setBatchPrinting(false);
+    }
+  };
+
+  const handleBatchPrintOfficialLabels = async () => {
+    if (selectedLabelOrders.length === 0) return;
+    
+    setBatchPrinting(true);
+    toast('Mengambil label resmi dari Shopee...', 'info');
+    
+    try {
+      // Use optimized batch endpoint
+      const result = await api.orderShippingLabelBatch(selectedLabelOrders);
+
+      if (result.success && (result.data?.url || result.data?.urls)) {
+        const urls = result.data.urls || (result.data.url ? [result.data.url] : []);
+        const orderSnList = [...selectedLabelOrders];
+        await printOfficialLabels(urls, orderSnList, async () => {
+          toast(`${orderSnList.length} label asli dibuka di tab baru`, 'success');
+          await refetch();
+        });
+
+        if (result.data.failedOrders && result.data.failedOrders.length > 0) {
+          toast(`${result.data.failedOrders.length} order gagal diambil labelnya`, 'warn');
+        }
+      } else {
+        const errorMsg = (result as any).error || 'Tidak ada label resmi yang berhasil diambil';
+        toast(errorMsg, 'error');
+      }
+      
+      clearLabelSelection();
+    } catch (err: any) {
+      toast(err.message || 'Terjadi kesalahan saat memproses batch label resmi', 'error');
     } finally {
       setBatchPrinting(false);
     }
@@ -513,6 +579,12 @@ export function PesananSaya() {
     if (sf !== 'PROCESSED') setPrintFilter('ALL');
   };
 
+  const handleShopFilterChange = (newShopId: string) => {
+    setShopFilter(newShopId);
+    setSelectedOrders([]);
+    setSelectedLabelOrders([]);
+  };
+
   if (loading) {
     return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text3)' }}>Memuat data pesanan...</div>;
   }
@@ -528,23 +600,46 @@ export function PesananSaya() {
     return true;
   });
 
-  // Counts - use filtered orders
-  const countUnpaid    = ordersWithoutTest.filter(o => o.orderStatus === 'UNPAID').length;
-  const countNeedShip  = ordersWithoutTest.filter(o => ['READY_TO_SHIP', 'PROCESSED'].includes(o.orderStatus)).length;
-  const countRts       = ordersWithoutTest.filter(o => o.orderStatus === 'READY_TO_SHIP').length;
-  const countProcessed = ordersWithoutTest.filter(o => o.orderStatus === 'PROCESSED').length;
-  const countPrinted   = ordersWithoutTest.filter(o => o.orderStatus === 'PROCESSED' && o.labelPrinted === 1).length;
-  const countUnprinted = ordersWithoutTest.filter(o => o.orderStatus === 'PROCESSED' && o.labelPrinted !== 1).length;
-  const countShipped   = ordersWithoutTest.filter(o => ['SHIPPED', 'TO_CONFIRM_RECEIVE', 'IN_CANCEL'].includes(o.orderStatus)).length;
-  const countCompleted = ordersWithoutTest.filter(o => o.orderStatus === 'COMPLETED').length;
+  // Build shop options from credentials + fallback from orders (same pattern as ProdukChannel)
+  const shopOptions: Array<{ id: string; label: string }> = [{ id: 'all', label: 'Semua Toko' }];
+  const credShops: any[] = shopsData?.data || [];
+  for (const s of credShops) {
+    shopOptions.push({
+      id: String(s.shop_id),
+      label: `${s.shop_name || `Toko #${s.shop_id}`} - Shopee`,
+    });
+  }
+  // Fallback: add shops found in orders but not in credentials
+  for (const o of ordersWithoutTest) {
+    if (o.shopId && !shopOptions.some(s => s.id === String(o.shopId))) {
+      shopOptions.push({ id: String(o.shopId), label: `Toko #${o.shopId} - Shopee` });
+    }
+  }
 
-  // Filter logic - use ordersWithoutTest as base
-  const filtered = ordersWithoutTest.filter(o => {
+  // Apply shop filter
+  const shopFilteredOrders = shopFilter === 'all'
+    ? ordersWithoutTest
+    : ordersWithoutTest.filter(o => String(o.shopId) === shopFilter);
+
+  // Counts - use shop-filtered orders
+  const countUnpaid    = shopFilteredOrders.filter(o => o.orderStatus === 'UNPAID').length;
+  const countNeedShip  = shopFilteredOrders.filter(o => ['READY_TO_SHIP', 'PROCESSED'].includes(o.orderStatus)).length;
+  const countRts       = shopFilteredOrders.filter(o => o.orderStatus === 'READY_TO_SHIP').length;
+  const countProcessed = shopFilteredOrders.filter(o => o.orderStatus === 'PROCESSED').length;
+  const countPrinted   = shopFilteredOrders.filter(o => o.orderStatus === 'PROCESSED' && o.labelPrinted === 1).length;
+  const countUnprinted = shopFilteredOrders.filter(o => o.orderStatus === 'PROCESSED' && o.labelPrinted !== 1).length;
+  const countShipped   = shopFilteredOrders.filter(o => ['SHIPPED', 'TO_CONFIRM_RECEIVE', 'IN_CANCEL'].includes(o.orderStatus)).length;
+  const countCompleted = shopFilteredOrders.filter(o => o.orderStatus === 'COMPLETED').length;
+  const countCancelled = shopFilteredOrders.filter(o => o.orderStatus === 'CANCELLED').length;
+
+  // Filter logic - use shopFilteredOrders as base
+  const filtered = shopFilteredOrders.filter(o => {
     // Main filter
     let matchMain = false;
     if (mainFilter === 'UNPAID')    matchMain = o.orderStatus === 'UNPAID';
     if (mainFilter === 'SHIPPED')   matchMain = ['SHIPPED', 'TO_CONFIRM_RECEIVE', 'IN_CANCEL'].includes(o.orderStatus);
     if (mainFilter === 'COMPLETED') matchMain = o.orderStatus === 'COMPLETED';
+    if (mainFilter === 'CANCELLED') matchMain = o.orderStatus === 'CANCELLED';
     if (mainFilter === 'NEED_SHIP') {
       if (subFilter === 'ALL')           matchMain = ['READY_TO_SHIP', 'PROCESSED'].includes(o.orderStatus);
       if (subFilter === 'READY_TO_SHIP') matchMain = o.orderStatus === 'READY_TO_SHIP';
@@ -600,6 +695,34 @@ export function PesananSaya() {
           <div className="stat-value" style={{ color: '#16A34A' }}>{countCompleted}</div>
           <div className="stat-sub">Transaksi berhasil</div>
         </div>
+        <div className="stat-card">
+          <div className="stat-label">Pembatalan</div>
+          <div className="stat-value" style={{ color: '#EF4444' }}>{countCancelled}</div>
+          <div className="stat-sub">Order dibatalkan</div>
+        </div>
+      </div>
+
+      {/* ── SHOP FILTER ── */}
+      <div style={{ marginBottom: 16 }}>
+        <select
+          value={shopFilter}
+          onChange={e => handleShopFilterChange(e.target.value)}
+          style={{
+            padding: '7px 12px',
+            borderRadius: 7,
+            border: '1px solid var(--border)',
+            background: 'var(--bg2)',
+            color: 'var(--text2)',
+            fontSize: 13,
+            fontFamily: 'inherit',
+            outline: 'none',
+            width: '260px',
+          }}
+        >
+          {shopOptions.map(s => (
+            <option key={s.id} value={s.id}>{s.label}</option>
+          ))}
+        </select>
       </div>
 
       {/* ── TOOLBAR ── */}
@@ -632,6 +755,13 @@ export function PesananSaya() {
               onClick={() => handleMainFilter('COMPLETED')}
             >
               Selesai
+            </button>
+
+            <button
+              className={`filter-tab ${mainFilter === 'CANCELLED' ? 'active' : ''}`}
+              onClick={() => handleMainFilter('CANCELLED')}
+            >
+              Pembatalan{badgeDot(countCancelled, 'badge-red')}
             </button>
           </div>
         </div>
@@ -788,25 +918,79 @@ export function PesananSaya() {
             >
               Batal
             </button>
-            <button
-              onClick={handleBatchPrintLabels}
-              disabled={batchPrinting}
-              style={{
-                padding: '6px 16px', borderRadius: 6, border: 'none',
-                fontSize: 12, fontWeight: 600, cursor: batchPrinting ? 'not-allowed' : 'pointer',
-                background: batchPrinting ? 'var(--bg3)' : 'var(--accent)',
-                color: batchPrinting ? 'var(--text4)' : 'var(--accent-f)',
-                display: 'flex', alignItems: 'center', gap: 6,
-                opacity: batchPrinting ? 0.6 : 1,
+            <div style={{ position: 'relative', display: 'inline-block' }}
+              onMouseEnter={(e) => {
+                const dd = e.currentTarget.querySelector('.batch-label-dd') as HTMLElement;
+                if (dd) dd.style.display = 'block';
+              }}
+              onMouseLeave={(e) => {
+                const dd = e.currentTarget.querySelector('.batch-label-dd') as HTMLElement;
+                if (dd) dd.style.display = 'none';
               }}
             >
-              {batchPrinting ? (
-                <Loader2 size={12} className="spin" />
-              ) : (
-                <Printer size={12} />
+              <button
+                onClick={(e) => {
+                  // Toggle dropdown on click (same as single order PrintLabelButton)
+                  const dd = e.currentTarget.parentElement?.querySelector('.batch-label-dd') as HTMLElement;
+                  if (dd) dd.style.display = dd.style.display === 'block' ? 'none' : 'block';
+                }}
+                disabled={batchPrinting}
+                style={{
+                  padding: '6px 16px', borderRadius: 6, border: 'none',
+                  fontSize: 12, fontWeight: 600, cursor: batchPrinting ? 'not-allowed' : 'pointer',
+                  background: batchPrinting ? 'var(--bg3)' : 'var(--accent)',
+                  color: batchPrinting ? 'var(--text4)' : 'var(--accent-f)',
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  opacity: batchPrinting ? 0.6 : 1,
+                }}
+              >
+                {batchPrinting ? (
+                  <Loader2 size={12} className="spin" />
+                ) : (
+                  <Printer size={12} />
+                )}
+                Cetak Label Batch ({selectedLabelOrders.length})
+                <ChevronDown size={10} style={{ opacity: 0.6 }} />
+              </button>
+              {!batchPrinting && (
+                <div className="batch-label-dd" style={{
+                  display: 'none', position: 'absolute', bottom: '100%', right: 0,
+                  marginBottom: 4, background: 'var(--bg1, #fff)', border: '1px solid var(--border)',
+                  borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+                  minWidth: 170, overflow: 'hidden', zIndex: 9999,
+                }}>
+                  <button onClick={handleBatchPrintLabels} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                    padding: '10px 14px', border: 'none', background: 'transparent',
+                    cursor: 'pointer', fontSize: 12, fontWeight: 500, color: 'var(--text1)', textAlign: 'left',
+                  }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg2)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <Palette size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                    <div>
+                      <div>Label Custom</div>
+                      <div style={{ fontSize: 10, color: 'var(--text4)', marginTop: 1 }}>Ada info item & SKU</div>
+                    </div>
+                  </button>
+                  <div style={{ height: 1, background: 'var(--border)', margin: '0 10px' }} />
+                  <button onClick={handleBatchPrintOfficialLabels} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                    padding: '10px 14px', border: 'none', background: 'transparent',
+                    cursor: 'pointer', fontSize: 12, fontWeight: 500, color: 'var(--text1)', textAlign: 'left',
+                  }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg2)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <FileText size={14} style={{ color: 'var(--warning, #f59e0b)', flexShrink: 0 }} />
+                    <div>
+                      <div>Label Asli</div>
+                      <div style={{ fontSize: 10, color: 'var(--text4)', marginTop: 1 }}>PDF resmi dari Shopee</div>
+                    </div>
+                  </button>
+                </div>
               )}
-              Cetak Label Batch ({selectedLabelOrders.length})
-            </button>
+            </div>
           </div>
         </div>
       )}

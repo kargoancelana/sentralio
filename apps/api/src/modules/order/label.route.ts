@@ -1,19 +1,31 @@
-import { Elysia, t } from "elysia";
-import { getSingleLabel, getBatchLabels } from "../../services/label.service";
+import { Elysia } from "elysia";
+import { getSingleLabel, getBatchLabels, getBatchLabelsOptimized } from "../../services/label.service";
 
 // Order SN validation regex (alphanumeric, max 100 chars)
 const ORDER_SN_REGEX = /^[A-Za-z0-9_-]{1,100}$/;
 
-/**
- * Validate order SN format
- */
+// ─── In-memory PDF cache for batch downloads ─────────────────────
+// Key: sorted order_sns joined with comma, Value: merged PDF data URL + timestamp
+const pdfBatchCache = new Map<string, { url: string; timestamp: number }>();
+const PDF_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
+function cleanExpiredPdfCache(): void {
+  const now = Date.now();
+  for (const [key, entry] of pdfBatchCache) {
+    if (now - entry.timestamp > PDF_CACHE_TTL) {
+      pdfBatchCache.delete(key);
+    }
+  }
+}
+
+function getPdfCacheKey(orderSns: string[]): string {
+  return [...orderSns].sort().join(',');
+}
+
 function validateOrderSn(orderSn: string): boolean {
   return ORDER_SN_REGEX.test(orderSn);
 }
 
-/**
- * Determine HTTP status code based on error message
- */
 function getErrorStatusCode(error: string): number {
   if (error.includes('tidak ditemukan')) return 404;
   if (error.includes('tidak dapat dicetak labelnya')) return 422;
@@ -25,61 +37,132 @@ function getErrorStatusCode(error: string): number {
 
 /**
  * Label printing routes
- * 
- * Provides endpoints for retrieving shipping labels for Shopee orders
  */
 export const labelRoutes = new Elysia({ prefix: "/orders" })
-  
-  /**
-   * Get batch order shipping labels
-   * 
-   * Retrieves shipping labels for multiple PROCESSED orders.
-   * Processes up to 50 orders with max 5 concurrent requests.
-   * Returns results array with success/failure for each order.
-   * 
-   * **Validates Requirements**: 11.2, 11.4, 11.5, 11.8
-   * 
-   * @param body - Request body with order_sns array
-   * @returns Batch results with summary
-   * 
-   * Response codes:
-   * - 200: Batch processed (check individual results for success/failure)
-   * - 400: Invalid request body
-   * - 422: Validation error (empty array or exceeds 50 items)
-   * - 500: Internal server error
-   */
-  .post("/shipping-labels/batch", async ({ body, set }) => {
+
+  // ─── Shopee Default Labels ──────────────────────────────────────────────
+
+  // Optimized batch endpoint — uses batch APIs (6-8 calls for 50 orders)
+  // Returns a single merged PDF for all orders
+  .post("/shipping-labels/batch-download", async ({ body, set }) => {
     try {
-      // Validate request body structure
       if (!body || typeof body !== 'object') {
         set.status = 400;
-        return {
-          success: false,
-          error: "Request body tidak valid. Harus berupa objek JSON dengan field order_sns."
-        };
+        return { success: false, error: "Request body tidak valid." };
       }
 
       const { order_sns } = body as { order_sns?: unknown };
 
-      // Validate order_sns field exists and is an array
       if (!order_sns || !Array.isArray(order_sns)) {
         set.status = 400;
-        return {
-          success: false,
-          error: "Field order_sns harus berupa array."
-        };
+        return { success: false, error: "Field order_sns harus berupa array." };
       }
 
-      // Validate array is not empty
       if (order_sns.length === 0) {
+        set.status = 422;
+        return { success: false, error: "Array order_sns tidak boleh kosong." };
+      }
+
+      if (order_sns.length > 50) {
+        set.status = 422;
+        return { success: false, error: `Maksimal 50 order per batch. Diterima ${order_sns.length}.` };
+      }
+
+      // Task 5.1: String type validation (before format validation)
+      const nonStringItems = order_sns.filter(item => typeof item !== 'string');
+      if (nonStringItems.length > 0) {
+        set.status = 400;
+        return { success: false, error: "Semua item dalam order_sns harus berupa string." };
+      }
+
+      // Task 5.2: Alphanumeric format validation
+      const invalidOrderSns = (order_sns as string[]).filter(sn => !ORDER_SN_REGEX.test(sn));
+      if (invalidOrderSns.length > 0) {
         set.status = 422;
         return {
           success: false,
-          error: "Array order_sns tidak boleh kosong. Minimal 1 order diperlukan."
+          error: `Format order_sn tidak valid untuk: ${invalidOrderSns.slice(0, 5).join(', ')}`
         };
       }
 
-      // Validate array does not exceed maximum size
+      // Task 5.3: Call service and return proper response structure
+      // Check PDF cache first
+      cleanExpiredPdfCache();
+      const cacheKey = getPdfCacheKey(order_sns as string[]);
+      const cachedEntry = pdfBatchCache.get(cacheKey);
+      if (cachedEntry && (Date.now() - cachedEntry.timestamp) < PDF_CACHE_TTL) {
+        console.log('[label-routes] PDF batch cache HIT for', (order_sns as string[]).length, 'orders');
+        set.status = 200;
+        return {
+          success: true,
+          data: {
+            url: cachedEntry.url,
+            format: 'pdf',
+            successCount: (order_sns as string[]).length,
+            failedOrders: [],
+            cached: true
+          }
+        };
+      }
+
+      const result = await getBatchLabelsOptimized(order_sns as string[]);
+
+      if (result.success && (result.pdfUrl || result.pdfUrls)) {
+        // Store in cache if we have a single merged PDF URL
+        if (result.pdfUrl) {
+          pdfBatchCache.set(cacheKey, { url: result.pdfUrl, timestamp: Date.now() });
+          console.log('[label-routes] PDF batch cache STORED for', (order_sns as string[]).length, 'orders');
+        }
+
+        set.status = 200;
+        return {
+          success: true,
+          data: {
+            url: result.pdfUrl || undefined,
+            urls: result.pdfUrls || undefined,
+            format: 'pdf',
+            successCount: result.successCount,
+            failedOrders: result.failedOrders
+          }
+        };
+      } else {
+        // Total failure from service — include error details and failedOrders
+        set.status = 500;
+        return {
+          success: false,
+          error: result.failedOrders.length > 0
+            ? result.failedOrders[0].error
+            : "Gagal mengambil label batch",
+          failedOrders: result.failedOrders
+        };
+      }
+    } catch (error: any) {
+      // Unexpected internal error — no system internals exposed
+      console.error('[label-routes] Batch optimized label error:', { error: error.message });
+      set.status = 500;
+      return { success: false, error: "Terjadi kesalahan internal saat memproses batch label" };
+    }
+  })
+
+  .post("/shipping-labels/batch", async ({ body, set }) => {
+    try {
+      if (!body || typeof body !== 'object') {
+        set.status = 400;
+        return { success: false, error: "Request body tidak valid." };
+      }
+
+      const { order_sns } = body as { order_sns?: unknown };
+
+      if (!order_sns || !Array.isArray(order_sns)) {
+        set.status = 400;
+        return { success: false, error: "Field order_sns harus berupa array." };
+      }
+
+      if (order_sns.length === 0) {
+        set.status = 422;
+        return { success: false, error: "Array order_sns tidak boleh kosong." };
+      }
+
       const MAX_BATCH_SIZE = 50;
       if (order_sns.length > MAX_BATCH_SIZE) {
         set.status = 422;
@@ -89,44 +172,25 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
         };
       }
 
-      // Validate all items are strings
       const invalidItems = order_sns.filter(item => typeof item !== 'string');
       if (invalidItems.length > 0) {
         set.status = 400;
-        return {
-          success: false,
-          error: "Semua item dalam order_sns harus berupa string."
-        };
+        return { success: false, error: "Semua item dalam order_sns harus berupa string." };
       }
 
-      // Validate order SN format for each item
       const invalidOrderSns = order_sns.filter(sn => !validateOrderSn(sn));
       if (invalidOrderSns.length > 0) {
         set.status = 422;
         return {
           success: false,
-          error: `Format order_sn tidak valid untuk: ${invalidOrderSns.slice(0, 5).join(', ')}${invalidOrderSns.length > 5 ? '...' : ''}. Harus berupa alfanumerik dengan maksimal 100 karakter.`
+          error: `Format order_sn tidak valid untuk: ${invalidOrderSns.slice(0, 5).join(', ')}`
         };
       }
 
-      // Call batch label service
       const results = await getBatchLabels(order_sns);
-
-      // Calculate summary
       const successful = results.filter(r => r.success).length;
       const failed = results.filter(r => !r.success).length;
 
-      // Transform results to match expected response format
-      const transformedResults = results.map(result => ({
-        orderSn: result.orderSn,
-        success: result.success,
-        url: result.label?.url,
-        format: result.label?.format,
-        trackingNumber: result.label?.trackingNumber,
-        error: result.error
-      }));
-
-      // Return success response with results wrapped in data object
       set.status = 200;
       return {
         success: true,
@@ -134,61 +198,35 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
           total: order_sns.length,
           successful,
           failed,
-          results: transformedResults
+          results: results.map(result => ({
+            orderSn: result.orderSn,
+            success: result.success,
+            url: result.label?.url,
+            format: result.label?.format,
+            trackingNumber: result.label?.trackingNumber,
+            error: result.error
+          }))
         }
       };
-
     } catch (error: any) {
-      // Unexpected error - log and return 500
-      console.error('[label-routes] Batch label error:', {
-        timestamp: new Date().toISOString(),
-        error: error.message,
-        stack: error.stack
-      });
-
+      console.error('[label-routes] Batch label error:', { error: error.message });
       set.status = 500;
-      return {
-        success: false,
-        error: "Terjadi kesalahan internal saat memproses permintaan batch label."
-      };
+      return { success: false, error: "Terjadi kesalahan internal saat memproses permintaan batch label." };
     }
   })
 
-  /**
-   * Get single order shipping label
-   * 
-   * Retrieves shipping label for a single PROCESSED order.
-   * Returns label document with URL/data and format information.
-   * 
-   * **Validates Requirements**: 11.1, 11.3, 11.6, 11.7
-   * 
-   * @param orderSn - Order serial number (path parameter)
-   * @returns Label data with URL, format, and tracking number
-   * 
-   * Response codes:
-   * - 200: Label retrieved successfully
-   * - 404: Order not found or label not available
-   * - 422: Order not in PROCESSED status
-   * - 500: Internal server error
-   */
   .get("/:orderSn/shipping-label", async ({ params, set }) => {
     const { orderSn } = params;
 
-    // Validate order SN format
     if (!validateOrderSn(orderSn)) {
       set.status = 422;
-      return {
-        success: false,
-        error: "Format order_sn tidak valid. Harus berupa alfanumerik dengan maksimal 100 karakter."
-      };
+      return { success: false, error: "Format order_sn tidak valid." };
     }
 
     try {
-      // Call label service to retrieve label
       const result = await getSingleLabel(orderSn);
 
       if (result.success && result.label) {
-        // Success - return label data
         set.status = 200;
         return {
           success: true,
@@ -201,103 +239,47 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
           }
         };
       } else {
-        // Error - determine appropriate status code and return error
         const statusCode = getErrorStatusCode(result.error || '');
         set.status = statusCode;
-        return {
-          success: false,
-          error: result.error || 'Gagal mengambil label pengiriman'
-        };
+        return { success: false, error: result.error || 'Gagal mengambil label pengiriman' };
       }
     } catch (error: any) {
-      // Unexpected error - log and return 500
-      console.error('[label-routes] Get single label error:', {
-        timestamp: new Date().toISOString(),
-        orderSn,
-        error: error.message,
-        stack: error.stack
-      });
-
+      console.error('[label-routes] Get single label error:', { orderSn, error: error.message });
       set.status = 500;
-      return {
-        success: false,
-        error: "Terjadi kesalahan internal saat memproses permintaan label."
-      };
+      return { success: false, error: "Terjadi kesalahan internal saat memproses permintaan label." };
     }
   })
 
-  // ─── Custom Label Endpoints ─────────────────────────────────
-  // These use the custom HTML/CSS template rendered via Puppeteer
-  // instead of Shopee's default label PDF.
+  // ─── Custom Label Data (Frontend Rendering) ─────────────────────────────
+  // Returns JSON — frontend renders the label in browser + window.print()
 
-  /**
-   * Get single custom shipping label PDF
-   * 
-   * Renders a custom 4×6 thermal label using the HTML template
-   * populated with real order data from Shopee API and local DB.
-   * Returns base64-encoded PDF.
-   * 
-   * @param orderSn - Order serial number (path parameter)
-   * @returns Custom label PDF as base64
-   */
-  .get("/:orderSn/custom-label", async ({ params, set }) => {
+  .get("/:orderSn/label-data", async ({ params, set }) => {
     const { orderSn } = params;
 
     if (!validateOrderSn(orderSn)) {
       set.status = 422;
-      return {
-        success: false,
-        error: "Format order_sn tidak valid."
-      };
+      return { success: false, error: "Format order_sn tidak valid." };
     }
 
     try {
-      const { getCustomLabel } = await import("../../services/custom-label.service");
-      const result = await getCustomLabel(orderSn);
+      const { getLabelData } = await import("../../services/label-data.service");
+      const result = await getLabelData(orderSn);
 
       if (result.success) {
         set.status = 200;
-        return {
-          success: true,
-          data: {
-            orderSn,
-            pdf: result.pdf,
-            format: 'pdf',
-            trackingNumber: result.trackingNumber
-          }
-        };
+        return { success: true, data: result.data };
       } else {
         set.status = 500;
-        return {
-          success: false,
-          error: result.error || "Gagal membuat custom label"
-        };
+        return { success: false, error: result.error || "Gagal mengambil data label" };
       }
     } catch (error: any) {
-      console.error('[label-routes] Custom label error:', {
-        timestamp: new Date().toISOString(),
-        orderSn,
-        error: error.message
-      });
-
+      console.error('[label-routes] label-data error:', { orderSn, error: error.message });
       set.status = 500;
-      return {
-        success: false,
-        error: "Terjadi kesalahan saat membuat custom label."
-      };
+      return { success: false, error: "Terjadi kesalahan saat mengambil data label." };
     }
   })
 
-  /**
-   * Get batch custom shipping labels as multi-page PDF
-   * 
-   * Renders custom labels for multiple orders, combined into
-   * a single multi-page PDF. Max 50 orders per request.
-   * 
-   * @param body - Request body with order_sns array
-   * @returns Multi-page PDF as base64 + per-order results
-   */
-  .post("/custom-labels/batch", async ({ body, set }) => {
+  .post("/label-data/batch", async ({ body, set }) => {
     try {
       if (!body || typeof body !== 'object') {
         set.status = 400;
@@ -325,45 +307,20 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
         };
       }
 
-      const invalidOrderSns = order_sns.filter((sn: any) =>
-        typeof sn !== 'string' || !validateOrderSn(sn)
-      );
-      if (invalidOrderSns.length > 0) {
+      const invalidSns = order_sns.filter((sn: any) => typeof sn !== 'string' || !validateOrderSn(sn));
+      if (invalidSns.length > 0) {
         set.status = 422;
-        return {
-          success: false,
-          error: `Format order_sn tidak valid: ${invalidOrderSns.slice(0, 3).join(', ')}`
-        };
+        return { success: false, error: `Format order_sn tidak valid: ${invalidSns.slice(0, 3).join(', ')}` };
       }
 
-      const { getCustomBatchLabels } = await import("../../services/custom-label.service");
-      const result = await getCustomBatchLabels(order_sns);
-
-      const successful = result.results.filter(r => r.success).length;
-      const failed = result.results.filter(r => !r.success).length;
+      const { getBatchLabelData } = await import("../../services/label-data.service");
+      const result = await getBatchLabelData(order_sns);
 
       set.status = 200;
-      return {
-        success: result.success,
-        data: {
-          total: order_sns.length,
-          successful,
-          failed,
-          pdf: result.pdf,
-          format: 'pdf',
-          results: result.results
-        }
-      };
+      return { success: true, data: result };
     } catch (error: any) {
-      console.error('[label-routes] Batch custom label error:', {
-        timestamp: new Date().toISOString(),
-        error: error.message
-      });
-
+      console.error('[label-routes] label-data batch error:', { error: error.message });
       set.status = 500;
-      return {
-        success: false,
-        error: "Terjadi kesalahan saat membuat batch custom labels."
-      };
+      return { success: false, error: "Terjadi kesalahan saat mengambil data label batch." };
     }
   });

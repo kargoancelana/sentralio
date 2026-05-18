@@ -91,6 +91,7 @@ export const shopeeOrderItems = mysqlTable("shopee_order_items", {
   orderSn: varchar("order_sn", { length: 100 }).notNull(),
   itemName: varchar("item_name", { length: 500 }).notNull(),
   modelName: varchar("model_name", { length: 500 }),
+  modelSku: varchar("model_sku", { length: 100 }),
   qty: int("qty").notNull().default(1),
   itemPrice: int("item_price").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -119,6 +120,7 @@ export const labelCacheTable = mysqlTable("label_cache", {
   labelUrl: text("label_url").notNull(), // MEDIUMTEXT: base64 PDF bisa 50-200KB
   format: varchar("format", { length: 10 }).notNull().default("pdf"),
   trackingNumber: varchar("tracking_number", { length: 100 }),
+  labelDataJson: text("label_data_json"), // MEDIUMTEXT: JSON for frontend label rendering (cache for re-prints)
   expiresAt: timestamp("expires_at").notNull(), // Label URL expires after 14 days
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (t) => ({

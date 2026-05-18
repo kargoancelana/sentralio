@@ -161,6 +161,226 @@ export async function getShopeeOrderDetails(shopId: number, orderSnList: string[
 }
 
 /**
+ * Get shipment list for READY_TO_SHIP orders.
+ * This API is specifically designed for READY_TO_SHIP orders and returns
+ * order_sn + package_number mapping, which is more reliable than get_order_detail
+ * for batch shipment processing.
+ * 
+ * Per Shopee docs: Returns package information for orders that are ready to ship.
+ * Max batch size: 50 orders per request.
+ * 
+ * @param shopId - Shop identifier
+ * @param orderSnList - Array of order serial numbers (max 50)
+ * @returns API response containing order_list with order_sn and package_number
+ */
+export async function getShipmentList(shopId: number, orderSnList: string[]) {
+  // Shopee API limits to 50 order SNs per request
+  if (orderSnList.length > 50) {
+    console.warn(`[getShipmentList] Order list exceeds max batch size of 50 (got ${orderSnList.length}). Processing first 50 only.`);
+    orderSnList = orderSnList.slice(0, 50);
+  }
+
+  console.log(`[getShipmentList] Fetching shipment list for ${orderSnList.length} orders`, {
+    shopId,
+    orderCount: orderSnList.length,
+    firstOrderSn: orderSnList[0],
+  });
+
+  const response = await shopeeRequest({
+    shopId,
+    method: "POST",
+    path: "/api/v2/order/get_shipment_list",
+    body: {
+      order_sn_list: orderSnList,
+      page_size: 50,
+    },
+  });
+
+  // Log response structure for debugging
+  const orderList = response?.response?.order_list || [];
+  console.log(`[getShipmentList] Received ${orderList.length} orders in response`, {
+    requested: orderSnList.length,
+    received: orderList.length,
+    hasMore: response?.response?.more || false,
+  });
+
+  return response;
+}
+
+/**
+ * Search package list for READY_TO_SHIP orders with complete logistics data.
+ * This API returns complete package information including logistics_channel_id and product_location_id,
+ * which are required for batch shipment processing.
+ * 
+ * **Use Case**: Batch shipment processing requiring logistics configuration for grouping orders.
+ * 
+ * **Comparison with getShipmentList**:
+ * - getShipmentList: Returns only order_sn + package_number (incomplete data)
+ * - searchPackageList: Returns order_sn + package_number + logistics_channel_id + product_location_id (complete data)
+ * 
+ * **API Documentation**: See referensi_api/4.md for full API specification
+ * 
+ * Per Shopee docs (referensi_api/4.md):
+ * - HTTP Method: POST (not GET)
+ * - Request body: filter (package_status: 2 = ToProcess/READY_TO_SHIP) + pagination (page_size: 100)
+ * - Response: packages_list[] with complete logistics data
+ * - Max page size: 100 packages (we use 50 for consistency with other APIs)
+ * 
+ * @param shopId - Shop identifier
+ * @param orderSnList - Array of order serial numbers (max 50 for consistency)
+ * @returns API response containing packages_list[] with order_sn, package_number, logistics_channel_id, product_location_id
+ */
+export async function searchPackageList(shopId: number, orderSnList: string[]) {
+  // Enforce max batch size of 50 orders for consistency with other batch APIs
+  if (orderSnList.length > 50) {
+    console.warn(`[searchPackageList] Order list exceeds max batch size of 50 (got ${orderSnList.length}). Processing first 50 only.`);
+    orderSnList = orderSnList.slice(0, 50);
+  }
+
+  console.log(`[searchPackageList] Fetching package list for ${orderSnList.length} orders`, {
+    shopId,
+    orderCount: orderSnList.length,
+    firstOrderSn: orderSnList[0],
+    message: 'Using searchPackageList API for complete logistics data'
+  });
+
+  const orderSnSet = new Set(orderSnList);
+  const allPackages: any[] = [];
+  let cursor = "";
+  let pageCount = 0;
+  const MAX_PAGES = 10; // Safety limit to prevent infinite loops
+  let lastResponse: any = null;
+
+  // Pagination loop: fetch pages until all requested orders are found or no more pages
+  while (pageCount < MAX_PAGES) {
+    pageCount++;
+
+    // Build request body per referensi_api/4.md specification
+    const body = {
+      filter: {
+        package_status: 2  // ToProcess (READY_TO_SHIP orders)
+      },
+      pagination: {
+        page_size: 100,    // Maximum allowed by API (we'll filter to our orders)
+        cursor             // Empty string for first page, next_cursor for subsequent pages
+      }
+    };
+
+    const response = await shopeeRequest({
+      shopId,
+      method: "POST",
+      path: "/api/v2/order/search_package_list",
+      body,
+    });
+
+    lastResponse = response;
+
+    // Accumulate packages from this page
+    const packagesList = response?.response?.packages_list || [];
+    allPackages.push(...packagesList);
+
+    console.log(`[searchPackageList] Page ${pageCount}: received ${packagesList.length} packages (total accumulated: ${allPackages.length})`, {
+      cursor: cursor || "(first page)",
+      hasMore: response?.response?.pagination?.more || false,
+    });
+
+    // Early exit: stop paginating once all requested orders are found
+    const foundOrders = new Set(allPackages.filter((pkg: any) => orderSnSet.has(pkg.order_sn)).map((pkg: any) => pkg.order_sn));
+    if (foundOrders.size >= orderSnList.length) {
+      console.log(`[searchPackageList] All ${orderSnList.length} requested orders found after ${pageCount} page(s). Stopping pagination.`);
+      break;
+    }
+
+    // Check if there are more pages
+    const hasMore = response?.response?.pagination?.more;
+    const nextCursor = response?.response?.pagination?.next_cursor;
+
+    if (!hasMore || !nextCursor) {
+      console.log(`[searchPackageList] No more pages available after ${pageCount} page(s).`);
+      break;
+    }
+
+    cursor = nextCursor;
+  }
+
+  if (pageCount >= MAX_PAGES) {
+    console.warn(`[searchPackageList] Reached max page limit (${MAX_PAGES}). Some orders may not have been found.`);
+  }
+
+  // Filter to only requested orders (API returns all READY_TO_SHIP orders)
+  const filteredPackages = allPackages.filter((pkg: any) => orderSnSet.has(pkg.order_sn));
+
+  console.log(`[searchPackageList] Final: ${allPackages.length} total packages across ${pageCount} page(s), filtered to ${filteredPackages.length} requested orders`, {
+    requested: orderSnList.length,
+    totalReceived: allPackages.length,
+    filtered: filteredPackages.length,
+    pages: pageCount,
+  });
+
+  // Log sample package structure for verification
+  if (filteredPackages.length > 0) {
+    const sample = filteredPackages[0];
+    console.log(`[searchPackageList] Sample package structure:`, {
+      order_sn: sample.order_sn,
+      package_number: sample.package_number,
+      logistics_channel_id: sample.logistics_channel_id,
+      product_location_id: sample.product_location_id,
+      is_shipment_arranged: sample.is_shipment_arranged,
+      hasCompleteData: !!(sample.logistics_channel_id && sample.product_location_id)
+    });
+  }
+
+  // Return response with filtered packages_list
+  return {
+    ...lastResponse,
+    response: {
+      ...lastResponse?.response,
+      packages_list: filteredPackages
+    }
+  };
+}
+
+/**
+ * Retrieve shipping parameters for multiple packages in a single API call.
+ * This is the batch version of get_shipping_parameter.
+ * 
+ * Per Shopee docs: All packages must share the same logistics_channel_id and product_location_id.
+ * Max batch size: 50 packages.
+ * 
+ * @param shopId - Shop identifier
+ * @param packageNumbers - Array of package numbers (max 50)
+ * @param logisticsChannelId - Logistics channel ID (e.g., SPX, J&T)
+ * @param productLocationId - Product location/warehouse ID
+ * @returns API response containing pickup/dropoff parameters and time slots
+ */
+export async function getMassShippingParameter(
+  shopId: number,
+  packageNumbers: string[],
+  logisticsChannelId: number,
+  productLocationId: string
+) {
+  const body = {
+    package_list: packageNumbers.map(pn => ({ package_number: pn })),
+    logistics_channel_id: logisticsChannelId,
+    product_location_id: productLocationId,
+  };
+
+  console.log(`[getMassShippingParameter] Fetching shipping parameters for ${packageNumbers.length} packages`, {
+    shopId,
+    logisticsChannelId,
+    productLocationId,
+    packageCount: packageNumbers.length,
+  });
+
+  return shopeeRequest({
+    shopId,
+    method: "POST",
+    path: "/api/v2/logistics/get_mass_shipping_parameter",
+    body,
+  });
+}
+
+/**
  * Arrange shipment for a Shopee order using the ship_order API endpoint.
  * This marks the order as ready for pickup/delivery in Shopee's system.
  * 
@@ -234,6 +454,70 @@ export async function shipShopeeOrder(
     shopId,
     method: "POST",
     path: "/api/v2/logistics/ship_order",
+    body,
+  });
+}
+
+/**
+ * Arrange shipment for multiple packages in a single API call.
+ * This is the batch version of ship_order.
+ * 
+ * Per Shopee docs: All packages must share the same logistics_channel_id and product_location_id.
+ * Max batch size: 50 packages.
+ * Pickup/dropoff parameters are at TOP LEVEL (not inside each package).
+ * 
+ * @param shopId - Shop identifier
+ * @param packages - Array of package objects with only package_number (max 50)
+ * @param logisticsChannelId - Logistics channel ID (e.g., SPX, J&T)
+ * @param productLocationId - Product location/warehouse ID
+ * @param pickup - Pickup parameters (optional, at top level)
+ * @param dropoff - Dropoff parameters (optional, at top level)
+ * @returns API response containing success_list and fail_list
+ */
+export async function massShipOrder(
+  shopId: number,
+  packages: Array<{
+    package_number: string;
+  }>,
+  logisticsChannelId: number,
+  productLocationId: string,
+  pickup?: {
+    address_id: number;
+    pickup_time_id: string;
+  },
+  dropoff?: {
+    branch_id: number;
+    sender_real_name?: string;
+    tracking_number?: string;
+  }
+) {
+  const body: any = {
+    package_list: packages,
+    logistics_channel_id: logisticsChannelId,
+    product_location_id: productLocationId,
+  };
+
+  // Add pickup/dropoff at top level if provided
+  if (pickup) {
+    body.pickup = pickup;
+  }
+  if (dropoff) {
+    body.dropoff = dropoff;
+  }
+
+  console.log(`[massShipOrder] Arranging shipment for ${packages.length} packages`, {
+    shopId,
+    logisticsChannelId,
+    productLocationId,
+    packageCount: packages.length,
+    hasPickup: !!pickup,
+    hasDropoff: !!dropoff,
+  });
+
+  return shopeeRequest({
+    shopId,
+    method: "POST",
+    path: "/api/v2/logistics/mass_ship_order",
     body,
   });
 }

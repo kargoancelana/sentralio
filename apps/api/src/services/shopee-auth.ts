@@ -37,9 +37,10 @@ export async function getValidToken(shopId?: number): Promise<TokenRow> {
     throw new Error(msg);
   }
 
-  // Dekripsi token sehingga bagian aplikasi lain tidak perlu tahu perihal enkripsi
+  // Dekripsi token dan partner key sehingga bagian aplikasi lain tidak perlu tahu perihal enkripsi
   row.accessToken = decrypt(row.accessToken);
   row.refreshToken = decrypt(row.refreshToken);
+  row.partnerKey = decrypt(row.partnerKey);
 
   // Refresh 60 detik sebelum masa berlaku habis untuk menghindari race condition
   if (Date.now() > row.expiresAt.getTime() - 60_000) {
@@ -130,6 +131,7 @@ export async function refreshAccessToken(row: TokenRow): Promise<TokenRow> {
     // Pastikan kita mengembalikan plaintext untuk pemanggil fungsi
     accessToken: data.access_token,
     refreshToken: data.refresh_token,
+    partnerKey: row.partnerKey, // Already decrypted
   };
 }
 
@@ -150,6 +152,7 @@ export async function ensureAllTokensFresh(): Promise<{ refreshed: number; faile
           ...row,
           accessToken: decrypt(row.accessToken),
           refreshToken: decrypt(row.refreshToken),
+          partnerKey: decrypt(row.partnerKey),
         };
         await refreshAccessToken(decrypted);
         refreshed++;

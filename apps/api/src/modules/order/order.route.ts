@@ -9,7 +9,9 @@ import { desc, eq } from "drizzle-orm";
 const ORDER_SN_REGEX = /^[A-Za-z0-9_-]{1,100}$/;
 
 // Maximum batch size for shipment processing
-const MAX_BATCH_SIZE = 50;
+// Backend auto-splits into batches of 50 (Shopee API limit)
+// 500 orders = 10 batches × 50 orders = ~3-5 seconds total
+const MAX_BATCH_SIZE = 500;
 
 /**
  * Validate order SN format
@@ -83,11 +85,15 @@ export const orderRoutes = new Elysia({ prefix: "/orders" })
       // CRITICAL FIX: Shopee API limit is 15 days per request
       // If days_back > 15, automatic chunking will handle it
       // Default to 60 days to catch all recent status changes
+      // NOTE: We don't filter out CANCELLED here because we need to update existing orders
+      // The service layer will skip inserting NEW cancelled orders but will update existing ones
+      const effectiveOrderStatus = order_status;
+      
       const result = await syncShopeeOrdersService(
         currentShopId, 
         days_back || 60,  // ✅ Default 60 days to catch all recent status changes
         cursor || "", 
-        order_status,
+        effectiveOrderStatus,  // ✅ No default filter - let service handle CANCELLED logic
         effectiveTimeRangeField  // Use update_time by default, or user-specified field
       );
       

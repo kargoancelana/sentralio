@@ -112,7 +112,7 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
 
       const credentialPayload = {
         partnerId: env.shopeePartnerId,
-        partnerKey: env.shopeePartnerKey,
+        partnerKey: encrypt(env.shopeePartnerKey), // ✅ Encrypt partner key
         shopId: shopIdNum,
         shopName,
         accessToken: encrypt(data.access_token),

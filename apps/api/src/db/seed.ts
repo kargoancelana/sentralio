@@ -19,7 +19,7 @@ async function seed() {
   
   await db.insert(shopeeCredentials).values({
     partnerId: env.shopeePartnerId,
-    partnerKey: env.shopeePartnerKey,
+    partnerKey: encrypt(env.shopeePartnerKey), // ✅ Encrypt partner key
     shopId: env.shopeeShopId,
     accessToken: encrypt(env.shopeeAccessToken),
     refreshToken: encrypt(env.shopeeRefreshToken),

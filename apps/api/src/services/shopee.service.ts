@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db } from "../db/client";
-import { productGroups, products, masterProducts, masterProductVariants, shopeeCredentials } from "../db/schema";
+import { productGroups, products, masterProducts, masterProductVariants, shopeeCredentials, shopeeOrderItems, shopeeOrders } from "../db/schema";
 import { shopeeRequest } from "./shopee-raw";
 
 /**
@@ -247,7 +247,24 @@ async function syncShopeeProductsForShop(shopId: number) {
       continue;
     }
 
-    // 5. UPSERT each model with enriched data
+    // 5. Get existing models in DB for this item
+    const existingModels = await db.select({ shopeeModelId: products.shopeeModelId })
+      .from(products)
+      .where(eq(products.shopeeItemId, itemId));
+    
+    const existingModelIds = new Set(existingModels.map(m => m.shopeeModelId));
+    const shopeeModelIds = new Set(models.map(m => m.model_id.toString()));
+
+    // 6. Delete models that no longer exist in Shopee
+    const modelsToDelete = existingModels.filter(m => !shopeeModelIds.has(m.shopeeModelId));
+    if (modelsToDelete.length > 0) {
+      console.log(`[SYNC] Deleting ${modelsToDelete.length} removed models for item_id=${itemId}`);
+      for (const m of modelsToDelete) {
+        await db.delete(products).where(eq(products.shopeeModelId, m.shopeeModelId));
+      }
+    }
+
+    // 7. UPSERT each model with enriched data
     for (const model of models) {
       const modelId = model.model_id.toString();
       const modelName = model.model_name || null;
@@ -518,15 +535,29 @@ export async function toggleShopeeItemStatus(itemIds: string[], unlist: boolean)
 
 /**
  * Update a variant's name and/or SKU on Shopee and local DB.
+ * Also updates shopee_order_items for real-time picking list accuracy.
  */
 export async function updateShopeeModel(
   itemId: string,
   modelId: string,
   data: { modelName?: string; modelSku?: string }
 ) {
-  const groupRows = await db.select({ shopId: productGroups.shopId }).from(productGroups)
+  const groupRows = await db.select({ shopId: productGroups.shopId, name: productGroups.name }).from(productGroups)
     .where(eq(productGroups.shopeeItemId, itemId)).limit(1);
-  const shopId = groupRows.length > 0 ? groupRows[0].shopId : undefined;
+  
+  if (groupRows.length === 0) {
+    throw new Error(`Product group not found for item_id=${itemId}`);
+  }
+  
+  const shopId = groupRows[0].shopId;
+  const itemName = groupRows[0].name;
+
+  // Get old model data before update
+  const oldProductRows = await db.select({ modelName: products.modelName, modelSku: products.modelSku })
+    .from(products)
+    .where(eq(products.shopeeModelId, modelId))
+    .limit(1);
+  const oldModelName = oldProductRows.length > 0 ? oldProductRows[0].modelName : null;
 
   // Buat daftar model untuk API Shopee
   const modelUpdate: Record<string, any> = { model_id: parseInt(modelId) };
@@ -547,14 +578,50 @@ export async function updateShopeeModel(
     throw new Error(`Shopee update_model error: ${result.message || result.error}`);
   }
 
-  // Update DB lokal
+  // Update DB lokal (products table)
   const dbUpdate: Record<string, any> = { updatedAt: new Date() };
   if (data.modelName !== undefined) dbUpdate.modelName = data.modelName;
-  if (data.modelSku !== undefined) dbUpdate.modelSku = data.modelSku;
+  if (data.modelSku !== undefined) {
+    // Normalize empty string to null
+    dbUpdate.modelSku = data.modelSku === '' ? null : data.modelSku;
+  }
 
   await db.update(products)
     .set(dbUpdate)
     .where(eq(products.shopeeModelId, modelId));
+
+  // CRITICAL: Update shopee_order_items for real-time picking list accuracy
+  // Match by shopId + itemName + modelName (this identifies orders from THIS specific listing)
+  if (data.modelSku !== undefined && oldModelName) {
+    const newModelSku = data.modelSku === '' ? null : data.modelSku;
+    
+    const orderItemsToUpdate = await db
+      .select({ 
+        id: shopeeOrderItems.id,
+        orderSn: shopeeOrderItems.orderSn 
+      })
+      .from(shopeeOrderItems)
+      .innerJoin(shopeeOrders, eq(shopeeOrderItems.orderSn, shopeeOrders.orderSn))
+      .where(
+        and(
+          eq(shopeeOrders.shopId, shopId),
+          eq(shopeeOrderItems.itemName, itemName),
+          eq(shopeeOrderItems.modelName, oldModelName)
+        )
+      );
+
+    if (orderItemsToUpdate.length > 0) {
+      console.log(`[EDIT] Updating ${orderItemsToUpdate.length} order items from listing "${itemName}" with new model_sku: ${newModelSku || 'NULL'}`);
+      
+      for (const item of orderItemsToUpdate) {
+        await db.update(shopeeOrderItems)
+          .set({ modelSku: newModelSku })
+          .where(eq(shopeeOrderItems.id, item.id));
+      }
+    } else {
+      console.log(`[EDIT] No order items found to update for listing "${itemName}" + model "${oldModelName}"`);
+    }
+  }
 
   console.log(`[EDIT] Updated model ${modelId} (item ${itemId}): name=${data.modelName}, sku=${data.modelSku}`);
   return { status: "success", model_id: modelId };

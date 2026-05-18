@@ -73,6 +73,12 @@ export class LabelCache {
       }
 
       // Convert database entry to LabelDocument
+      // CRITICAL: Skip entries that are from label-data service (format: json, labelUrl: empty)
+      // Those are custom label data caches, not official PDF labels
+      if (!entry.labelUrl || entry.format === 'json') {
+        return null;
+      }
+
       const label: LabelDocument = {
         orderSn: entry.orderSn,
         url: entry.labelUrl,

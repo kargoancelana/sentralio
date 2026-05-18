@@ -28,6 +28,8 @@ for (const key of requiredEnv) {
 
 export const env = {
   appPort: Number(process.env.APP_PORT ?? 3000),
+  nodeEnv: process.env.NODE_ENV || "development",
+  frontendUrl: process.env.FRONTEND_URL || "",
   dbHost: process.env.DB_HOST as string,
   dbPort: Number(process.env.DB_PORT),
   dbUser: process.env.DB_USER as string,
