@@ -1166,23 +1166,34 @@ export async function getBatchLabelsOptimized(orderSns: string[]): Promise<{
             );
             allPdfBuffers.push(result.base64);
           } catch (chunkError: any) {
-            // If "packages_can_not_download_together" → download each order individually
+            // If "packages_can_not_download_together" → download each order in PARALLEL (5 concurrent)
             if (chunkError.message?.includes('packages_can_not_download_together') || chunkError.message?.includes('can not download together')) {
-              console.log('[label-service] batch: channel group download failed (mixed channels), falling back to per-order download for this chunk');
-              for (const order of chunk) {
-                try {
-                  const singleResult = await downloadShippingDocumentBatch(
-                    shopId,
-                    [order as { order_sn: string; package_number?: string }],
-                    'THERMAL_AIR_WAYBILL'
-                  );
-                  allPdfBuffers.push(singleResult.base64);
-                } catch (singleErr: any) {
-                  // If fallback required for this order, queue it for create+poll
-                  if (singleErr.message?.includes('[FALLBACK_REQUIRED]')) {
-                    fallbackOrders.push(order as { order_sn: string; package_number: string });
+              console.log('[label-service] batch: channel group download failed (mixed channels), falling back to PARALLEL per-order download for', chunk.length, 'orders');
+              const PARALLEL_LIMIT = 5;
+              for (let pi = 0; pi < chunk.length; pi += PARALLEL_LIMIT) {
+                const parallelBatch = chunk.slice(pi, pi + PARALLEL_LIMIT);
+                const parallelResults = await Promise.allSettled(
+                  parallelBatch.map(async (order) => {
+                    const singleResult = await downloadShippingDocumentBatch(
+                      shopId,
+                      [order as { order_sn: string; package_number?: string }],
+                      'THERMAL_AIR_WAYBILL'
+                    );
+                    return { order, base64: singleResult.base64 };
+                  })
+                );
+                for (const pr of parallelResults) {
+                  if (pr.status === 'fulfilled') {
+                    allPdfBuffers.push(pr.value.base64);
                   } else {
-                    failedOrders.push({ orderSn: order.order_sn, error: singleErr.message });
+                    const errMsg = pr.reason?.message || 'Download failed';
+                    // Find the order that failed — match by index
+                    const failedOrder = parallelBatch[parallelResults.indexOf(pr)];
+                    if (errMsg.includes('[FALLBACK_REQUIRED]')) {
+                      fallbackOrders.push(failedOrder as { order_sn: string; package_number: string });
+                    } else {
+                      failedOrders.push({ orderSn: (failedOrder as any).order_sn, error: errMsg });
+                    }
                   }
                 }
               }
@@ -1223,11 +1234,14 @@ export async function getBatchLabelsOptimized(orderSns: string[]): Promise<{
 
         // Fire-and-forget: cache each order's label individually for instant reprints
         // getSingleLabel will fast-path download (label exists) and save to cache
+        // Uses parallel batches of 5 to avoid hammering Shopee API
         Promise.resolve().then(async () => {
-          for (const order of batchOrders) {
-            try {
-              await getSingleLabel(order.order_sn);
-            } catch { /* non-critical */ }
+          const CACHE_PARALLEL = 5;
+          for (let ci = 0; ci < batchOrders.length; ci += CACHE_PARALLEL) {
+            const cacheBatch = batchOrders.slice(ci, ci + CACHE_PARALLEL);
+            await Promise.allSettled(
+              cacheBatch.map(order => getSingleLabel(order.order_sn).catch(() => {}))
+            );
           }
           console.log('[label-service] batch: background cache population complete for', batchOrders.length, 'orders');
         }).catch(() => { /* ignore */ });

@@ -23,6 +23,7 @@ export function Layout() {
     : location.pathname.includes('/produk/channel') ? 'channel'
     : location.pathname.includes('/produk/master') ? 'master'
     : location.pathname.includes('/settings') ? 'settings'
+    : location.pathname.includes('/pesanan') ? 'orders'
     : 'dashboard';
 
   return (

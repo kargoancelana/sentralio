@@ -9,6 +9,7 @@ import { shopeeAuthRoutes } from "./modules/shopee/shopee-auth.route";
 import { masterRoutes } from "./modules/master/master.route";
 import { orderRoutes } from "./modules/order/order.route";
 import { labelRoutes } from "./modules/order/label.route";
+import { orderDetailRoutes } from "./modules/order/order-detail.route";
 import { healthRoutes } from "./routes/health";
 import { db } from "./db/client";
 import { shopeeCredentials } from "./db/schema";
@@ -60,6 +61,7 @@ const app = new Elysia()
   .use(masterRoutes)
   .use(orderRoutes)
   .use(labelRoutes)
+  .use(orderDetailRoutes)
 
   // ─── Background Sync Status & Control ────────────────────────
   .get("/sync/status", () => {

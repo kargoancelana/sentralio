@@ -1,4 +1,4 @@
-import { int, mysqlTable, timestamp, varchar, text, uniqueIndex } from "drizzle-orm/mysql-core";
+import { int, mysqlTable, timestamp, varchar, text, uniqueIndex, index } from "drizzle-orm/mysql-core";
 
 export const masterProducts = mysqlTable("master_products", {
   id: int("id").primaryKey().autoincrement(),
@@ -94,8 +94,12 @@ export const shopeeOrderItems = mysqlTable("shopee_order_items", {
   modelSku: varchar("model_sku", { length: 100 }),
   qty: int("qty").notNull().default(1),
   itemPrice: int("item_price").notNull().default(0),
+  itemId: varchar("item_id", { length: 64 }),
+  modelId: varchar("model_id", { length: 64 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (t) => ({
+  idxLookup: index("idx_order_items_lookup").on(t.orderSn, t.itemId, t.modelId),
+}));
 
 // Sync state table for background sync resilience
 export const syncState = mysqlTable("sync_state", {

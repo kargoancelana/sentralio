@@ -144,6 +144,21 @@ export async function getShopeeOrderList(
   });
 }
 
+/**
+ * Calls Shopee v2.payment.get_escrow_detail.
+ * Path: /api/v2/payment/get_escrow_detail
+ * Query: order_sn (single, not list)
+ * Returns: full Shopee response object (success or error)
+ */
+export async function getEscrowDetail(shopId: number, orderSn: string) {
+  return shopeeRequest({
+    shopId,
+    method: "GET",
+    path: "/api/v2/payment/get_escrow_detail",
+    query: { order_sn: orderSn },
+  });
+}
+
 export async function getShopeeOrderDetails(shopId: number, orderSnList: string[]) {
   // Shopee order details limits to 50 SNs per request
   // CRITICAL: Keep response_optional_fields minimal to ensure pickup_done_time is returned

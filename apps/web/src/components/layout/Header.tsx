@@ -7,6 +7,7 @@ const pageMeta: Record<string, { label: string }> = {
   channel:      { label: 'Produk Channel' },
   master:       { label: 'Master Produk' },
   settings:     { label: 'Pengaturan' },
+  orders:       { label: 'Pesanan Saya' },
 };
 
 export function TopBar({ active }: { active: string }) {

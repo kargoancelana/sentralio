@@ -1,0 +1,62 @@
+﻿======================================================================
+FULL FLOW TEST: 12 orders ΓÇö ship + label asli + label custom
+======================================================================
+
+[02:47:41.386] Step 1: Fetch READY_TO_SHIP orders
+Got 12 orders:
+  - 260518NQ637S1W
+  - 260518NGNWRHP2
+  - 260517NADSW0TM
+  - 260517N7M46T97
+  - 260517N3434JVR
+  - 260517N2GCSJ1E
+  - 260517N23W6HKE
+  - 260517N1WYCPHX
+  - 260517N1HDVKT4
+  - 260517MYU82NA3
+  - 260517MYPEKQKE
+  - 260517MTX69FE1
+
+[02:47:53.825] Step 2: POST /orders/ship/batch (dropoff, 12 orders)
+[02:48:03.112] ΓÅ▒  Batch ship took: 9.28s
+Result: OK - Batch processing completed: 11 successful, 1 failed
+  Total: 12, Success: 11, Failed: 1
+  Γ£ù 260518NQ637S1W - Order 260518NQ637S1W tidak dapat diproses: status saat ini adalah PROCESSED
+  Γ£ô 260518NGNWRHP2 - Order sudah berhasil dikirim sebelumnya
+  Γ£ô 260517NADSW0TM [SPXID066883564245] - Pengiriman berhasil diatur untuk order 260517NADSW0TM
+  Γ£ô 260517N3434JVR [SPXID062227116895] - Pengiriman berhasil diatur untuk order 260517N3434JVR
+  Γ£ô 260517N2GCSJ1E [SPXID064511903025] - Pengiriman berhasil diatur untuk order 260517N2GCSJ1E
+  Γ£ô 260517MYU82NA3 [SPXID064409286735] - Pengiriman berhasil diatur untuk order 260517MYU82NA3
+  Γ£ô 260517N7M46T97 [SPXID061024198695] - Pengiriman berhasil diatur untuk order 260517N7M46T97
+  Γ£ô 260517N23W6HKE [SPXID066089113695] - Pengiriman berhasil diatur untuk order 260517N23W6HKE
+  Γ£ô 260517N1WYCPHX [SPXID063803982725] - Pengiriman berhasil diatur untuk order 260517N1WYCPHX
+  Γ£ô 260517N1HDVKT4 [SPXID069411767245] - Pengiriman berhasil diatur untuk order 260517N1HDVKT4
+  Γ£ô 260517MYPEKQKE [SPXID061194407085] - Pengiriman berhasil diatur untuk order 260517MYPEKQKE
+  Γ£ô 260517MTX69FE1 [SPXID068074519955] - Pengiriman berhasil diatur untuk order 260517MTX69FE1
+
+[02:48:03.114] Step 3: POST /orders/shipping-labels/batch-download (12 orders, cold)
+[02:48:14.566] ΓÅ▒  Batch label (cold) took: 11.45s ΓÇö status 200 - application/json;charset=utf-8
+  ΓåÆ PDF data URL size: 702.8 KB (decoded base64)
+
+[02:48:14.567] Step 4: POST /orders/shipping-labels/batch-download (12 orders, REPRINT ΓÇö should be cached)
+[02:48:21.336] ΓÅ▒  Batch label (cached) took: 6.77s ΓÇö status 200 - application/json;charset=utf-8
+
+[02:48:21.336] Step 5: POST /orders/label-data/batch (12 orders, label custom data)
+[02:48:29.560] ΓÅ▒  Batch label-data (custom) took: 8.21s ΓÇö status 200 - application/json;charset=utf-8
+  Total: 12, Success: 12, Failed: 0
+
+[02:48:29.562] Step 6: POST /orders/label-data/batch (12 orders, REPRINT custom)
+[02:48:29.614] ΓÅ▒  Batch label-data (reprint) took: 0.05s ΓÇö status 200
+
+======================================================================
+SUMMARY (12 orders)
+======================================================================
+Step 2 ΓÇö Batch ship dropoff           : 9.28s
+Step 3 ΓÇö Batch label ASLI (cold)      : 11.45s
+Step 4 ΓÇö Batch label ASLI (cached)    : 6.77s   ΓåÉ reprint
+Step 5 ΓÇö Batch label CUSTOM (cold)    : 8.21s
+Step 6 ΓÇö Batch label CUSTOM (reprint) : 0.05s   ΓåÉ reprint
+======================================================================
+
+Done.
+
