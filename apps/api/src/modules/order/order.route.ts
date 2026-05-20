@@ -3,7 +3,7 @@ import { db } from "../../db/client";
 import { shopeeOrders, shopeeOrderItems, shopeeCredentials } from "../../db/schema";
 import { syncShopeeOrdersService } from "../../services/order.service";
 import { shipSingleOrder, shipBatchOrders, fetchAndUpdateTrackingNumber } from "../../services/shipment.service";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 
 // Order SN validation regex (alphanumeric, max 100 chars)
 const ORDER_SN_REGEX = /^[A-Za-z0-9_-]{1,100}$/;
@@ -34,13 +34,37 @@ function getErrorStatusCode(error: string): number {
 export const orderRoutes = new Elysia({ prefix: "/orders" })
   
   // Get order list from local DB with items
+  // Optimized: 2 queries instead of N+1, items only for active orders
   .get("/", async () => {
+    // Query 1: Get all orders
     const records = await db.select().from(shopeeOrders).orderBy(desc(shopeeOrders.createTime));
-    // Attach items to each order
-    const result = await Promise.all(records.map(async (order) => {
-      const items = await db.select().from(shopeeOrderItems).where(eq(shopeeOrderItems.orderSn, order.orderSn));
-      return { ...order, items };
+
+    // Query 2: Get items ONLY for active orders (READY_TO_SHIP + PROCESSED)
+    const activeOrderSns = records
+      .filter(o => ['READY_TO_SHIP', 'PROCESSED'].includes(o.orderStatus))
+      .map(o => o.orderSn);
+
+    let itemsByOrder = new Map<string, typeof activeItems>();
+    let activeItems: (typeof shopeeOrderItems.$inferSelect)[] = [];
+
+    if (activeOrderSns.length > 0) {
+      activeItems = await db.select().from(shopeeOrderItems)
+        .where(inArray(shopeeOrderItems.orderSn, activeOrderSns));
+
+      for (const item of activeItems) {
+        if (!itemsByOrder.has(item.orderSn)) {
+          itemsByOrder.set(item.orderSn, []);
+        }
+        itemsByOrder.get(item.orderSn)!.push(item);
+      }
+    }
+
+    // Attach items to orders (only active ones have items)
+    const result = records.map(order => ({
+      ...order,
+      items: itemsByOrder.get(order.orderSn) || [],
     }));
+
     return { success: true, data: result };
   })
 

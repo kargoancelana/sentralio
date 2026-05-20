@@ -10,6 +10,8 @@ import { ShipmentProgressDialog, BatchShipmentProgressDialog } from '../componen
 import { SyncStatusIndicator } from '../components/shared/SyncStatusIndicator';
 import { getBatchSummaryMessage, mapLabelError } from '../utils/label-errors';
 import { printCustomLabels, printOfficialLabels } from '../utils/printLabel';
+import { LihatRincianButton } from '../components/order/LihatRincianButton';
+import { OrderDetailModal } from '../components/order/OrderDetailModal';
 import './PesananSaya.css';
 
 /* ── Status mapping ── */
@@ -48,7 +50,9 @@ function OrderCard({
   selectedLabelOrders,
   onToggleLabelSelection,
   batchPrinting,
-  onPrintComplete
+  onPrintComplete,
+  activeTab,
+  onLihatRincian,
 }: { 
   order: any; 
   onShipOrder: (orderSn: string) => void;
@@ -58,6 +62,10 @@ function OrderCard({
   onToggleLabelSelection: (orderSn: string) => void;
   batchPrinting: boolean;
   onPrintComplete: () => void;
+  /** The currently active main filter tab */
+  activeTab: MainFilter;
+  /** Called when "Lihat Rincian" is clicked for this order */
+  onLihatRincian: (orderSn: string, shopId: number) => void;
 }) {
   const items: any[] = order.items || [];
   const hasItems = items.length > 0;
@@ -66,6 +74,12 @@ function OrderCard({
   const isLabelSelected = selectedLabelOrders.includes(order.orderSn);
   const isProcessed = order.orderStatus === 'PROCESSED';
   const isLabelPrinted = order.labelPrinted === 1;
+
+  // Show "Lihat Rincian" only in the "Perlu Dikirim" tab for READY_TO_SHIP / PROCESSED orders
+  // (Requirements 1.1, 1.2, 1.3)
+  const showLihatRincian =
+    activeTab === 'NEED_SHIP' &&
+    (order.orderStatus === 'READY_TO_SHIP' || order.orderStatus === 'PROCESSED');
 
   return (
     <div style={{
@@ -120,13 +134,14 @@ function OrderCard({
         {hasItems ? (
           items.map((item, idx) => (
             <div key={idx} style={{
-              display: 'flex', alignItems: 'flex-start', gap: 12,
+              display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 45px 100px 120px 110px 140px',
+              alignItems: 'flex-start',
               paddingTop: 8,
               borderTop: idx > 0 ? '1px solid var(--bg3)' : 'none',
               marginTop: idx > 0 ? 8 : 0,
             }}>
-              {/* Produk + variasi — flex 1 */}
-              <div style={{ flex: 1, minWidth: 0 }}>
+              {/* Produk + variasi */}
+              <div style={{ minWidth: 0, overflow: 'hidden' }}>
                 <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.4, fontWeight: 500 }}>
                   {item.itemName}
                 </div>
@@ -137,13 +152,13 @@ function OrderCard({
                 )}
               </div>
 
-              {/* Qty — sejajar dengan item row */}
-              <div style={{ minWidth: 40, textAlign: 'center', fontSize: 13, fontWeight: 600, color: 'var(--text2)', paddingTop: 1 }}>
+              {/* Qty */}
+              <div style={{ textAlign: 'center', fontSize: 13, fontWeight: 600, color: 'var(--text2)', paddingTop: 1 }}>
                 ×{item.qty}
               </div>
 
               {/* Total: hanya tampil di row pertama, sisanya kosong */}
-              <div style={{ minWidth: 100, textAlign: 'right' }}>
+              <div style={{ textAlign: 'right' }}>
                 {idx === 0 ? (
                   <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text1)', whiteSpace: 'nowrap' }}>
                     {formatRp(order.totalAmount)}
@@ -152,7 +167,7 @@ function OrderCard({
               </div>
 
               {/* Status: hanya di row pertama */}
-              <div style={{ minWidth: 110, textAlign: 'center' }}>
+              <div style={{ textAlign: 'center' }}>
                 {idx === 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
                     <StatusBadge status={order.orderStatus} />
@@ -173,7 +188,7 @@ function OrderCard({
               </div>
 
               {/* Jasa kirim + tracking number: hanya di row pertama */}
-              <div style={{ minWidth: 100, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+              <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                 {idx === 0 ? (
                   order.shippingCarrier || order.trackingNumber ? (
                     <>
@@ -196,27 +211,45 @@ function OrderCard({
               </div>
 
               {/* Action button: hanya di row pertama */}
-              <div style={{ minWidth: 120, textAlign: 'center' }}>
+              <div style={{ textAlign: 'center' }}>
                 {idx === 0 && order.orderStatus === 'READY_TO_SHIP' ? (
-                  <button
-                    onClick={() => onShipOrder(order.orderSn)}
-                    style={{
-                      padding: '6px 12px', borderRadius: 6, border: 'none',
-                      fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                      background: 'var(--accent)', color: 'var(--accent-f)',
-                      display: 'flex', alignItems: 'center', gap: 6,
-                      justifyContent: 'center', transition: 'all .15s',
-                    }}
-                  >
-                    <Truck size={12} />
-                    Atur Pengiriman
-                  </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                    <button
+                      onClick={() => onShipOrder(order.orderSn)}
+                      style={{
+                        padding: '6px 12px', borderRadius: 6, border: 'none',
+                        fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                        background: 'var(--accent)', color: 'var(--accent-f)',
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        justifyContent: 'center', transition: 'all .15s',
+                      }}
+                    >
+                      <Truck size={12} />
+                      Atur Pengiriman
+                    </button>
+                    {showLihatRincian && (
+                      <LihatRincianButton
+                        orderSn={order.orderSn}
+                        shopId={order.shopId}
+                        onClick={() => onLihatRincian(order.orderSn, order.shopId)}
+                      />
+                    )}
+                  </div>
                 ) : idx === 0 && order.orderStatus === 'PROCESSED' ? (
-                  <PrintLabelButton
-                    orderSn={order.orderSn}
-                    labelPrinted={isLabelPrinted}
-                    onPrintComplete={() => onPrintComplete()}
-                  />
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                    <PrintLabelButton
+                      orderSn={order.orderSn}
+                      labelPrinted={isLabelPrinted}
+                      onPrintComplete={() => onPrintComplete()}
+                    />
+                    {showLihatRincian && (
+                      <LihatRincianButton
+                        orderSn={order.orderSn}
+                        shopId={order.shopId}
+                        onClick={() => onLihatRincian(order.orderSn, order.shopId)}
+                      />
+                    )}
+                  </div>
                 ) : idx === 0 ? (
                   <span style={{ fontSize: 11.5, color: 'var(--text4)' }}>—</span>
                 ) : null}
@@ -225,13 +258,13 @@ function OrderCard({
           ))
         ) : (
           /* Fallback jika belum ada item detail */
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 8 }}>
-            <div style={{ flex: 1, fontSize: 12, color: 'var(--text4)', fontStyle: 'italic' }}>Data produk belum tersedia</div>
-            <div style={{ minWidth: 40 }} />
-            <div style={{ minWidth: 100, textAlign: 'right', fontSize: 14, fontWeight: 700, color: 'var(--text1)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 45px 100px 120px 110px 140px', alignItems: 'center', paddingTop: 8 }}>
+            <div style={{ minWidth: 0, overflow: 'hidden', fontSize: 12, color: 'var(--text4)', fontStyle: 'italic' }}>Data produk belum tersedia</div>
+            <div />
+            <div style={{ textAlign: 'right', fontSize: 14, fontWeight: 700, color: 'var(--text1)' }}>
               {formatRp(order.totalAmount)}
             </div>
-            <div style={{ minWidth: 110, textAlign: 'center' }}>
+            <div style={{ textAlign: 'center' }}>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
                 <StatusBadge status={order.orderStatus} />
                 {isProcessed && (
@@ -248,7 +281,7 @@ function OrderCard({
                 )}
               </div>
             </div>
-            <div style={{ minWidth: 100, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+            <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
               {order.shippingCarrier || order.trackingNumber ? (
                 <>
                   <Truck size={13} style={{ color: 'var(--text3)' }} />
@@ -267,27 +300,45 @@ function OrderCard({
                 <span style={{ fontSize: 11.5, color: 'var(--text4)' }}>—</span>
               )}
             </div>
-            <div style={{ minWidth: 120, textAlign: 'center' }}>
+            <div style={{ textAlign: 'center' }}>
               {order.orderStatus === 'READY_TO_SHIP' ? (
-                <button
-                  onClick={() => onShipOrder(order.orderSn)}
-                  style={{
-                    padding: '6px 12px', borderRadius: 6, border: 'none',
-                    fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                    background: 'var(--accent)', color: 'var(--accent-f)',
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    justifyContent: 'center', transition: 'all .15s',
-                  }}
-                >
-                  <Truck size={12} />
-                  Atur Pengiriman
-                </button>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                  <button
+                    onClick={() => onShipOrder(order.orderSn)}
+                    style={{
+                      padding: '6px 12px', borderRadius: 6, border: 'none',
+                      fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                      background: 'var(--accent)', color: 'var(--accent-f)',
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      justifyContent: 'center', transition: 'all .15s',
+                    }}
+                  >
+                    <Truck size={12} />
+                    Atur Pengiriman
+                  </button>
+                  {showLihatRincian && (
+                    <LihatRincianButton
+                      orderSn={order.orderSn}
+                      shopId={order.shopId}
+                      onClick={() => onLihatRincian(order.orderSn, order.shopId)}
+                    />
+                  )}
+                </div>
               ) : order.orderStatus === 'PROCESSED' ? (
-                <PrintLabelButton
-                  orderSn={order.orderSn}
-                  labelPrinted={isLabelPrinted}
-                  onPrintComplete={() => onPrintComplete()}
-                />
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                  <PrintLabelButton
+                    orderSn={order.orderSn}
+                    labelPrinted={isLabelPrinted}
+                    onPrintComplete={() => onPrintComplete()}
+                  />
+                  {showLihatRincian && (
+                    <LihatRincianButton
+                      orderSn={order.orderSn}
+                      shopId={order.shopId}
+                      onClick={() => onLihatRincian(order.orderSn, order.shopId)}
+                    />
+                  )}
+                </div>
               ) : (
                 <span style={{ fontSize: 11.5, color: 'var(--text4)' }}>—</span>
               )}
@@ -304,11 +355,11 @@ function OrderCard({
 ════════════════════════════════════════════ */
 export function PesananSaya() {
   const toast = useToast();
-  const { data: ordersData, loading, refetch } = useApi(() => api.orderList(), []);
-  const { data: shopsData } = useApi(() => api.shopeeCredentialsList(), []);
+  const { data: ordersData, loading, refetch } = useApi(() => api.orderList(), [], 'orders-list');
+  const { data: shopsData } = useApi(() => api.shopeeCredentialsList(), [], 'shops-list');
   const [syncing, setSyncing]         = useState(false);
   const [mainFilter, setMainFilter]   = useState<MainFilter>('NEED_SHIP');
-  const [subFilter, setSubFilter]     = useState<SubFilter>('ALL');
+  const [subFilter, setSubFilter]     = useState<SubFilter>('READY_TO_SHIP');
   const [printFilter, setPrintFilter] = useState<PrintFilter>('ALL');
   const [search, setSearch]           = useState('');
   const [shopFilter, setShopFilter]   = useState<string>('all');
@@ -319,6 +370,20 @@ export function PesananSaya() {
   // Batch label printing state (for PROCESSED orders)
   const [selectedLabelOrders, setSelectedLabelOrders] = useState<string[]>([]);
   const [batchPrinting, setBatchPrinting] = useState(false);
+
+  // Order Detail Modal state (Requirements 1.5, 8.2)
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalOrderSn, setModalOrderSn] = useState<string | null>(null);
+
+  const handleLihatRincian = (orderSn: string, _shopId: number) => {
+    setModalOrderSn(orderSn);
+    setModalOpen(true);
+  };
+
+  const handleModalClose = () => {
+    setModalOpen(false);
+    setModalOrderSn(null);
+  };
 
   const [syncProgress, setSyncProgress] = useState<{ total: number, page: number } | null>(null);
 
@@ -1006,16 +1071,37 @@ export function PesananSaya() {
         <div>
           {/* Sticky column header */}
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 12,
+            display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 45px 100px 120px 110px 140px',
+            alignItems: 'center',
             padding: '6px 16px', marginBottom: 6,
             fontSize: 11, fontWeight: 600, color: 'var(--text4)',
             textTransform: 'uppercase', letterSpacing: '.04em',
             position: 'sticky', top: 0, zIndex: 10,
-            background: 'var(--bg3)',
-            borderRadius: 6,
+            background: 'var(--bg)',
+            borderBottom: '1px solid var(--border)',
+            borderRadius: 0,
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
-              {countRts > 0 && (mainFilter === 'NEED_SHIP' && (subFilter === 'ALL' || subFilter === 'READY_TO_SHIP')) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {/* Saat subFilter ALL: 1 checkbox untuk semua order di tab Perlu Dikirim */}
+              {mainFilter === 'NEED_SHIP' && subFilter === 'ALL' && (countRts > 0 || countProcessed > 0) && (
+                <input
+                  type="checkbox"
+                  checked={
+                    filtered.length > 0 &&
+                    filtered.filter(o => o.orderStatus === 'READY_TO_SHIP').every(o => selectedOrders.includes(o.orderSn)) &&
+                    filtered.filter(o => o.orderStatus === 'PROCESSED').every(o => selectedLabelOrders.includes(o.orderSn))
+                  }
+                  onChange={() => {
+                    selectAllReadyToShip();
+                    selectAllProcessed();
+                  }}
+                  disabled={batchPrinting}
+                  style={{ width: 12, height: 12, cursor: batchPrinting ? 'not-allowed' : 'pointer', opacity: batchPrinting ? 0.6 : 1 }}
+                  title="Pilih semua pesanan"
+                />
+              )}
+              {/* Saat subFilter READY_TO_SHIP: checkbox untuk READY_TO_SHIP saja */}
+              {countRts > 0 && mainFilter === 'NEED_SHIP' && subFilter === 'READY_TO_SHIP' && (
                 <input
                   type="checkbox"
                   checked={filtered.filter(o => o.orderStatus === 'READY_TO_SHIP').length > 0 && 
@@ -1025,7 +1111,8 @@ export function PesananSaya() {
                   title="Pilih semua pesanan yang perlu diproses"
                 />
               )}
-              {countProcessed > 0 && (mainFilter === 'NEED_SHIP' && (subFilter === 'ALL' || subFilter === 'PROCESSED')) && (
+              {/* Saat subFilter PROCESSED: checkbox untuk PROCESSED saja */}
+              {countProcessed > 0 && mainFilter === 'NEED_SHIP' && subFilter === 'PROCESSED' && (
                 <input
                   type="checkbox"
                   checked={filtered.filter(o => o.orderStatus === 'PROCESSED').length > 0 && 
@@ -1043,11 +1130,11 @@ export function PesananSaya() {
               )}
               <span>Pembeli &amp; Produk</span>
             </div>
-            <div style={{ minWidth: 40, textAlign: 'center' }}>Qty</div>
-            <div style={{ minWidth: 100, textAlign: 'right' }}>Total</div>
-            <div style={{ minWidth: 110, textAlign: 'center' }}>Status</div>
-            <div style={{ minWidth: 80, textAlign: 'center' }}>Ekspedisi</div>
-            <div style={{ minWidth: 120, textAlign: 'center' }}>Aksi</div>
+            <div style={{ textAlign: 'center' }}>Qty</div>
+            <div style={{ textAlign: 'right' }}>Total</div>
+            <div style={{ textAlign: 'center' }}>Status</div>
+            <div style={{ textAlign: 'center' }}>Ekspedisi</div>
+            <div style={{ textAlign: 'center' }}>Aksi</div>
           </div>
 
           {filtered.map((order: any) => (
@@ -1061,6 +1148,8 @@ export function PesananSaya() {
               onToggleLabelSelection={toggleLabelSelection}
               batchPrinting={batchPrinting}
               onPrintComplete={() => refetch()}
+              activeTab={mainFilter}
+              onLihatRincian={handleLihatRincian}
             />
           ))}
 
@@ -1090,6 +1179,13 @@ export function PesananSaya() {
           setBatchShipDialogOrderSns([]);
         }}
         onComplete={() => refetch()}
+      />
+
+      {/* ── ORDER DETAIL MODAL (Requirements 1.5, 2.1–2.6) ── */}
+      <OrderDetailModal
+        orderSn={modalOrderSn}
+        open={modalOpen}
+        onClose={handleModalClose}
       />
     </div>
   );

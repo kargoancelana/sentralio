@@ -249,6 +249,8 @@ export async function syncShopeeOrdersIncremental(
           for (const item of itemList) {
             await db.insert(shopeeOrderItems).values({
               orderSn: order.order_sn,
+              itemId: item.item_id ? String(item.item_id) : null,
+              modelId: item.model_id ? String(item.model_id) : null,
               itemName: item.item_name || "—",
               modelName: item.model_name || null,
               modelSku: item.model_sku || null,
