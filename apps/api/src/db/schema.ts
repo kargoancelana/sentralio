@@ -130,3 +130,55 @@ export const labelCacheTable = mysqlTable("label_cache", {
 }, (t) => ({
   uniqOrderSn: uniqueIndex("uniq_label_order_sn").on(t.orderSn),
 }));
+
+// ─── HPP Entries ───────────────────────────────────────────────
+
+export const hppEntries = mysqlTable("hpp_entries", {
+  id: int("id").primaryKey().autoincrement(),
+  variantId: int("variant_id").notNull()
+    .references(() => masterProductVariants.id, { onDelete: "cascade" }),
+  hppValue: int("hpp_value").notNull(),          // in Rupiah
+  startDate: varchar("start_date", { length: 10 }).notNull(), // YYYY-MM-DD
+  endDate: varchar("end_date", { length: 10 }),   // YYYY-MM-DD or null
+  note: varchar("note", { length: 255 }),
+  deletedAt: timestamp("deleted_at"),             // soft delete
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  idxVariant: index("idx_hpp_variant").on(t.variantId),
+  idxVariantPeriod: index("idx_hpp_variant_period").on(t.variantId, t.startDate, t.endDate),
+}));
+
+// ─── Biaya Packing Entries ─────────────────────────────────────
+
+export const packingCostEntries = mysqlTable("packing_cost_entries", {
+  id: int("id").primaryKey().autoincrement(),
+  productGroupId: int("product_group_id").notNull()
+    .references(() => productGroups.id, { onDelete: "cascade" }),
+  packingCost: int("packing_cost").notNull(),     // in Rupiah
+  startDate: varchar("start_date", { length: 10 }).notNull(), // YYYY-MM-DD
+  endDate: varchar("end_date", { length: 10 }),   // YYYY-MM-DD or null
+  note: varchar("note", { length: 255 }),
+  autoClosedBy: int("auto_closed_by"),            // ID of entry that triggered auto-close
+  deletedAt: timestamp("deleted_at"),             // soft delete
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  idxProductGroup: index("idx_packing_product_group").on(t.productGroupId),
+  idxProductGroupPeriod: index("idx_packing_product_group_period").on(t.productGroupId, t.startDate, t.endDate),
+}));
+
+// ─── Audit Log ─────────────────────────────────────────────────
+
+export const costAuditLog = mysqlTable("cost_audit_log", {
+  id: int("id").primaryKey().autoincrement(),
+  entityType: varchar("entity_type", { length: 20 }).notNull(), // 'hpp' | 'packing_cost'
+  entityId: int("entity_id").notNull(),
+  action: varchar("action", { length: 10 }).notNull(), // 'insert' | 'update' | 'delete'
+  previousValues: text("previous_values"),        // JSON string
+  newValues: text("new_values"),                  // JSON string
+  userId: varchar("user_id", { length: 100 }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => ({
+  idxEntityLookup: index("idx_audit_entity").on(t.entityType, t.entityId),
+}));

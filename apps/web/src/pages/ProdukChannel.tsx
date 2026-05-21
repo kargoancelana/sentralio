@@ -3,6 +3,9 @@ import { useToast } from '../components/ui/Toast';
 import { Modal } from '../components/ui/Modal';
 import { useApi, useApiMutation } from '../hooks/useApi';
 import { api } from '../lib/api';
+import { PackingCostSection } from '../components/packing-cost/PackingCostSection';
+import { PackingCostEntryForm } from '../components/packing-cost/PackingCostEntryForm';
+import type { PackingCostEntry } from '../components/packing-cost/PackingCostSection';
 
 import { Package, Edit3, RefreshCw, Info, Lock } from 'lucide-react';
 
@@ -28,6 +31,12 @@ function ProductThumb({ name, imageUrl }: { name: string; imageUrl?: string }) {
 /* ── EDIT MODAL ── */
 function EditModal({ product, onClose, onSave, saving }: any) {
   const [variants, setVariants] = useState<any[]>([]);
+
+  // Packing cost form state
+  const [packingFormEntry, setPackingFormEntry] = useState<PackingCostEntry | undefined>(undefined);
+  const [packingFormOpen, setPackingFormOpen] = useState(false);
+  // Key to force PackingCostSection to refetch after a successful save
+  const [packingSectionKey, setPackingSectionKey] = useState(0);
 
   // Inisialisasi variasi saat mount
   useMemo(() => {
@@ -55,6 +64,29 @@ function EditModal({ product, onClose, onSave, saving }: any) {
 
   const handleSave = () => {
     onSave(product, variants);
+  };
+
+  // Packing cost handlers
+  const handlePackingAdd = () => {
+    setPackingFormEntry(undefined);
+    setPackingFormOpen(true);
+  };
+
+  const handlePackingEdit = (entry: PackingCostEntry) => {
+    setPackingFormEntry(entry);
+    setPackingFormOpen(true);
+  };
+
+  const handlePackingFormSuccess = (_entry: PackingCostEntry) => {
+    setPackingFormOpen(false);
+    setPackingFormEntry(undefined);
+    // Increment key to force PackingCostSection to remount and refetch
+    setPackingSectionKey((k) => k + 1);
+  };
+
+  const handlePackingFormCancel = () => {
+    setPackingFormOpen(false);
+    setPackingFormEntry(undefined);
   };
 
   if (!product) return null;
@@ -155,6 +187,28 @@ function EditModal({ product, onClose, onSave, saving }: any) {
            <span>MSKU digunakan untuk mapping ke Master Produk. Stok akan disinkronkan ke Shopee sesuai nilai Master.</span>
         </p>
       </div>
+
+      {/* ── Biaya Packing Section ── */}
+      {product && product.id && (
+        <div style={{ marginTop: 24 }}>
+          <PackingCostSection
+            key={packingSectionKey}
+            productGroupId={product.id}
+            onAdd={handlePackingAdd}
+            onEdit={handlePackingEdit}
+          />
+        </div>
+      )}
+
+      {/* Packing Cost Entry Form Modal */}
+      {packingFormOpen && product && product.id && (
+        <PackingCostEntryForm
+          productGroupId={product.id}
+          entry={packingFormEntry}
+          onSuccess={handlePackingFormSuccess}
+          onCancel={handlePackingFormCancel}
+        />
+      )}
     </Modal>
   );
 }

@@ -9,6 +9,8 @@ const navItems = [
   { id: 'channel',      label: 'Produk Channel',   icon: 'products',     path: '/produk/channel', badge: null },
   { id: 'header-pesanan', label: 'PESANAN', isHeader: true },
   { id: 'orders',       label: 'Pesanan Saya',     icon: 'orders',       path: '/pesanan/saya', badge: null },
+  { id: 'header-keuangan', label: 'KEUANGAN', isHeader: true },
+  { id: 'laporan',      label: 'Laporan',           icon: 'reports',      path: '/keuangan/laporan', badge: null },
   { id: 'header-toko', label: 'WORKFLOW', isHeader: true },
   { id: 'integrations', label: 'Integrasi Toko', icon: 'integrations', path: '/integrasi/shopee', badge: null },
   { id: 'header-system', label: 'SYSTEM', isHeader: true },

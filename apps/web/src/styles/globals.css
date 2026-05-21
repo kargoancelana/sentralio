@@ -26,16 +26,17 @@
 .dark {
   --bg:       #0F1117;
   --bg2:      #161B27;
-  --bg3:      #1E2538;
-  --bg4:      #252D3F;
-  --border:   #252D3F;
-  --border2:  #2E3A52;
+  --bg3:      #1C2235;
+  --bg4:      #232C42;
+  --border:   #2A3450;
+  --border2:  #374261;
   --text1:    #F0F4FF;
   --text2:    #C9D1E0;
   --text3:    #7E8BA8;
   --text4:    #4A5568;
-  --accent:   #E8EDFF;
-  --accent-f: #0F1117;
+  --accent:   #3B82F6;
+  --accent-f: #FFFFFF;
+  --accent-subtle: rgba(59, 130, 246, 0.12);
   --success:  #4ADE80;
   --error:    #F87171;
   --warning:  #FACC15;
@@ -163,12 +164,12 @@ h1, h2, h3, h4, h5, h6 { line-height: 1.3; }
 .btn-shopee:hover { background: #D73D1E; border-color: #D73D1E; }
 
 /* ── DARK MODE BUTTONS ── */
-.dark .btn-primary { background: rgba(59, 130, 246, 0.2); color: #60A5FA; border-color: rgba(59, 130, 246, 0.4); }
-.dark .btn-primary:hover { background: rgba(59, 130, 246, 0.3); }
+.dark .btn-primary { background: rgba(59, 130, 246, 0.18); color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.35); }
+.dark .btn-primary:hover { background: rgba(59, 130, 246, 0.28); }
 .dark .btn-danger { background: rgba(220, 38, 38, 0.15); color: #F87171; border-color: rgba(220, 38, 38, 0.3); }
 .dark .btn-danger:hover { background: rgba(220, 38, 38, 0.25); }
-.dark .btn-shopee { background: rgba(238, 77, 45, 0.2); color: #FF8C5A; border-color: rgba(238, 77, 45, 0.3); }
-.dark .btn-shopee:hover { background: rgba(238, 77, 45, 0.3); }
+.dark .btn-shopee { background: rgba(238, 77, 45, 0.15); color: #FF8C5A; border-color: rgba(238, 77, 45, 0.3); }
+.dark .btn-shopee:hover { background: rgba(238, 77, 45, 0.25); }
 .btn-sm { padding: 6px 14px; font-size: 12px; }
 .btn-xs { padding: 4px 10px; font-size: 11px; border-radius: 6px; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }

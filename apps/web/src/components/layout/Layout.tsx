@@ -24,6 +24,7 @@ export function Layout() {
     : location.pathname.includes('/produk/master') ? 'master'
     : location.pathname.includes('/settings') ? 'settings'
     : location.pathname.includes('/pesanan') ? 'orders'
+    : location.pathname.includes('/keuangan/laporan') ? 'laporan'
     : 'dashboard';
 
   return (

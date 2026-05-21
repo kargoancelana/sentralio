@@ -11,6 +11,8 @@ import { orderRoutes } from "./modules/order/order.route";
 import { labelRoutes } from "./modules/order/label.route";
 import { orderDetailRoutes } from "./modules/order/order-detail.route";
 import { healthRoutes } from "./routes/health";
+import { hppRoutes } from "./modules/hpp/hpp.route";
+import { packingCostRoutes } from "./modules/packing-cost/packing-cost.route";
 import { db } from "./db/client";
 import { shopeeCredentials } from "./db/schema";
 import { ensureAllTokensFresh } from "./services/shopee-auth";
@@ -26,7 +28,7 @@ const app = new Elysia()
   }))
   .use(rateLimit({
     duration: 60000, // 1 minute window
-    max: 100, // 100 requests per minute per IP
+    max: 300, // 300 requests per minute per IP
     errorResponse: {
       success: false,
       message: "Terlalu banyak permintaan. Silakan coba lagi dalam beberapa saat.",
@@ -37,8 +39,9 @@ const app = new Elysia()
       return server?.requestIP(req)?.address || 'unknown';
     },
     skip: (req) => {
-      // Skip rate limiting for health check endpoint
-      return req.url.endsWith('/health');
+      // Skip rate limiting for health check and HPP/packing-cost resolve endpoints
+      const url = req.url;
+      return url.endsWith('/health') || url.includes('/resolve');
     }
   }))
   .onError(({ code, error, set }) => {
@@ -55,6 +58,8 @@ const app = new Elysia()
     message: "wms-sync API is running",
   }))
   .use(healthRoutes)
+  .use(hppRoutes)
+  .use(packingCostRoutes)
   .use(productRoutes)
   .use(shopeeRoutes)
   .use(shopeeAuthRoutes)
