@@ -9,7 +9,7 @@
  * - Caching and performance optimization
  */
 
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "../db/client";
 import { shopeeOrders } from "../db/schema";
 import { labelCache } from "./label-cache.service";
@@ -22,8 +22,179 @@ import {
   getShippingDocumentResult, 
   downloadShippingDocument 
 } from "./shopee-label";
-import { logLabelOperation, logPerformance, logBatchSummary } from "./label-logger";
+import { logLabelOperation, logPerformance, logBatchSummary, logInfo } from "./label-logger";
 import { LabelError, LabelErrorType, mapErrorToUserMessage, determineErrorType } from "./label-errors";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Module-level constants (Requirement 7.1, 7.7, 7.8)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @deprecated since v2 — only referenced by classifyChunkFreshness (deprecated).
+ */
+const STALE_SHIP_THRESHOLD_MS = 86_400_000;
+
+/** Concurrent downloads per chunk for Background_Cache_Populate. Range 1..10. */
+const PARALLEL_CHUNK_SIZE = 5;
+
+/** Minimum delay (ms) between parallel chunks. Range 0..2000. */
+const CHUNK_DELAY_MS = 300;
+
+/**
+ * Adaptive backoff for polling shipping_document_result.
+ * Total max wait = sum(POLL_BACKOFF_MS) = 6300 ms = 6.3 s.
+ */
+const POLL_BACKOFF_MS: readonly number[] = [300, 500, 800, 1200, 1500, 2000];
+
+/** Timeout per downloadShippingDocument call in Background_Cache_Populate. 30 seconds. */
+const BG_DOWNLOAD_TIMEOUT_MS = 30_000;
+
+/**
+ * @deprecated since v2 — only referenced by classifyChunkFreshness (deprecated).
+ */
+const STALE_QUERY_TIMEOUT_MS = 2_000;
+
+/** Fallback intervals when POLL_BACKOFF_MS is invalid (Requirement 3.7). */
+const POLL_FALLBACK_CREATEPOLL_MS = 800;
+const POLL_FALLBACK_CREATEPOLL_COUNT = 6;
+const POLL_FALLBACK_SINGLE_MS = 500;
+const POLL_FALLBACK_SINGLE_COUNT = 10;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// File-local helper utilities (not exported)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Sleep helper: resolves after `ms` milliseconds. */
+const sleep = (ms: number) => new Promise<void>(res => setTimeout(res, ms));
+
+/**
+ * Race a promise against a timeout.
+ * Rejects with an Error whose message contains `__TIMEOUT_<ms>__` on timeout.
+ */
+async function raceWithTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`__TIMEOUT_${ms}__`)), ms)),
+  ]);
+}
+
+/**
+ * Emit a structured log payload via logInfo, swallowing any logger errors.
+ * Requirement 10.5: logger failures MUST NOT propagate as errors to the caller.
+ */
+function emitLog(payload: Record<string, any>): void {
+  try {
+    logInfo(`[label-optimization] ${payload.operation}`, payload);
+  } catch {
+    /* Requirement 10.5: swallow logger errors */
+  }
+}
+
+/**
+ * Return a fresh copy of POLL_BACKOFF_MS intervals, validated for use in polling loops.
+ *
+ * - If POLL_BACKOFF_MS is undefined/empty or contains any invalid value (non-integer,
+ *   < 100, or > 10000), emits a `poll_config_invalid` log and returns conservative
+ *   fallback intervals appropriate for the given context.
+ * - Otherwise returns a mutable copy of the constant array.
+ *
+ * @param context - 'createPoll' → fallback 800 ms × 6; 'single' → fallback 500 ms × 10
+ * @returns number[] — array of sleep intervals in milliseconds (length ≥ 1)
+ *
+ * **Validates: Requirement 3.7**
+ */
+function getPollIntervals(context: 'createPoll' | 'single'): number[] {
+  if (!Array.isArray(POLL_BACKOFF_MS) || POLL_BACKOFF_MS.length === 0) {
+    emitLog({ operation: 'poll_config_invalid', reason: 'undefined or empty', context });
+    return context === 'createPoll'
+      ? new Array(POLL_FALLBACK_CREATEPOLL_COUNT).fill(POLL_FALLBACK_CREATEPOLL_MS)
+      : new Array(POLL_FALLBACK_SINGLE_COUNT).fill(POLL_FALLBACK_SINGLE_MS);
+  }
+  for (const v of POLL_BACKOFF_MS) {
+    if (!Number.isInteger(v) || v < 100 || v > 10_000) {
+      emitLog({ operation: 'poll_config_invalid', reason: `bad value: ${v}`, context });
+      return context === 'createPoll'
+        ? new Array(POLL_FALLBACK_CREATEPOLL_COUNT).fill(POLL_FALLBACK_CREATEPOLL_MS)
+        : new Array(POLL_FALLBACK_SINGLE_COUNT).fill(POLL_FALLBACK_SINGLE_MS);
+    }
+  }
+  return [...POLL_BACKOFF_MS];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Internal types (file-local, not exported)
+// ─────────────────────────────────────────────────────────────────────────────
+
+type FreshnessDecision = {
+  action: 'wait_5s' | 'skip_to_fallback';
+  freshCount: number;
+  staleCount: number;
+};
+
+type BackgroundCacheResult = 'success' | 'failure';
+
+/**
+ * @deprecated since v2 — fallback_decision log is no longer emitted (Requirement 1.3, 6.1).
+ */
+type FallbackDecisionLog = {
+  operation: 'fallback_decision';
+  chunkSize: number;     // 1..50
+  freshOrders: number;   // ≥ 0
+  staleOrders: number;   // ≥ 0
+  decision: 'wait_5s' | 'skip_to_fallback';
+};
+
+type PollAttemptLog = {
+  operation: 'poll_attempt';
+  pollIndex: number;     // 1..POLL_BACKOFF_MS.length
+  delayMs: number;       // ≥ 0
+  readyCount: number;    // ≥ 0
+  pendingCount: number;  // ≥ 0
+};
+
+type BackgroundCachePopulateLog = {
+  operation: 'background_cache_populate';
+  orderSn: string;
+  durationMs: number;
+  chunkIndex: number;    // ≥ 0
+  result: BackgroundCacheResult;
+  error?: string;
+};
+
+type BackgroundCacheSummaryLog = {
+  operation: 'background_cache_summary';
+  totalOrders: number;
+  successCount: number;
+  failedCount: number;
+  totalDurationMs: number;
+};
+
+type TrackingSkipLog = {
+  operation: 'tracking_skip';
+  totalOrders: number;   // ≥ 0
+  dbHitCount: number;    // ≥ 0, dbHitCount + apiCallCount ≤ totalOrders
+  apiCallCount: number;  // ≥ 0
+};
+
+type BatchOptimizedSummaryLog = {
+  operation: 'batch_optimized_summary';
+  totalOrders: number;
+  cachedCount: number;
+  fastPathCount: number;
+  fallbackCount: number;
+  failedCount: number;
+  userFacingDurationMs: number;
+};
+
+// Suppress unused-type warnings — these are referenced by emitLog call sites in future tasks.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type _InternalLogTypes =
+  | FallbackDecisionLog
+  | PollAttemptLog
+  | BackgroundCachePopulateLog
+  | BackgroundCacheSummaryLog
+  | TrackingSkipLog
+  | BatchOptimizedSummaryLog;
 
 /**
  * Label document interface representing a shipping label
@@ -57,6 +228,7 @@ export interface OrderRecord {
   totalAmount: number;
   buyerUsername: string | null;
   shippingCarrier: string | null;
+  trackingNumber: string | null;  // Explicit declaration (was accessed via cast before)
   payTime: Date | null;
   createTime: Date;
   updatedAt: Date;
@@ -130,6 +302,283 @@ export async function validateLabelEligibility(orderSn: string): Promise<{
       error: `Gagal memvalidasi order: ${error.message}`
     };
   }
+}
+
+/**
+ * Batch validate label eligibility for multiple orders using a single DB query.
+ *
+ * Equivalent to calling `validateLabelEligibility(orderSn)` for each order,
+ * but replaces N sequential queries with one `WHERE order_sn IN (...)` query.
+ *
+ * - Empty input fast-path: returns `[]` without a DB query.
+ * - On DB exception: falls back to per-order `validateLabelEligibility` calls.
+ * - Output order mirrors input order (output[i] ↔ input[i], Requirement 5.10).
+ *
+ * @param orderSns - Array of order serial numbers to validate
+ * @returns Array of validation results in the same order as input
+ *
+ * **Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9, 5.10, 7.1, 7.6**
+ */
+async function batchValidateLabelEligibility(orderSns: string[]): Promise<Array<{
+  valid: boolean;
+  order?: OrderRecord;
+  error?: string;
+}>> {
+  // Requirement 5.9: empty list → return empty without DB query
+  if (orderSns.length === 0) return [];
+
+  try {
+    const uniqueSns = [...new Set(orderSns)];
+
+    // Requirement 5.1: exactly 1 batch query
+    const rows = await db.select()
+      .from(shopeeOrders)
+      .where(inArray(shopeeOrders.orderSn, uniqueSns));
+
+    const byOrderSn = new Map<string, OrderRecord>();
+    for (const r of rows) byOrderSn.set(r.orderSn, r as OrderRecord);
+
+    const LABEL_ELIGIBLE_STATUSES = ['PROCESSED', 'SHIPPED', 'TO_CONFIRM_RECEIVE'];
+
+    // Requirement 5.10: preserve input order
+    return orderSns.map((orderSn) => {
+      const order = byOrderSn.get(orderSn);
+
+      // Requirement 5.5: not found → exact same error string as validateLabelEligibility
+      if (!order) {
+        return {
+          valid: false,
+          error: `Order ${orderSn} tidak ditemukan dalam database`,
+        };
+      }
+
+      // Requirement 5.6: ineligible status → exact same error string as validateLabelEligibility
+      if (!LABEL_ELIGIBLE_STATUSES.includes(order.orderStatus)) {
+        return {
+          valid: false,
+          error: `Order ${orderSn} tidak dapat dicetak labelnya: status saat ini adalah ${order.orderStatus}`,
+        };
+      }
+
+      return { valid: true, order };
+    });
+  } catch (err: any) {
+    // Requirement 5.7: fallback to per-order validateLabelEligibility on DB exception
+    console.warn('[label-service] batchValidateLabelEligibility failed, falling back per-order:', err.message);
+    return Promise.all(orderSns.map(sn => validateLabelEligibility(sn)));
+  }
+}
+
+/**
+ * @deprecated since v2 (label-print-v2) — the wait_5s strategy was removed because Shopee
+ * typically requires > 15 s to auto-generate labels after init_logistic_batch, so a 5-second
+ * delay never enables the fast-path retry to succeed. ALL [FALLBACK_REQUIRED] chunks now
+ * route directly to createPollAndDownload. This function is retained for ATC test
+ * compatibility and is safe to delete in a follow-up cleanup spec.
+ *
+ * Classify a chunk of orders as fresh or stale based on their `updatedAt` timestamp.
+ *
+ * Runs a single batch DB query wrapped in a 2-second timeout. If all orders in the
+ * chunk are older than `STALE_SHIP_THRESHOLD_MS` (24 h), returns `skip_to_fallback` so
+ * the 5-second retry delay can be skipped. If any order is fresh, NULL, or missing,
+ * returns `wait_5s` (conservative).
+ *
+ * On DB exception or query timeout, falls back to conservative `wait_5s` with
+ * `freshCount = chunk.length` and `staleCount = 0`.
+ *
+ * @param chunk - Array of `{ order_sn, package_number }` objects from the failing fast-path chunk
+ * @returns FreshnessDecision — action, freshCount, staleCount
+ *
+ * **Validates: Requirements 2.1, 2.4, 2.5**
+ */
+async function classifyChunkFreshness(
+  chunk: Array<{ order_sn: string; package_number: string }>
+): Promise<FreshnessDecision> {
+  try {
+    const orderSns = chunk.map(o => o.order_sn);
+
+    // Requirement 2.5: exactly one batch DB query per chunk, wrapped in a 2s timeout
+    const rows = await raceWithTimeout(
+      db.select({ orderSn: shopeeOrders.orderSn, updatedAt: shopeeOrders.updatedAt })
+        .from(shopeeOrders)
+        .where(inArray(shopeeOrders.orderSn, orderSns)),
+      STALE_QUERY_TIMEOUT_MS
+    );
+
+    const now = Date.now();
+    const updatedMap = new Map<string, Date>(
+      rows.map(r => [r.orderSn, r.updatedAt] as [string, Date])
+    );
+
+    let freshCount = 0;
+    let staleCount = 0;
+
+    for (const o of chunk) {
+      const updatedAt = updatedMap.get(o.order_sn);
+      if (!updatedAt) {
+        // Requirement 2.4: NULL or missing updatedAt → treat as fresh (conservative)
+        freshCount++;
+      } else {
+        const ageMs = now - updatedAt.getTime();
+        if (ageMs > STALE_SHIP_THRESHOLD_MS) {
+          staleCount++;
+        } else {
+          freshCount++;
+        }
+      }
+    }
+
+    // Requirement 2.3: only skip delay when every order in the chunk is stale
+    return {
+      action: freshCount === 0 ? 'skip_to_fallback' : 'wait_5s',
+      freshCount,
+      staleCount,
+    };
+  } catch {
+    // Requirement 2.4: exception or timeout → conservative (treat entire chunk as fresh)
+    return { action: 'wait_5s', freshCount: chunk.length, staleCount: 0 };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v2: Fast-Path Chunk Processing
+// ─────────────────────────────────────────────────────────────────────────────
+
+type FastPathChunkOutcome = {
+  /** PDF buffers produced by this chunk. May be 0 (full chunk queued/failed),
+   *  1 (whole-chunk batch download succeeded), or N (parallel-per-order branch). */
+  base64Buffers: string[];
+  /** Orders deferred to createPollAndDownload (FALLBACK_REQUIRED). */
+  toFallback: Array<{ order_sn: string; package_number: string }>;
+  /** Per-order failures with the same error strings v1 produces. */
+  failed: Array<{ orderSn: string; error: string }>;
+};
+
+/**
+ * Process a single Fast_Path_Batch chunk. Captures the three v1 error branches
+ * (FALLBACK_REQUIRED → queue; packages_can_not_download_together → parallel per-order;
+ * other → per-order failure). Does NOT throw. Does NOT call classifyChunkFreshness.
+ * Does NOT sleep.
+ *
+ * Validates: Requirements 1.1, 1.4, 1.5, 1.6, 2.5, 2.6
+ */
+async function processFastPathChunk(
+  shopId: number,
+  chunk: Array<{ order_sn: string; package_number: string }>
+): Promise<FastPathChunkOutcome> {
+  const out: FastPathChunkOutcome = { base64Buffers: [], toFallback: [], failed: [] };
+
+  try {
+    const result = await downloadShippingDocumentBatch(
+      shopId,
+      chunk as Array<{ order_sn: string; package_number?: string }>,
+      'THERMAL_AIR_WAYBILL'
+    );
+    out.base64Buffers.push(result.base64);
+    return out;
+  } catch (chunkError: any) {
+    const msg: string = chunkError.message ?? '';
+
+    // Branch A: FALLBACK_REQUIRED — queue directly, no sleep, no retry (Requirement 1.1, 1.4)
+    if (msg.includes('[FALLBACK_REQUIRED]')) {
+      console.log('[label-service] batch: chunk needs create+poll, queuing', chunk.length, 'orders for fallback');
+      out.toFallback.push(...chunk);
+      return out;
+    }
+
+    // Branch B: mixed channels → parallel per-order (Requirement 1.5, 2.6)
+    if (msg.includes('packages_can_not_download_together') || msg.includes('can not download together')) {
+      console.log('[label-service] batch: channel group download failed (mixed channels), parallel per-order for', chunk.length, 'orders');
+      const PARALLEL_LIMIT = 5; // unchanged from v1
+      for (let pi = 0; pi < chunk.length; pi += PARALLEL_LIMIT) {
+        const parallelBatch = chunk.slice(pi, pi + PARALLEL_LIMIT);
+        const parallelResults = await Promise.allSettled(
+          parallelBatch.map(async (order) => {
+            const singleResult = await downloadShippingDocumentBatch(
+              shopId,
+              [order as { order_sn: string; package_number?: string }],
+              'THERMAL_AIR_WAYBILL'
+            );
+            return { order, base64: singleResult.base64 };
+          })
+        );
+        for (let i = 0; i < parallelResults.length; i++) {
+          const pr = parallelResults[i];
+          const failedOrder = parallelBatch[i];
+          if (!pr || !failedOrder) continue; // defensive: should never happen
+          if (pr.status === 'fulfilled') {
+            out.base64Buffers.push((pr as PromiseFulfilledResult<{ order: { order_sn: string; package_number: string }; base64: string }>).value.base64);
+          } else {
+            const errMsg: string = (pr as PromiseRejectedResult).reason?.message || 'Download failed';
+            if (errMsg.includes('[FALLBACK_REQUIRED]')) {
+              out.toFallback.push(failedOrder);
+            } else {
+              out.failed.push({ orderSn: failedOrder.order_sn, error: errMsg });
+            }
+          }
+        }
+      }
+      return out;
+    }
+
+    // Branch C: any other error — record per-order failures (unchanged from v1)
+    for (const order of chunk) {
+      out.failed.push({ orderSn: order.order_sn, error: msg });
+    }
+    return out;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v2: Channel Group Download Helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Download all chunks for a single channel group, sequentially within the channel.
+ * Pushes per-order failures into `failedOrders` (shared mutable array, same as v1).
+ * Returns the channel's PDF base64 buffers in chunk order.
+ *
+ * The inner loop remains sequential to preserve per-channel API rate-limit safety
+ * (Requirement 3.2).
+ *
+ * `failedOrders` is passed by reference; each channel's task mutates it concurrently.
+ * This is safe because `Array.prototype.push` is synchronous and the JS event loop
+ * serializes reentries between awaits. No extra synchronization is needed.
+ *
+ * Note: v1 does NOT distinguish [FALLBACK_REQUIRED] in this code site — Requirement 3.5
+ * explicitly preserves that behaviour. Any error becomes per-order failures for the chunk.
+ *
+ * Validates: Requirements 3.1, 3.2, 3.3, 3.4, 3.5
+ */
+async function downloadChannelGroup(
+  shopId: number,
+  channelOrders: Array<{ order_sn: string; package_number: string }>,
+  batchChunkSize: number,
+  failedOrders: Array<{ orderSn: string; error: string }>
+): Promise<string[]> {
+  const buffers: string[] = [];
+  const chunks = chunkArray(channelOrders, batchChunkSize);
+
+  // Inner loop SEQUENTIAL by design — within a channel, chunks share a rate-limit window.
+  // Different channels run in parallel via Promise.allSettled at the call site.
+  for (const chunk of chunks) {
+    try {
+      const result = await downloadShippingDocumentBatch(
+        shopId,
+        chunk as Array<{ order_sn: string; package_number?: string }>,
+        'THERMAL_AIR_WAYBILL'
+      );
+      buffers.push(result.base64);
+    } catch (err: any) {
+      // Same per-order failure logic as v1 at this site.
+      // [FALLBACK_REQUIRED] here is treated as terminal (Requirement 3.5).
+      for (const order of chunk) {
+        failedOrders.push({ orderSn: order.order_sn, error: err.message });
+      }
+    }
+  }
+
+  return buffers;
 }
 
 /**
@@ -429,20 +878,34 @@ export async function getSingleLabel(orderSn: string): Promise<LabelResult> {
           await createShippingDocument(shopId, orderSn, documentType, packageNumber, trackingNumber);
           console.log('[label-service] Shipping document creation initiated (fallback)');
           
-          // Poll with shorter interval (500ms instead of 2000ms)
+          // Adaptive poll with backoff intervals (Requirement 3.4, 3.5, 3.6, 9.3, 9.4)
           let documentReady = false;
-          const maxAttempts = 10;
-          
-          for (let attempts = 0; attempts < maxAttempts; attempts++) {
-            await new Promise(resolve => setTimeout(resolve, 500));
+          const fastPathIntervals = getPollIntervals('single');
+
+          for (let pollIndex = 0; pollIndex < fastPathIntervals.length; pollIndex++) {
+            await sleep(fastPathIntervals[pollIndex]);
             try {
               await getShippingDocumentResult(shopId, orderSn, packageNumber);
-              console.log(`[label-service] Document ready after ${attempts + 1} attempts (fallback)`);
+              console.log(`[label-service] Document ready after ${pollIndex + 1} attempts (fallback)`);
+              emitLog({
+                operation: 'poll_attempt',
+                pollIndex: pollIndex + 1,
+                delayMs: fastPathIntervals[pollIndex],
+                readyCount: 1,
+                pendingCount: 0,
+              });
               documentReady = true;
               break;
             } catch (error: any) {
               if (!error.message?.includes('belum tersedia')) throw error;
-              console.log(`[label-service] Document still processing, attempt ${attempts + 1}/${maxAttempts}`);
+              console.log(`[label-service] Document still processing, attempt ${pollIndex + 1}/${fastPathIntervals.length}`);
+              emitLog({
+                operation: 'poll_attempt',
+                pollIndex: pollIndex + 1,
+                delayMs: fastPathIntervals[pollIndex],
+                readyCount: 0,
+                pendingCount: 1,
+              });
             }
           }
           
@@ -472,25 +935,39 @@ export async function getSingleLabel(orderSn: string): Promise<LabelResult> {
         await createShippingDocument(shopId, orderSn, documentType, packageNumber, trackingNumber);
         console.log('[label-service] Shipping document creation initiated');
         
-        // Poll with 500ms interval (was 2000ms)
+        // Adaptive poll with backoff intervals (Requirement 3.4, 3.5, 3.6, 9.3, 9.4)
         let documentReady = false;
-        const maxAttempts = 10;
-        
-        for (let attempts = 0; attempts < maxAttempts; attempts++) {
-          await new Promise(resolve => setTimeout(resolve, 500));
+        const standardIntervals = getPollIntervals('single');
+
+        for (let pollIndex = 0; pollIndex < standardIntervals.length; pollIndex++) {
+          await sleep(standardIntervals[pollIndex]);
           try {
             await getShippingDocumentResult(shopId, orderSn, packageNumber);
-            console.log(`[label-service] Document ready after ${attempts + 1} attempts`);
+            console.log(`[label-service] Document ready after ${pollIndex + 1} attempts`);
+            emitLog({
+              operation: 'poll_attempt',
+              pollIndex: pollIndex + 1,
+              delayMs: standardIntervals[pollIndex],
+              readyCount: 1,
+              pendingCount: 0,
+            });
             documentReady = true;
             break;
           } catch (error: any) {
             if (!error.message?.includes('belum tersedia')) throw error;
-            console.log(`[label-service] Document still processing, attempt ${attempts + 1}/${maxAttempts}`);
+            console.log(`[label-service] Document still processing, attempt ${pollIndex + 1}/${standardIntervals.length}`);
+            emitLog({
+              operation: 'poll_attempt',
+              pollIndex: pollIndex + 1,
+              delayMs: standardIntervals[pollIndex],
+              readyCount: 0,
+              pendingCount: 1,
+            });
           }
         }
         
         if (!documentReady) {
-          throw new Error('Timeout: Label pengiriman tidak siap setelah 5 detik.');
+          throw new Error('Timeout: Label pengiriman tidak siap setelah polling.');
         }
         
         finalDocument = await downloadShippingDocument(shopId, orderSn, packageNumber, documentType);
@@ -735,6 +1212,151 @@ export function chunkArray<T>(arr: T[], size: number): T[][] {
 }
 
 /**
+ * Download a single order's shipping document via `downloadShippingDocument` and upsert
+ * the result into `label_cache`.
+ *
+ * - Applies a 30-second timeout (BG_DOWNLOAD_TIMEOUT_MS) to the download call.
+ * - Validates the response: base64 must be non-empty, decoded buffer must be non-empty,
+ *   and the first 5 bytes must spell `%PDF-`.
+ * - On success: upserts via `labelCache.set` (always writes, never reads cache first –
+ *   Requirement 1.9) and emits a `background_cache_populate` log with `result: 'success'`.
+ * - On any failure (timeout, error response, invalid PDF): emits a
+ *   `background_cache_populate` log with `result: 'failure'` and does NOT write to cache.
+ *   Auto-retry is NOT performed (Requirement 1.6, 1.11).
+ *
+ * @param shopId               - Shop identifier for the Shopee API call
+ * @param order                - Object with `order_sn` and `package_number`
+ * @param shippingDocumentType - Shipping document type string (e.g. 'THERMAL_AIR_WAYBILL')
+ * @param chunkIndex           - Zero-based index of the chunk this order belongs to (for logging)
+ * @returns `'success'` if the PDF was downloaded and cached, `'failure'` otherwise
+ *
+ * **Validates: Requirements 1.2, 1.3, 1.6, 1.9, 1.10, 1.11, 6.2, 6.6, 8.6**
+ */
+async function downloadAndCacheSingle(
+  shopId: number,
+  order: { order_sn: string; package_number: string },
+  shippingDocumentType: string,
+  chunkIndex: number
+): Promise<'success' | 'failure'> {
+  const t0 = Date.now();
+  try {
+    // Requirement 1.11: apply 30-second timeout per download call
+    const doc = await raceWithTimeout(
+      downloadShippingDocument(shopId, order.order_sn, order.package_number, shippingDocumentType),
+      BG_DOWNLOAD_TIMEOUT_MS
+    );
+
+    // Requirement 1.6 / 6.6: validate base64 is non-empty
+    if (!doc?.base64 || doc.base64.length === 0) {
+      throw new Error('empty PDF');
+    }
+
+    // Requirement 6.2 / 6.6: decode and validate magic header %PDF-
+    const buf = Buffer.from(doc.base64, 'base64');
+    if (buf.length === 0 || !buf.subarray(0, 5).toString('utf8').startsWith('%PDF-')) {
+      throw new Error('invalid PDF (missing %PDF- header)');
+    }
+
+    // Requirement 1.3 / 1.9: upsert into label_cache (no cache-read first)
+    await labelCache.set(order.order_sn, {
+      orderSn: order.order_sn,
+      url: `data:application/pdf;base64,${doc.base64}`,
+      format: 'pdf',
+      trackingNumber: '',
+      retrievedAt: new Date(),
+    });
+
+    // Requirement 1.10: emit success log
+    emitLog({
+      operation: 'background_cache_populate',
+      orderSn: order.order_sn,
+      durationMs: Date.now() - t0,
+      chunkIndex,
+      result: 'success',
+    } satisfies BackgroundCachePopulateLog);
+
+    return 'success';
+  } catch (err: any) {
+    // Requirement 1.6 / 1.10: emit failure log; do NOT write to cache; do NOT retry
+    emitLog({
+      operation: 'background_cache_populate',
+      orderSn: order.order_sn,
+      durationMs: Date.now() - t0,
+      chunkIndex,
+      result: 'failure',
+      error: err?.message ?? String(err),
+    } satisfies BackgroundCachePopulateLog);
+
+    return 'failure';
+  }
+}
+
+/**
+ * Populate `label_cache` for all successful orders after the batch download is complete.
+ *
+ * Non-blocking: intended to be scheduled via `queueMicrotask` / `Promise.resolve().then()`
+ * so the HTTP response is already sent before the first chunk starts (Requirement 1.7).
+ *
+ * - Chunks `successOrders` into groups of `PARALLEL_CHUNK_SIZE` (default 5).
+ * - For each chunk, fans out via `Promise.allSettled` so one order's failure never blocks others.
+ * - Waits `CHUNK_DELAY_MS` (default 300 ms) between consecutive chunks, EXCEPT after the last.
+ * - At the end emits a single `background_cache_summary` log (Requirement 10.4).
+ * - MUST NOT call `getSingleLabel` for caching purposes (Requirement 1.8).
+ *
+ * @param shopId                - Shopee shop identifier
+ * @param successOrders         - Orders to cache (from successful batch download)
+ * @param shippingDocumentType  - e.g. 'THERMAL_AIR_WAYBILL'
+ *
+ * **Validates: Requirements 1.4, 1.5, 1.6, 1.8, 6.5, 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 10.4**
+ */
+async function populateCacheInBackground(
+  shopId: number,
+  successOrders: Array<{ order_sn: string; package_number: string }>,
+  shippingDocumentType: string
+): Promise<void> {
+  const startTime = Date.now();
+  let successCount = 0;
+  let failedCount = 0;
+
+  // Requirements 1.4, 8.1: chunk into groups of PARALLEL_CHUNK_SIZE
+  const chunks = chunkArray(successOrders, PARALLEL_CHUNK_SIZE);
+
+  for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+    const chunk = chunks[chunkIndex];
+
+    // Requirements 1.4, 8.1: fan-out with Promise.allSettled so failures are isolated
+    const results = await Promise.allSettled(
+      chunk.map(o => downloadAndCacheSingle(shopId, o, shippingDocumentType, chunkIndex))
+    );
+
+    // Tally results — a fulfilled promise with value 'success' counts as success,
+    // everything else (rejected OR fulfilled with 'failure') counts as failed.
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value === 'success') {
+        successCount++;
+      } else {
+        failedCount++;
+      }
+    }
+
+    // Requirement 1.5, 8.2: wait CHUNK_DELAY_MS between chunks, skip after the last chunk
+    if (chunkIndex < chunks.length - 1) {
+      await sleep(CHUNK_DELAY_MS);
+    }
+  }
+
+  // Requirement 10.4: emit exactly one background_cache_summary log
+  // Invariant: successCount + failedCount === successOrders.length (totalOrders)
+  emitLog({
+    operation: 'background_cache_summary',
+    totalOrders: successOrders.length,
+    successCount,
+    failedCount,
+    totalDurationMs: Date.now() - startTime,
+  } satisfies BackgroundCacheSummaryLog);
+}
+
+/**
  * Helper: Create shipping documents, poll for readiness, and download PDFs.
  * Used as fallback when direct download fails (labels not yet created).
  * Early-exits if all failures are tracking_number_invalid (orders need more time after ship).
@@ -748,52 +1370,123 @@ async function createPollAndDownload(
 ): Promise<string[]> {
   const pdfBuffers: string[] = [];
 
-  // ── Pre-step: Fetch tracking numbers for orders that don't have them ──
-  // This prevents "tracking_number_invalid" errors during create_shipping_document
-  // Uses getMassTrackingNumber (1 API call for all orders) — no spam
-  try {
-    const { getMassTrackingNumber } = await import("./shopee-label");
-    const packageNumbers = orders.map(o => o.package_number);
-    
-    console.log('[label-service] createPollAndDownload: fetching tracking numbers for', orders.length, 'orders');
-    const trackingResult = await getMassTrackingNumber(shopId, packageNumbers);
-    const successList = trackingResult?.response?.success_list || [];
-    
-    // Build tracking map: package_number → tracking_number
-    const trackingMap = new Map<string, string>();
-    for (const item of successList) {
-      if (item.tracking_number) {
-        trackingMap.set(item.package_number, item.tracking_number);
-      }
-    }
+  // ── Optimasi 4: Skip get_mass_tracking_number pre-step ──
+  // Requirement 4.1–4.8, 7.5
+  let dbHitCount = 0;
+  let apiCallCount = 0;
+  const totalOrders = orders.length;
 
-    // Update DB with tracking numbers (fire-and-forget, non-blocking)
-    if (trackingMap.size > 0) {
-      const { db } = await import("../db/client");
-      const { shopeeOrders } = await import("../db/schema");
-      const { eq } = await import("drizzle-orm");
-      
-      for (const order of orders) {
-        const tn = trackingMap.get(order.package_number);
-        if (tn) {
-          // Attach tracking to order object for use in create_shipping_document
-          (order as any).tracking_number = tn;
-          db.update(shopeeOrders)
-            .set({ trackingNumber: tn })
-            .where(eq(shopeeOrders.orderSn, order.order_sn))
-            .execute()
-            .catch(() => {});
-        }
-      }
-      console.log('[label-service] createPollAndDownload: got tracking numbers for', trackingMap.size, '/', orders.length, 'orders');
-    }
-  } catch (e: any) {
-    // Non-fatal: if tracking fetch fails, create_shipping_document will still try
-    console.warn('[label-service] createPollAndDownload: tracking fetch failed (non-fatal):', e.message);
+  // Requirement 4.1: skip query for empty list, emit log, return early
+  if (orders.length === 0) {
+    emitLog({ operation: 'tracking_skip', totalOrders, dbHitCount, apiCallCount });
+    return pdfBuffers;
   }
 
+  let trackingMap = new Map<string, string>(); // package_number → tracking_number
+
+  try {
+    const { getMassTrackingNumber } = await import("./shopee-label");
+
+    // Requirement 4.1: exactly one DB query with deduplicated order_sn list
+    const uniqueOrderSns = [...new Set(orders.map(o => o.order_sn))];
+    const rows = await db
+      .select({ orderSn: shopeeOrders.orderSn, trackingNumber: shopeeOrders.trackingNumber })
+      .from(shopeeOrders)
+      .where(inArray(shopeeOrders.orderSn, uniqueOrderSns));
+
+    // Build map order_sn → tracking_number (only for non-null, non-empty after trim)
+    const dbTrackingByOrderSn = new Map<string, string>();
+    for (const r of rows) {
+      const tn = r.trackingNumber?.trim();
+      if (tn && tn.length >= 1) dbTrackingByOrderSn.set(r.orderSn, tn);
+    }
+
+    // Partition orders into "covered by DB" vs "needs API"
+    const ordersNeedingApi: Array<{ order_sn: string; package_number: string }> = [];
+    for (const o of orders) {
+      const dbTn = dbTrackingByOrderSn.get(o.order_sn);
+      if (dbTn) {
+        // Requirement 4.5a: DB value has highest priority
+        (o as any).tracking_number = dbTn;
+        trackingMap.set(o.package_number, dbTn);
+        dbHitCount++;
+      } else {
+        ordersNeedingApi.push(o);
+      }
+    }
+
+    // Requirement 4.2/4.3: call API only for orders without DB tracking
+    if (ordersNeedingApi.length > 0) {
+      apiCallCount++;
+      const trackingResult = await getMassTrackingNumber(shopId, ordersNeedingApi.map(o => o.package_number));
+      const successList = trackingResult?.response?.success_list || [];
+
+      for (const item of successList) {
+        if (item.tracking_number) {
+          trackingMap.set(item.package_number, item.tracking_number);
+          const ord = ordersNeedingApi.find(o => o.package_number === item.package_number);
+          if (ord) {
+            // Requirement 4.5b: attach API result
+            (ord as any).tracking_number = item.tracking_number;
+            // Requirement 4.4: persist returned tracking back to DB (fire-and-forget)
+            db.update(shopeeOrders)
+              .set({ trackingNumber: item.tracking_number })
+              .where(eq(shopeeOrders.orderSn, ord.order_sn))
+              .execute()
+              .catch(() => {});
+          }
+        }
+      }
+
+      console.log('[label-service] createPollAndDownload: DB hits:', dbHitCount, '/ API call for:', ordersNeedingApi.length, 'orders');
+    } else {
+      console.log('[label-service] createPollAndDownload: all', dbHitCount, 'tracking numbers found in DB — skipping API call');
+    }
+  } catch (e: any) {
+    // Requirement 4.7: on any exception, fall back to flow lama (getMassTrackingNumber for all orders)
+    console.warn('[label-service] createPollAndDownload: tracking pre-query failed, falling back to full API call:', e.message);
+    trackingMap = new Map();
+    dbHitCount = 0;
+    try {
+      const { getMassTrackingNumber } = await import("./shopee-label");
+      apiCallCount++;
+      const trackingResult = await getMassTrackingNumber(shopId, orders.map(o => o.package_number));
+      const successList = trackingResult?.response?.success_list || [];
+      for (const item of successList) {
+        if (item.tracking_number) {
+          trackingMap.set(item.package_number, item.tracking_number);
+          const ord = orders.find(o => o.package_number === item.package_number);
+          if (ord) (ord as any).tracking_number = item.tracking_number;
+        }
+      }
+    } catch {
+      // Mirror existing flow lama: non-fatal, continue without tracking
+    }
+  }
+
+  // Requirement 4.8: emit exactly one tracking_skip log (invariant: dbHitCount + apiCallCount ≤ totalOrders)
+  emitLog({ operation: 'tracking_skip', totalOrders, dbHitCount, apiCallCount });
+
+  // Requirement 4.6: drop orders with no tracking_number after DB+API into failedOrders
+  const ordersWithTracking: Array<{ order_sn: string; package_number: string }> = [];
+  for (const o of orders) {
+    const tn = (o as any).tracking_number || trackingMap.get(o.package_number);
+    if (tn) {
+      ordersWithTracking.push(o);
+    } else {
+      failedOrders.push({ orderSn: o.order_sn, error: 'Tracking number tidak tersedia' });
+    }
+  }
+
+  // Continue only with orders that have a tracking number
+  const ordersToProcess = ordersWithTracking;
+
+  // If all orders were dropped due to missing tracking, return early
+  if (ordersToProcess.length === 0) return pdfBuffers;
+
   // Create shipping documents (with tracking numbers from pre-step)
-  const createOrders = orders.map(o => ({
+  // Use ordersToProcess (orders that have tracking numbers after DB+API lookup)
+  const createOrders = ordersToProcess.map(o => ({
     order_sn: o.order_sn,
     package_number: o.package_number,
     tracking_number: (o as any).tracking_number || undefined,
@@ -829,19 +1522,19 @@ async function createPollAndDownload(
   }
 
   // Filter to only successfully created orders
-  const ordersToDownload = orders.filter(o =>
+  const ordersToDownload = ordersToProcess.filter(o =>
     mergedCreateResult.successOrders.includes(o.order_sn)
   );
 
   if (ordersToDownload.length === 0) return pdfBuffers;
 
-  // Poll for readiness (max 6 polls × 800ms = 4.8s max)
-  const maxPolls = 6;
+  // Poll for readiness using adaptive backoff intervals (Requirement 3.1–3.6, 9.2, 9.4)
+  const intervals = getPollIntervals('createPoll');
   const readyOrders: string[] = [];
   let processingOrders = [...ordersToDownload];
 
-  for (let poll = 0; poll < maxPolls; poll++) {
-    await new Promise(r => setTimeout(r, 800));
+  for (let pollIndex = 0; pollIndex < intervals.length; pollIndex++) {
+    await sleep(intervals[pollIndex]);
     if (processingOrders.length === 0) break;
 
     const pollChunks = chunkArray(processingOrders, batchChunkSize);
@@ -858,7 +1551,7 @@ async function createPollAndDownload(
         for (const fail of status.failed) {
           failedOrders.push({ orderSn: fail.order_sn, error: `${fail.fail_error}: ${fail.fail_message}` });
         }
-        // Keep only processing orders
+        // Keep only orders still processing (not ready, not failed)
         const doneSet = new Set([...status.ready, ...status.failed.map(f => f.order_sn)]);
         stillProcessing.push(...chunk.filter(o => !doneSet.has(o.order_sn)));
       } catch {
@@ -868,9 +1561,20 @@ async function createPollAndDownload(
 
     readyOrders.push(...newReady);
     processingOrders = stillProcessing;
+
+    emitLog({
+      operation: 'poll_attempt',
+      pollIndex: pollIndex + 1,
+      delayMs: intervals[pollIndex],
+      readyCount: newReady.length,
+      pendingCount: stillProcessing.length,
+    });
+
+    // Requirement 3.3: early exit when all orders are ready or failed
+    if (stillProcessing.length === 0) break;
   }
 
-  // Timeout remaining
+  // Requirement 3.5, 9.4: timeout — mark remaining processing orders as failed (do NOT throw)
   for (const order of processingOrders) {
     failedOrders.push({ orderSn: order.order_sn, error: 'Timeout: label belum siap setelah polling' });
   }
@@ -886,20 +1590,26 @@ async function createPollAndDownload(
     byChannel.get(ch)!.push(order);
   }
 
-  for (const [, channelOrders] of byChannel) {
-    const chunks = chunkArray(channelOrders, batchChunkSize);
-    for (const chunk of chunks) {
-      try {
-        const result = await downloadShippingDocumentBatch(
-          shopId,
-          chunk as Array<{ order_sn: string; package_number?: string }>,
-          'THERMAL_AIR_WAYBILL'
-        );
-        pdfBuffers.push(result.base64);
-      } catch (err: any) {
-        for (const order of chunk) {
-          failedOrders.push({ orderSn: order.order_sn, error: err.message });
-        }
+  // Dispatch one task per channel group concurrently (Requirement 3.1, 3.2, 3.4).
+  const channelEntries = Array.from(byChannel.entries());
+  const settledChannels = await Promise.allSettled(
+    channelEntries.map(([, channelOrders]) =>
+      downloadChannelGroup(shopId, channelOrders, batchChunkSize, failedOrders)
+    )
+  );
+
+  // Aggregate results in channel iteration order (Requirement 3.3).
+  for (let i = 0; i < settledChannels.length; i++) {
+    const r = settledChannels[i];
+    const [, channelOrders] = channelEntries[i];
+    if (r.status === 'fulfilled') {
+      pdfBuffers.push(...r.value);
+    } else {
+      // Defensive: downloadChannelGroup catches per-chunk errors, so this should not happen.
+      // If it does, attribute failure to all orders in the channel.
+      const msg = (r.reason as any)?.message ?? 'Channel download failed';
+      for (const order of channelOrders) {
+        failedOrders.push({ orderSn: order.order_sn, error: msg });
       }
     }
   }
@@ -928,6 +1638,11 @@ export async function getBatchLabelsOptimized(orderSns: string[]): Promise<{
 }> {
   const startTime = Date.now();
   const failedOrders: Array<{ orderSn: string; error: string }> = [];
+
+  // Counters for batch_optimized_summary log (Task 9.3 / Requirement 10.1)
+  let cachedCount = 0;
+  let fastPathCount = 0;
+  let fallbackCount = 0;
 
   console.log('[label-service] getBatchLabelsOptimized started:', { count: orderSns.length });
 
@@ -958,6 +1673,16 @@ export async function getBatchLabelsOptimized(orderSns: string[]): Promise<{
       const pdfUrl = `data:application/pdf;base64,${mergedBase64}`;
       const duration = Date.now() - startTime;
       console.log('[label-service] ⚡ batch reprint ALL from cache:', { duration: `${duration}ms`, orders: orderSns.length });
+      cachedCount = orderSns.length;
+      emitLog({
+        operation: 'batch_optimized_summary',
+        totalOrders: orderSns.length,
+        cachedCount,
+        fastPathCount: 0,
+        fallbackCount: 0,
+        failedCount: 0,
+        userFacingDurationMs: duration,
+      } satisfies BatchOptimizedSummaryLog);
       return { success: true, pdfUrl, successCount: orderSns.length, failedOrders: [] };
     }
 
@@ -993,6 +1718,16 @@ export async function getBatchLabelsOptimized(orderSns: string[]): Promise<{
         const duration = Date.now() - startTime;
         const totalSuccess = cachedPdfs.length + uncachedResult.successCount;
         console.log('[label-service] ⚡ batch partial cache merge:', { duration: `${duration}ms`, cached: cachedPdfs.length, fetched: uncachedResult.successCount, total: totalSuccess });
+        const partialCachedCount = cachedPdfs.length;
+        emitLog({
+          operation: 'batch_optimized_summary',
+          totalOrders: orderSns.length,
+          cachedCount: partialCachedCount,
+          fastPathCount: 0,
+          fallbackCount: 0,
+          failedCount: uncachedResult.failedOrders.length,
+          userFacingDurationMs: duration,
+        } satisfies BatchOptimizedSummaryLog);
         return { success: true, pdfUrl, successCount: totalSuccess, failedOrders: uncachedResult.failedOrders };
       }
       
@@ -1003,16 +1738,19 @@ export async function getBatchLabelsOptimized(orderSns: string[]): Promise<{
     console.log('[label-service] batch cache check:', { cached: cachedPdfs.length, uncached: uncachedOrderSns.length, total: orderSns.length });
 
     // ── Step 1: Validate orders and get shopId ──
+    // Task 9.1 / Requirement 5.1–5.6, 5.10: one batch DB query instead of N sequential queries
     const validOrders: Array<{ orderSn: string; shopId: number; trackingNumber?: string; shippingCarrier?: string }> = [];
 
-    for (const orderSn of orderSns) {
-      const validation = await validateLabelEligibility(orderSn);
+    const validationResults = await batchValidateLabelEligibility(uncachedOrderSns);
+    for (let i = 0; i < uncachedOrderSns.length; i++) {
+      const orderSn = uncachedOrderSns[i];
+      const validation = validationResults[i];
       if (validation.valid) {
         validOrders.push({
           orderSn,
           shopId: validation.order!.shopId,
-          trackingNumber: (validation.order as any).trackingNumber || undefined,
-          shippingCarrier: (validation.order as any).shippingCarrier || undefined
+          trackingNumber: validation.order!.trackingNumber || undefined,
+          shippingCarrier: validation.order!.shippingCarrier || undefined,
         });
       } else {
         failedOrders.push({ orderSn, error: validation.error || 'Validation failed' });
@@ -1020,19 +1758,40 @@ export async function getBatchLabelsOptimized(orderSns: string[]): Promise<{
     }
 
     if (validOrders.length === 0) {
+      const duration = Date.now() - startTime;
+      emitLog({
+        operation: 'batch_optimized_summary',
+        totalOrders: orderSns.length,
+        cachedCount,
+        fastPathCount: 0,
+        fallbackCount: 0,
+        failedCount: failedOrders.length,
+        userFacingDurationMs: duration,
+      } satisfies BatchOptimizedSummaryLog);
       return { success: false, successCount: 0, failedOrders };
     }
 
     // ── Shop ID consistency check ──
     const uniqueShopIds = new Set(validOrders.map(o => o.shopId));
     if (uniqueShopIds.size > 1) {
+      const duration = Date.now() - startTime;
+      const multiShopFailed = validOrders.map(o => ({
+        orderSn: o.orderSn,
+        error: 'Semua order dalam batch harus dari shop yang sama'
+      }));
+      emitLog({
+        operation: 'batch_optimized_summary',
+        totalOrders: orderSns.length,
+        cachedCount,
+        fastPathCount: 0,
+        fallbackCount: 0,
+        failedCount: multiShopFailed.length + failedOrders.length,
+        userFacingDurationMs: duration,
+      } satisfies BatchOptimizedSummaryLog);
       return {
         success: false,
         successCount: 0,
-        failedOrders: validOrders.map(o => ({
-          orderSn: o.orderSn,
-          error: 'Semua order dalam batch harus dari shop yang sama'
-        }))
+        failedOrders: multiShopFailed
       };
     }
     const shopId = validOrders[0].shopId;
@@ -1130,6 +1889,16 @@ export async function getBatchLabelsOptimized(orderSns: string[]): Promise<{
       }));
 
     if (batchOrders.length === 0) {
+      const duration = Date.now() - startTime;
+      emitLog({
+        operation: 'batch_optimized_summary',
+        totalOrders: orderSns.length,
+        cachedCount,
+        fastPathCount: 0,
+        fallbackCount: 0,
+        failedCount: failedOrders.length,
+        userFacingDurationMs: duration,
+      } satisfies BatchOptimizedSummaryLog);
       return { success: false, successCount: 0, failedOrders };
     }
 
@@ -1155,58 +1924,35 @@ export async function getBatchLabelsOptimized(orderSns: string[]): Promise<{
       const allPdfBuffers: string[] = [];
       const fallbackOrders: Array<{ order_sn: string; package_number: string }> = []; // orders that need create+poll
 
+      // Build a flat array of all chunks across all channels (Requirement 2.1, 2.2).
+      // Chunking still happens per channel via chunkArray to preserve channel grouping
+      // inside each chunk (Shopee cannot merge labels from different channels in one PDF).
+      const allChunks: Array<{ order_sn: string; package_number: string }>[] = [];
       for (const [, channelOrders] of ordersByChannel) {
-        const chunks = chunkArray(channelOrders, BATCH_CHUNK_SIZE);
-        for (const chunk of chunks) {
-          try {
-            const result = await downloadShippingDocumentBatch(
-              shopId,
-              chunk as Array<{ order_sn: string; package_number?: string }>,
-              'THERMAL_AIR_WAYBILL'
-            );
-            allPdfBuffers.push(result.base64);
-          } catch (chunkError: any) {
-            // If "packages_can_not_download_together" → download each order in PARALLEL (5 concurrent)
-            if (chunkError.message?.includes('packages_can_not_download_together') || chunkError.message?.includes('can not download together')) {
-              console.log('[label-service] batch: channel group download failed (mixed channels), falling back to PARALLEL per-order download for', chunk.length, 'orders');
-              const PARALLEL_LIMIT = 5;
-              for (let pi = 0; pi < chunk.length; pi += PARALLEL_LIMIT) {
-                const parallelBatch = chunk.slice(pi, pi + PARALLEL_LIMIT);
-                const parallelResults = await Promise.allSettled(
-                  parallelBatch.map(async (order) => {
-                    const singleResult = await downloadShippingDocumentBatch(
-                      shopId,
-                      [order as { order_sn: string; package_number?: string }],
-                      'THERMAL_AIR_WAYBILL'
-                    );
-                    return { order, base64: singleResult.base64 };
-                  })
-                );
-                for (const pr of parallelResults) {
-                  if (pr.status === 'fulfilled') {
-                    allPdfBuffers.push(pr.value.base64);
-                  } else {
-                    const errMsg = pr.reason?.message || 'Download failed';
-                    // Find the order that failed — match by index
-                    const failedOrder = parallelBatch[parallelResults.indexOf(pr)];
-                    if (errMsg.includes('[FALLBACK_REQUIRED]')) {
-                      fallbackOrders.push(failedOrder as { order_sn: string; package_number: string });
-                    } else {
-                      failedOrders.push({ orderSn: (failedOrder as any).order_sn, error: errMsg });
-                    }
-                  }
-                }
-              }
-            } else if (chunkError.message?.includes('[FALLBACK_REQUIRED]')) {
-              // These orders need create+poll — queue them but don't discard already-downloaded PDFs
-              console.log('[label-service] batch: chunk needs create+poll, queuing', chunk.length, 'orders for fallback');
-              fallbackOrders.push(...(chunk as Array<{ order_sn: string; package_number: string }>));
-            } else {
-              // Other error — record all orders in chunk as failed
-              for (const order of chunk) {
-                failedOrders.push({ orderSn: order.order_sn, error: chunkError.message });
-              }
-            }
+        allChunks.push(...chunkArray(channelOrders, BATCH_CHUNK_SIZE));
+      }
+
+      // Dispatch all chunks concurrently (Requirement 2.1, 2.4).
+      // processFastPathChunk does not throw, so settled.status is always 'fulfilled' in practice.
+      // We still use allSettled to defensively absorb any unexpected throws.
+      const settled = await Promise.allSettled(
+        allChunks.map(chunk => processFastPathChunk(shopId, chunk))
+      );
+
+      // Aggregate results in the order chunks were dispatched (Requirement 2.3).
+      for (let i = 0; i < settled.length; i++) {
+        const r = settled[i];
+        const chunk = allChunks[i];
+        if (r.status === 'fulfilled') {
+          allPdfBuffers.push(...r.value.base64Buffers);
+          fallbackOrders.push(...r.value.toFallback);
+          failedOrders.push(...r.value.failed);
+        } else {
+          // Defensive: should not happen because processFastPathChunk catches everything.
+          // If it does, treat the entire chunk as failed (Requirement 2.5).
+          const msg = (r.reason as any)?.message ?? 'Unknown chunk error';
+          for (const order of chunk) {
+            failedOrders.push({ orderSn: order.order_sn, error: msg });
           }
         }
       }
@@ -1232,19 +1978,34 @@ export async function getBatchLabelsOptimized(orderSns: string[]): Promise<{
         const duration = Date.now() - startTime;
         console.log('[label-service] ⚡ batch download completed:', { duration: `${duration}ms`, orders: successCount, pdfs: allPdfBuffers.length, channels: ordersByChannel.size, fallback: fallbackOrders.length });
 
-        // Fire-and-forget: cache each order's label individually for instant reprints
-        // getSingleLabel will fast-path download (label exists) and save to cache
-        // Uses parallel batches of 5 to avoid hammering Shopee API
-        Promise.resolve().then(async () => {
-          const CACHE_PARALLEL = 5;
-          for (let ci = 0; ci < batchOrders.length; ci += CACHE_PARALLEL) {
-            const cacheBatch = batchOrders.slice(ci, ci + CACHE_PARALLEL);
-            await Promise.allSettled(
-              cacheBatch.map(order => getSingleLabel(order.order_sn).catch(() => {}))
-            );
-          }
-          console.log('[label-service] batch: background cache population complete for', batchOrders.length, 'orders');
-        }).catch(() => { /* ignore */ });
+        // Task 9.3 / Requirement 10.1: compute per-path order counts for summary log
+        // fallbackCount = orders that went through createPollAndDownload and succeeded
+        // fastPathCount = remaining successes (downloaded via fast path)
+        // Invariant: cachedCount + fastPathCount + fallbackCount + failedCount === totalOrders
+        const failedOrderSns = new Set(failedOrders.map(f => f.orderSn));
+        const successfulFallbackCount = fallbackOrders.filter(o => !failedOrderSns.has(o.order_sn)).length;
+        fallbackCount = successfulFallbackCount;
+        fastPathCount = successCount - fallbackCount;
+
+        // Task 9.2 / Requirement 1.1, 1.7, 7.2: schedule Background_Cache_Populate after
+        // merged PDF is ready, but non-blocking so the return statement flushes response first.
+        const successOrders = batchOrders.filter(o => !failedOrderSns.has(o.order_sn));
+        if (successOrders.length > 0) {
+          queueMicrotask(() => {
+            populateCacheInBackground(shopId, successOrders, 'THERMAL_AIR_WAYBILL').catch(() => {});
+          });
+        }
+
+        // Task 9.3 / Requirement 10.1: emit exactly one summary log on success path
+        emitLog({
+          operation: 'batch_optimized_summary',
+          totalOrders: orderSns.length,
+          cachedCount,
+          fastPathCount,
+          fallbackCount,
+          failedCount: failedOrders.length,
+          userFacingDurationMs: duration,
+        } satisfies BatchOptimizedSummaryLog);
 
         return { success: true, pdfUrl, successCount, failedOrders };
       }
@@ -1253,22 +2014,162 @@ export async function getBatchLabelsOptimized(orderSns: string[]): Promise<{
       if (failedOrders.length === 0) {
         failedOrders.push({ orderSn: 'batch', error: 'No labels could be downloaded' });
       }
+      {
+        const duration = Date.now() - startTime;
+        emitLog({
+          operation: 'batch_optimized_summary',
+          totalOrders: orderSns.length,
+          cachedCount,
+          fastPathCount,
+          fallbackCount,
+          failedCount: failedOrders.length,
+          userFacingDurationMs: duration,
+        } satisfies BatchOptimizedSummaryLog);
+      }
       return { success: false, successCount: 0, failedOrders };
 
     } catch (downloadError: any) {
       console.error('[label-service] batch download: unexpected error:', downloadError.message);
+      const duration = Date.now() - startTime;
+      const downloadFailed = [...failedOrders, { orderSn: 'batch', error: downloadError.message }];
+      emitLog({
+        operation: 'batch_optimized_summary',
+        totalOrders: orderSns.length,
+        cachedCount,
+        fastPathCount,
+        fallbackCount,
+        failedCount: downloadFailed.length,
+        userFacingDurationMs: duration,
+      } satisfies BatchOptimizedSummaryLog);
       return {
         success: false,
         successCount: 0,
-        failedOrders: [...failedOrders, { orderSn: 'batch', error: downloadError.message }]
+        failedOrders: downloadFailed
       };
     }
 
   } catch (error: any) {
     console.error('[label-service] getBatchLabelsOptimized failed:', error.message);
+    const duration = Date.now() - startTime;
     const allFailed = failedOrders.length > 0
       ? [...failedOrders, { orderSn: 'batch', error: error.message }]
       : [{ orderSn: 'batch', error: error.message }];
+    emitLog({
+      operation: 'batch_optimized_summary',
+      totalOrders: orderSns.length,
+      cachedCount,
+      fastPathCount,
+      fallbackCount,
+      failedCount: allFailed.length,
+      userFacingDurationMs: duration,
+    } satisfies BatchOptimizedSummaryLog);
     return { success: false, successCount: 0, failedOrders: allFailed };
   }
+}
+
+
+// ─── Prefetch After Ship ─────────────────────────────────────────────────────
+
+/**
+ * Fire-and-forget label prefetch after a ship_order or mass_ship_order success.
+ *
+ * Why: when a user later clicks "Cetak Label", the cache will already be warm so
+ * the print tab opens within a few seconds instead of 30+. This eliminates the
+ * full Shopee `create_shipping_document` → poll → `download_shipping_document`
+ * round-trip from the user-facing path.
+ *
+ * Behaviour:
+ *  - Returns immediately. Caller does NOT await.
+ *  - Schedules work via `setTimeout(..., delayMs)` so Shopee has time to start
+ *    generating the document before we try to download.
+ *  - Processes orders in chunks of {@link PARALLEL_CHUNK_SIZE} with
+ *    `Promise.allSettled` so one order's failure never blocks the others.
+ *  - Uses {@link getSingleLabel} (which already implements fast-path → create
+ *    → poll → download with proper backoff) so we benefit from the same retry
+ *    semantics the manual print path uses.
+ *  - Idempotent — `getSingleLabel` checks the DB cache first, so calling this
+ *    twice for the same order_sn is a no-op on the second call.
+ *  - Tolerant — failures are logged but never bubble. The next time the user
+ *    actually clicks "Cetak Label" the regular flow will retry.
+ *
+ * NOT a queue replacement — this is intentionally an in-process best-effort
+ * mechanism scoped to "warm the cache for orders that just shipped". It does
+ * not survive an API restart that happens between the ship call and the
+ * scheduled fetch. That trade-off is acceptable for current scale (single shop,
+ * <1k orders/day): a missed prefetch only means the next print is slow, never
+ * a data error. See `analisa_flow.md` for a longer rationale.
+ *
+ * @param shopId    Shopee shop id (used implicitly through getSingleLabel)
+ * @param orderSns  Order SNs to prefetch (de-duplicated internally)
+ * @param delayMs   Delay before starting the prefetch. Default 3000 ms — same
+ *                  as the existing single-ship prefetch. Rationale: Shopee
+ *                  generates each shipping document on-demand per order
+ *                  (triggered by our first download/create call), so batch
+ *                  ship doesn't need a longer wait than single ship. If
+ *                  Shopee is still processing when we hit it, getSingleLabel's
+ *                  internal polling (~6.3 s of adaptive backoff) absorbs the
+ *                  delay before giving up.
+ */
+export function prefetchLabelsInBackground(
+  shopId: number,
+  orderSns: string[],
+  delayMs: number = 3000,
+): void {
+  if (!orderSns || orderSns.length === 0) return;
+
+  // De-duplicate to avoid redundant work when the caller's success_list contains
+  // duplicates (rare but possible across retried batch groups).
+  const uniqueOrderSns = Array.from(new Set(orderSns));
+
+  setTimeout(async () => {
+    const startTime = Date.now();
+    let successCount = 0;
+    let failedCount = 0;
+
+    console.log('[prefetch-label] start:', {
+      shopId,
+      orderCount: uniqueOrderSns.length,
+      delayMs,
+    });
+
+    // Chunk so we never have more than PARALLEL_CHUNK_SIZE concurrent in-flight
+    // requests against Shopee. Same constant as populateCacheInBackground for
+    // consistency.
+    const chunks = chunkArray(uniqueOrderSns, PARALLEL_CHUNK_SIZE);
+
+    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+      const chunk = chunks[chunkIndex];
+      const results = await Promise.allSettled(
+        chunk.map(sn => getSingleLabel(sn))
+      );
+
+      for (let i = 0; i < results.length; i++) {
+        const r = results[i];
+        const orderSn = chunk[i];
+        if (r.status === 'fulfilled' && r.value.success) {
+          successCount++;
+        } else {
+          failedCount++;
+          const reason = r.status === 'fulfilled'
+            ? r.value.error
+            : (r.reason as Error)?.message;
+          console.warn(`[prefetch-label] failed for ${orderSn}:`, reason);
+        }
+      }
+
+      // Pace ourselves between chunks (skip after the last one) so we don't
+      // hammer Shopee. Same delay as populateCacheInBackground.
+      if (chunkIndex < chunks.length - 1) {
+        await sleep(CHUNK_DELAY_MS);
+      }
+    }
+
+    console.log('[prefetch-label] done:', {
+      shopId,
+      total: uniqueOrderSns.length,
+      successCount,
+      failedCount,
+      durationMs: Date.now() - startTime,
+    });
+  }, delayMs);
 }

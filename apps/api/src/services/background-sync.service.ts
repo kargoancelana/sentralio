@@ -135,8 +135,17 @@ class BackgroundSyncService {
     
     // Check if already locked
     if (locked && existing.syncInProgress === 1) {
-      console.warn(`[background-sync] Job "${jobName}" for shop ${shopId} is already in progress, skipping`);
-      return false;
+      // Stale lock detection: if lock is older than 10 minutes, force release
+      const lockAge = Date.now() - existing.updatedAt.getTime();
+      const STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+      
+      if (lockAge > STALE_THRESHOLD_MS) {
+        console.warn(`[background-sync] ⚠️ Stale lock detected for "${jobName}" shop ${shopId} (${Math.round(lockAge / 60000)} min old), force releasing`);
+        // Fall through to acquire lock below
+      } else {
+        console.warn(`[background-sync] Job "${jobName}" for shop ${shopId} is already in progress, skipping`);
+        return false;
+      }
     }
     
     // Update lock
@@ -185,6 +194,21 @@ class BackgroundSyncService {
    */
   async startBackgroundSync() {
     console.log('[background-sync] Starting background sync service...');
+
+    // ── STALE LOCK RECOVERY ──
+    // Release any locks stuck from previous crash/shutdown (older than 10 minutes)
+    try {
+      const STALE_THRESHOLD_MINUTES = 10;
+      const staleResult = await db.execute(
+        `UPDATE sync_state SET sync_in_progress = 0 WHERE sync_in_progress = 1 AND last_sync_time < DATE_SUB(NOW(), INTERVAL ${STALE_THRESHOLD_MINUTES} MINUTE)`
+      );
+      const affectedRows = (staleResult as any)[0]?.affectedRows || 0;
+      if (affectedRows > 0) {
+        console.log(`[background-sync] ⚠️ Released ${affectedRows} stale lock(s) from previous crash`);
+      }
+    } catch (err: any) {
+      console.warn('[background-sync] Failed to release stale locks:', err.message);
+    }
 
     // Get all connected shops
     const shops = await db.select({ shopId: shopeeCredentials.shopId }).from(shopeeCredentials);
@@ -251,6 +275,44 @@ class BackgroundSyncService {
     // READY_TO_SHIP, PROCESSED, or SHIPPED that should have progressed.
     // This bypasses get_order_list and directly fetches details for stuck orders.
     this.scheduleStuckOrdersJob(shops);
+
+    await new Promise(r => setTimeout(r, 2000));
+
+    // Job 6: Escrow sync — keeps escrow_release_time and fee breakdown up to
+    // date so the financial report (Laporan Keuangan) doesn't drift from
+    // Shopee's Income Report. Self-heals missing orders by pulling their
+    // detail from get_order_detail before populating fees.
+    //
+    // Two-tier strategy:
+    //   - HOT  (14 days, every 1 hour): catches recently-released escrows so
+    //     today/yesterday's revenue is fresh in the financial report. Most
+    //     Shopee escrow releases land here.
+    //   - COLD (60 days, once per day): safety net for late releases caused
+    //     by partial returns / disputes / AMS commission adjustments that
+    //     can land up to 60 days after order completion.
+    //
+    // Each tier owns its own lock (`escrow_sync_hot` vs `escrow_sync_cold`)
+    // so they don't block each other. The manual `/sync/escrow` endpoint
+    // still uses the legacy `escrow_sync` lock — no conflict with either.
+    this.scheduleEscrowSyncJob();
+
+    await new Promise(r => setTimeout(r, 2000));
+
+    // Job 7: Ads expense sync — keeps `shopee_ads_daily_expense` cache fresh
+    // so the "Biaya Iklan" column on Laporan Keuangan reflects today's spend
+    // and never goes stale for older periods.
+    //
+    // Two-tier strategy (mirrors escrow-sync):
+    //   - HOT  (7 days, every 30 min):  refresh today + yesterday + recent
+    //     days. Today is a special case anyway — service has its own 15-min
+    //     TTL on today's row, so 30 min cadence is the right granularity.
+    //   - COLD (180 days, once per day): keeps the 6-month window backfilled
+    //     for any historical period the user may open. Important because
+    //     Shopee Ads API only retains 6 months — letting the cache go stale
+    //     means data is gone permanently.
+    //
+    // Each tier has its own lock (`ads_expense_sync_hot` vs `ads_expense_sync_cold`).
+    this.scheduleAdsExpenseSyncJob();
 
     console.log('[background-sync] All sync jobs scheduled successfully');
   }
@@ -724,6 +786,232 @@ class BackgroundSyncService {
       console.error(`[background-sync] Job "${jobName}" failed:`, error.message);
       stats.errors++;
     }
+  }
+
+  /**
+   * Schedule periodic escrow sync — keeps shopee_order_fees and
+   * escrow_release_time up to date for the financial report.
+   *
+   * Schedules two tiers (each with its own DB lock so they never block
+   * each other):
+   *   - HOT:  14 days back, every 1 hour   → fresh data for recent orders
+   *   - COLD: 60 days back, once per day   → safety net for late releases
+   *
+   * Both tiers wrap `EscrowSyncService.startEscrowSync()` and share the
+   * same self-heal logic; the only difference is the lock name and cadence.
+   */
+  private scheduleEscrowSyncJob() {
+    this.scheduleEscrowTier({
+      jobName: 'escrow-sync-hot',
+      lockName: 'escrow_sync_hot',
+      intervalMs: 60 * 60 * 1000,        // every 1 hour
+      daysBack: 14,
+      runOnStartup: true,
+    });
+
+    this.scheduleEscrowTier({
+      jobName: 'escrow-sync-cold',
+      lockName: 'escrow_sync_cold',
+      intervalMs: 24 * 60 * 60 * 1000,   // once per day
+      daysBack: 60,
+      // Cold tier doesn't run on startup so it doesn't pile API calls onto
+      // the same boot-up window as the hot tier. The first run lands one
+      // intervalMs after startup (~24h later), which is fine because the
+      // hot tier already covers the last 14 days from minute zero.
+      runOnStartup: false,
+    });
+  }
+
+  /**
+   * Generic helper to schedule one escrow sync tier with its own lock.
+   */
+  private scheduleEscrowTier(opts: {
+    jobName: string;
+    lockName: string;
+    intervalMs: number;
+    daysBack: number;
+    runOnStartup: boolean;
+  }) {
+    const { jobName, lockName, intervalMs, daysBack, runOnStartup } = opts;
+
+    this.syncStats.set(jobName, {
+      lastSyncTime: new Date(),
+      totalSynced: 0,
+      errors: 0,
+      activeJobs: 0,
+    });
+
+    const run = async () => {
+      if (this.isShuttingDown) return;
+      const stats = this.syncStats.get(jobName)!;
+      console.log(`[background-sync] Running job "${jobName}": last ${daysBack} days`);
+      const startTime = Date.now();
+      try {
+        // Lazy-import to avoid a circular dependency (escrow-sync imports the
+        // shared db client which background-sync already initialised).
+        const { EscrowSyncService } = await import('./escrow-sync.service');
+        const service = new EscrowSyncService(lockName);
+        const result = await service.startEscrowSync(daysBack);
+        stats.lastSyncTime = new Date();
+        stats.totalSynced += result.totalSynced;
+        const duration = Date.now() - startTime;
+        console.log(
+          `[background-sync] Job "${jobName}" completed in ${duration}ms — synced ${result.totalSynced}, skipped ${result.totalSkipped}, errors ${result.errors}`
+        );
+      } catch (err: any) {
+        // SYNC_IN_PROGRESS just means a previous run of THIS tier is still
+        // executing (or a manual sync grabbed the same lock name). Skip
+        // this tick — there's nothing to do.
+        if (err.message === 'SYNC_IN_PROGRESS') {
+          console.log(`[background-sync] Job "${jobName}" skipped — previous run still in progress`);
+          return;
+        }
+        console.error(`[background-sync] Job "${jobName}" failed:`, err.message);
+        stats.errors++;
+      }
+    };
+
+    if (runOnStartup) {
+      run();
+    }
+    const intervalId = setInterval(run, intervalMs);
+    this.activeJobs.set(jobName, intervalId);
+
+    const intervalLabel = intervalMs >= 60 * 60 * 1000
+      ? `${intervalMs / (60 * 60 * 1000)}h`
+      : `${intervalMs / (60 * 1000)}m`;
+    console.log(`[background-sync] Scheduled job "${jobName}": Every ${intervalLabel}, last ${daysBack}d (lock=${lockName}${runOnStartup ? ', runs on startup' : ''})`);
+  }
+
+  /**
+   * Schedule periodic Shopee Ads expense sync — keeps the
+   * `shopee_ads_daily_expense` cache hot so the "Biaya Iklan" column on
+   * Laporan Keuangan never goes stale.
+   *
+   * Two tiers (each with own DB lock):
+   *   - HOT:  7 days back,   every 30 minutes  → keeps recent days fresh
+   *   - COLD: 180 days back, once per day      → backfill safety net
+   *
+   * Both tiers reuse `getTotalAdsExpense` which is cache-first + idempotent
+   * (upsert), so re-running them is safe and cheap when the cache is warm.
+   */
+  private scheduleAdsExpenseSyncJob() {
+    this.scheduleAdsExpenseTier({
+      jobName: 'ads-expense-sync-hot',
+      lockName: 'ads_expense_sync_hot',
+      intervalMs: 30 * 60 * 1000,        // every 30 minutes
+      daysBack: 7,
+      runOnStartup: true,
+    });
+
+    this.scheduleAdsExpenseTier({
+      jobName: 'ads-expense-sync-cold',
+      lockName: 'ads_expense_sync_cold',
+      intervalMs: 24 * 60 * 60 * 1000,   // once per day
+      daysBack: 180,
+      // Cold tier doesn't run on startup so we don't pile a 180-day fetch
+      // onto the boot sequence. First run lands ~24h after startup; if you
+      // need an immediate full backfill, run scripts/backfill-ads-expense.ts.
+      runOnStartup: false,
+    });
+  }
+
+  /**
+   * Generic helper to schedule one ads-expense sync tier with its own lock.
+   *
+   * Lock semantics: we acquire `lockName` in `sync_state` before each run.
+   * If a previous run of THIS tier (or a manual backfill that grabbed the
+   * same lock name) is still in progress, we skip this tick.
+   */
+  private scheduleAdsExpenseTier(opts: {
+    jobName: string;
+    lockName: string;
+    intervalMs: number;
+    daysBack: number;
+    runOnStartup: boolean;
+  }) {
+    const { jobName, lockName, intervalMs, daysBack, runOnStartup } = opts;
+
+    this.syncStats.set(jobName, {
+      lastSyncTime: new Date(),
+      totalSynced: 0,
+      errors: 0,
+      activeJobs: 0,
+    });
+
+    const run = async () => {
+      if (this.isShuttingDown) return;
+      const stats = this.syncStats.get(jobName)!;
+
+      // Acquire lock (sentinel shopId 0 = global, matches escrow-sync convention)
+      const locked = await this.setSyncLock(lockName, 0, true);
+      if (!locked) {
+        console.log(`[background-sync] Job "${jobName}" skipped — previous run still holds lock "${lockName}"`);
+        return;
+      }
+
+      console.log(`[background-sync] Running job "${jobName}": last ${daysBack} days`);
+      const startTime = Date.now();
+      let synced = 0;
+
+      try {
+        // Lazy-import to avoid potential circular dependencies.
+        const { getTotalAdsExpense } = await import('./ads-expense.service');
+
+        // Compute WIB date range: today_minus_daysBack .. yesterday.
+        // Today is excluded — the service already has a 15-min TTL for today's
+        // row, so the next tick will refresh it naturally.
+        const fmt = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Jakarta',
+          year: 'numeric', month: '2-digit', day: '2-digit',
+        });
+        const startDate = fmt.format(new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000));
+        const endDate = fmt.format(new Date(Date.now() - 1 * 24 * 60 * 60 * 1000));
+
+        const shops = await db.select({ shopId: shopeeCredentials.shopId }).from(shopeeCredentials);
+        if (shops.length === 0) {
+          console.log(`[background-sync] Job "${jobName}" skipped — no shops connected`);
+          return;
+        }
+
+        const shopIds = shops.map((s) => s.shopId);
+        const result = await getTotalAdsExpense(shopIds, startDate, endDate);
+        synced = shopIds.length - result.skippedShops.length;
+
+        stats.lastSyncTime = new Date();
+        stats.totalSynced += synced;
+        const duration = Date.now() - startTime;
+        console.log(
+          `[background-sync] Job "${jobName}" completed in ${duration}ms — range=${startDate}..${endDate}, ok=${synced}, skipped=${result.skippedShops.length}, total=Rp ${result.total.toLocaleString('id-ID')}`
+        );
+        if (result.skippedShops.length > 0) {
+          for (const s of result.skippedShops) {
+            console.warn(`[background-sync] Job "${jobName}" skipped shop ${s.shopId}: ${s.errorCode} — ${s.message}`);
+          }
+        }
+      } catch (err: any) {
+        console.error(`[background-sync] Job "${jobName}" failed:`, err.message);
+        stats.errors++;
+      } finally {
+        // Always release lock so next tick can run.
+        try {
+          await this.setSyncLock(lockName, 0, false);
+        } catch (lockErr: any) {
+          console.warn(`[background-sync] Job "${jobName}" failed to release lock "${lockName}":`, lockErr.message);
+        }
+      }
+    };
+
+    if (runOnStartup) {
+      run();
+    }
+    const intervalId = setInterval(run, intervalMs);
+    this.activeJobs.set(jobName, intervalId);
+
+    const intervalLabel = intervalMs >= 60 * 60 * 1000
+      ? `${intervalMs / (60 * 60 * 1000)}h`
+      : `${intervalMs / (60 * 1000)}m`;
+    console.log(`[background-sync] Scheduled job "${jobName}": Every ${intervalLabel}, last ${daysBack}d (lock=${lockName}${runOnStartup ? ', runs on startup' : ''})`);
   }
 
   /**

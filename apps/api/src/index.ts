@@ -12,11 +12,14 @@ import { labelRoutes } from "./modules/order/label.route";
 import { orderDetailRoutes } from "./modules/order/order-detail.route";
 import { healthRoutes } from "./routes/health";
 import { hppRoutes } from "./modules/hpp/hpp.route";
+import { masterPackingCostRoutes } from "./modules/master/packing-cost/master-packing-cost.route";
 import { packingCostRoutes } from "./modules/packing-cost/packing-cost.route";
+import { profitRoutes } from "./modules/profit/profit.route";
 import { db } from "./db/client";
 import { shopeeCredentials } from "./db/schema";
 import { ensureAllTokensFresh } from "./services/shopee-auth";
 import { backgroundSyncService } from "./services/background-sync.service";
+import { EscrowSyncService } from "./services/escrow-sync.service";
 
 const app = new Elysia()
   .use(cors({
@@ -59,7 +62,9 @@ const app = new Elysia()
   }))
   .use(healthRoutes)
   .use(hppRoutes)
+  .use(masterPackingCostRoutes)
   .use(packingCostRoutes)
+  .use(profitRoutes)
   .use(productRoutes)
   .use(shopeeRoutes)
   .use(shopeeAuthRoutes)
@@ -90,6 +95,31 @@ const app = new Elysia()
       return {
         success: false,
         message: err.message
+      };
+    }
+  })
+
+  // ─── Escrow Sync: Manual trigger ─────────────────────────────
+  .post("/sync/escrow", async ({ body, set }) => {
+    const { days_back } = (body ?? {}) as { days_back?: number };
+    const daysBack = days_back ?? 30;
+
+    try {
+      const service = new EscrowSyncService();
+      const result = await service.startEscrowSync(daysBack);
+      return result;
+    } catch (err: any) {
+      if (err.message === "SYNC_IN_PROGRESS") {
+        set.status = 409;
+        return {
+          success: false,
+          message: "Sinkronisasi escrow sedang berjalan",
+        };
+      }
+      set.status = 500;
+      return {
+        success: false,
+        message: err.message,
       };
     }
   })

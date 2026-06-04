@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 // Simple in-memory cache
 const apiCache = new Map<string, { data: any; timestamp: number }>();
@@ -22,36 +22,60 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: any[] = [], cacheKey?
     return { data: null, loading: true, error: null };
   });
 
-  const execute = useCallback(async () => {
-    // If we have cached data, don't show loading spinner (stale-while-revalidate)
-    const hasCachedData = cacheKey && apiCache.has(cacheKey);
-    if (!hasCachedData) {
-      setState(prev => ({ ...prev, loading: true, error: null }));
-    }
+  const fetcherRef = useRef(fetcher);
+  fetcherRef.current = fetcher;
 
+  const cacheKeyRef = useRef(cacheKey);
+  cacheKeyRef.current = cacheKey;
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      const hasCachedData = cacheKeyRef.current && apiCache.has(cacheKeyRef.current);
+      if (!hasCachedData) {
+        setState(prev => ({ ...prev, loading: true, error: null }));
+      }
+      try {
+        const data = await fetcherRef.current();
+        if (!cancelled) {
+          setState({ data, loading: false, error: null });
+          if (cacheKeyRef.current) {
+            apiCache.set(cacheKeyRef.current, { data, timestamp: Date.now() });
+          }
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setState(prev => ({
+            data: prev.data,
+            loading: false,
+            error: err.message || 'Unknown error'
+          }));
+        }
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+
+  const refetch = useCallback(async () => {
+    setState(prev => ({ ...prev, loading: true, error: null }));
     try {
-      const data = await fetcher();
+      const data = await fetcherRef.current();
       setState({ data, loading: false, error: null });
-
-      // Store in cache
-      if (cacheKey) {
-        apiCache.set(cacheKey, { data, timestamp: Date.now() });
+      if (cacheKeyRef.current) {
+        apiCache.set(cacheKeyRef.current, { data, timestamp: Date.now() });
       }
     } catch (err: any) {
       setState(prev => ({
-        data: prev.data, // Keep stale data on error
+        data: prev.data,
         loading: false,
         error: err.message || 'Unknown error'
       }));
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+  }, []);
 
-  useEffect(() => {
-    execute();
-  }, [execute]);
-
-  return { ...state, refetch: execute };
+  return { ...state, refetch };
 }
 
 export function useApiMutation<TArgs extends any[], TResult>(

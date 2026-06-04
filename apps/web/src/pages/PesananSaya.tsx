@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useToast } from '../components/ui/Toast';
 import { useApi } from '../hooks/useApi';
 import { api } from '../lib/api';
-import { Package, RefreshCw, Search, Truck, Loader2, Printer, CheckCircle2, Circle, ChevronDown, Palette, FileText } from 'lucide-react';
+import { Package, RefreshCw, Search, Truck, CheckCircle2, Circle } from 'lucide-react';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale/id';
 import { PrintLabelButton } from '../components/shared/PrintLabelButton';
@@ -10,13 +10,17 @@ import { ShipmentProgressDialog, BatchShipmentProgressDialog } from '../componen
 import { SyncStatusIndicator } from '../components/shared/SyncStatusIndicator';
 import { getBatchSummaryMessage, mapLabelError } from '../utils/label-errors';
 import { printCustomLabels, printOfficialLabels } from '../utils/printLabel';
+import { printPickingListOnly } from '../utils/printPickingListOnly';
 import { LihatRincianButton } from '../components/order/LihatRincianButton';
 import { OrderDetailModal } from '../components/order/OrderDetailModal';
+import { FloatingActionBar } from '../components/order/FloatingActionBar';
+import { deriveTab } from '../components/order/deriveTab';
+import { pruneSelection } from '../components/order/pruneSelection';
 import './PesananSaya.css';
 
 /* ── Status mapping ── */
-type MainFilter = 'UNPAID' | 'NEED_SHIP' | 'SHIPPED' | 'COMPLETED' | 'CANCELLED';
-type SubFilter  = 'ALL' | 'READY_TO_SHIP' | 'PROCESSED';
+export type MainFilter = 'UNPAID' | 'NEED_SHIP' | 'SHIPPED' | 'COMPLETED' | 'CANCELLED';
+export type SubFilter  = 'ALL' | 'READY_TO_SHIP' | 'PROCESSED';
 type PrintFilter = 'ALL' | 'PRINTED' | 'UNPRINTED';
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
@@ -371,6 +375,12 @@ export function PesananSaya() {
   const [selectedLabelOrders, setSelectedLabelOrders] = useState<string[]>([]);
   const [batchPrinting, setBatchPrinting] = useState(false);
 
+  // Picking-list-only print loading state (Requirement 6.11)
+  const [cetakPesananLoading, setCetakPesananLoading] = useState(false);
+
+  // Derive active tab for FloatingActionBar (Requirements 3.1–3.4)
+  const tab = useMemo(() => deriveTab(mainFilter, subFilter), [mainFilter, subFilter]);
+
   // Order Detail Modal state (Requirements 1.5, 8.2)
   const [modalOpen, setModalOpen] = useState(false);
   const [modalOrderSn, setModalOrderSn] = useState<string | null>(null);
@@ -604,23 +614,52 @@ export function PesananSaya() {
     toast('Mengambil label resmi dari Shopee...', 'info');
     
     try {
-      // Use optimized batch endpoint
-      const result = await api.orderShippingLabelBatch(selectedLabelOrders);
+      // Split into chunks of 50 (backend limit)
+      const CHUNK_SIZE = 50;
+      const chunks: string[][] = [];
+      for (let i = 0; i < selectedLabelOrders.length; i += CHUNK_SIZE) {
+        chunks.push(selectedLabelOrders.slice(i, i + CHUNK_SIZE));
+      }
 
-      if (result.success && (result.data?.url || result.data?.urls)) {
-        const urls = result.data.urls || (result.data.url ? [result.data.url] : []);
+      const allUrls: string[] = [];
+      const allFailedOrders: Array<{ orderSn: string; error: string }> = [];
+
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        try {
+          const result = await api.orderShippingLabelBatch(chunk);
+          if (result.success && (result.data?.url || result.data?.urls)) {
+            const urls = result.data.urls || (result.data.url ? [result.data.url] : []);
+            allUrls.push(...urls);
+          }
+          if (result.data?.failedOrders) {
+            allFailedOrders.push(...result.data.failedOrders);
+          }
+        } catch (chunkError: any) {
+          console.error(`[PesananSaya] Official label chunk ${i + 1} error:`, chunkError);
+          for (const orderSn of chunk) {
+            allFailedOrders.push({ orderSn, error: chunkError.message || 'Network error' });
+          }
+        }
+
+        // Small delay between chunks
+        if (i < chunks.length - 1) {
+          await new Promise(r => setTimeout(r, 200));
+        }
+      }
+
+      if (allUrls.length > 0) {
         const orderSnList = [...selectedLabelOrders];
-        await printOfficialLabels(urls, orderSnList, async () => {
-          toast(`${orderSnList.length} label asli dibuka di tab baru`, 'success');
+        await printOfficialLabels(allUrls, orderSnList, async () => {
+          toast(`${selectedLabelOrders.length - allFailedOrders.length} label asli dibuka di tab baru`, 'success');
           await refetch();
         });
-
-        if (result.data.failedOrders && result.data.failedOrders.length > 0) {
-          toast(`${result.data.failedOrders.length} order gagal diambil labelnya`, 'warn');
-        }
       } else {
-        const errorMsg = (result as any).error || 'Tidak ada label resmi yang berhasil diambil';
-        toast(errorMsg, 'error');
+        toast('Tidak ada label resmi yang berhasil diambil', 'error');
+      }
+
+      if (allFailedOrders.length > 0) {
+        toast(`${allFailedOrders.length} order gagal diambil labelnya`, 'warn');
       }
       
       clearLabelSelection();
@@ -628,6 +667,47 @@ export function PesananSaya() {
       toast(err.message || 'Terjadi kesalahan saat memproses batch label resmi', 'error');
     } finally {
       setBatchPrinting(false);
+    }
+  };
+
+  const handlePrintPickingList = async () => {
+    // Combine and deduplicate both selections (Requirement 6.10)
+    const allSns = [...new Set([...selectedOrders, ...selectedLabelOrders])];
+    if (allSns.length === 0) return;
+
+    // Resolve each order SN to the locally cached order (with items) so the
+    // picking list works for any status — including READY_TO_SHIP, which has
+    // no tracking number and therefore can't go through the label-data API.
+    const allOrders: any[] = ordersData?.data || [];
+    const orderMap = new Map<string, any>(allOrders.map((o: any) => [o.orderSn, o]));
+    const pickingOrders = allSns
+      .map((sn) => orderMap.get(sn))
+      .filter((o): o is any => Boolean(o));
+
+    setCetakPesananLoading(true);
+    try {
+      const result = await printPickingListOnly(pickingOrders);
+      if (result.successful > 0 && result.failed > 0) {
+        // Partial failure: show summary warn toast (Requirements 12.1, 6.7)
+        toast(getBatchSummaryMessage(result.successful, result.failed, result.total), 'warn');
+      } else if (result.successful > 0) {
+        // Full success (Requirement 6.7)
+        toast(`Picking list dibuka di tab baru (${result.successful} pesanan)`, 'success');
+      }
+    } catch (err: any) {
+      if (String(err?.message ?? err).toLowerCase().includes('popup')) {
+        // Popup blocked (Requirement 6.8)
+        toast('Popup diblokir. Izinkan popup untuk mencetak picking list.', 'error');
+      } else {
+        // General error (Requirements 6.12, 12.2)
+        const errorInfo = mapLabelError(err);
+        toast(errorInfo.message || 'Gagal mengambil data picking list', 'error');
+      }
+    } finally {
+      // Requirement 6.9: clear Selection_Aktif after action completes (success or failure)
+      setSelectedOrders([]);
+      setSelectedLabelOrders([]);
+      setCetakPesananLoading(false);
     }
   };
 
@@ -649,6 +729,44 @@ export function PesananSaya() {
     setSelectedOrders([]);
     setSelectedLabelOrders([]);
   };
+
+  // Prune selections when filter changes so stale order SNs don't remain selected
+  // Requirements 8.1, 8.2
+  // NOTE: This hook MUST be placed before any early return to comply with the
+  // Rules of Hooks. We re-derive the visible set from `ordersData` here instead
+  // of depending on the post-return `filtered` variable.
+  useEffect(() => {
+    const allOrders: any[] = ordersData?.data || [];
+    const lowerSearch = search.toLowerCase();
+    const visibleSet = new Set<string>();
+    for (const o of allOrders) {
+      // Mirror the shop / test_buyer / main / sub / print / search filter pipeline
+      if (o.orderStatus === 'READY_TO_SHIP' && (o.buyerUsername || '').toLowerCase().includes('test_buyer')) continue;
+      if (shopFilter !== 'all' && String(o.shopId) !== shopFilter) continue;
+      let matchMain = false;
+      if (mainFilter === 'UNPAID')    matchMain = o.orderStatus === 'UNPAID';
+      if (mainFilter === 'SHIPPED')   matchMain = ['SHIPPED', 'TO_CONFIRM_RECEIVE', 'IN_CANCEL'].includes(o.orderStatus);
+      if (mainFilter === 'COMPLETED') matchMain = o.orderStatus === 'COMPLETED';
+      if (mainFilter === 'CANCELLED') matchMain = o.orderStatus === 'CANCELLED';
+      if (mainFilter === 'NEED_SHIP') {
+        if (subFilter === 'ALL')           matchMain = ['READY_TO_SHIP', 'PROCESSED'].includes(o.orderStatus);
+        if (subFilter === 'READY_TO_SHIP') matchMain = o.orderStatus === 'READY_TO_SHIP';
+        if (subFilter === 'PROCESSED') {
+          matchMain = o.orderStatus === 'PROCESSED';
+          if (matchMain && printFilter === 'PRINTED')   matchMain = o.labelPrinted === 1;
+          if (matchMain && printFilter === 'UNPRINTED') matchMain = o.labelPrinted !== 1;
+        }
+      }
+      if (!matchMain) continue;
+      const matchSearch = o.orderSn.toLowerCase().includes(lowerSearch) ||
+                          (o.buyerUsername || '').toLowerCase().includes(lowerSearch);
+      if (!matchSearch) continue;
+      visibleSet.add(o.orderSn);
+    }
+    const visibleArr = [...visibleSet];
+    setSelectedOrders(prev => pruneSelection(prev, visibleArr));
+    setSelectedLabelOrders(prev => pruneSelection(prev, visibleArr));
+  }, [mainFilter, subFilter, printFilter, search, shopFilter, ordersData]);
 
   if (loading) {
     return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text3)' }}>Memuat data pesanan...</div>;
@@ -719,6 +837,10 @@ export function PesananSaya() {
                         (o.buyerUsername || '').toLowerCase().includes(search.toLowerCase());
     return matchMain && matchSearch;
   });
+
+  // Prune selections when filter changes so stale order SNs don't remain selected
+  // Requirements 8.1, 8.2 — implemented as a top-level effect above the early
+  // return for `loading`, so it runs on every render in the same order.
 
   const badgeDot = (count: number, badgeCls: string) =>
     count > 0 ? <span className={`badge ${badgeCls}`} style={{ marginLeft: 6, padding: '2px 6px', fontSize: 10 }}>{count}</span> : null;
@@ -911,155 +1033,6 @@ export function PesananSaya() {
       )}
 
 
-      {/* ── BATCH ACTIONS (Shipment) ── */}
-      {selectedOrders.length > 0 && (
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '12px 16px', marginBottom: 16,
-          background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
-        }}>
-          <span style={{ fontSize: 13, color: 'var(--text2)', fontWeight: 500 }}>
-            {selectedOrders.length} pesanan dipilih
-          </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button
-              onClick={clearSelection}
-              style={{
-                padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)',
-                fontSize: 12, fontWeight: 500, cursor: 'pointer',
-                background: 'var(--bg)', color: 'var(--text3)',
-              }}
-            >
-              Batal
-            </button>
-            <button
-              onClick={() => handleBatchShip()}
-              style={{
-                padding: '6px 16px', borderRadius: 6, border: 'none',
-                fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                background: 'var(--accent)', color: 'var(--accent-f)',
-                display: 'flex', alignItems: 'center', gap: 6,
-              }}
-            >
-              <Truck size={12} />
-              Atur Pengiriman ({selectedOrders.length})
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── BATCH ACTIONS (Label Printing) ── */}
-      {selectedLabelOrders.length > 0 && (
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '12px 16px', marginBottom: 16,
-          background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
-        }}>
-          <span style={{ fontSize: 13, color: 'var(--text2)', fontWeight: 500 }}>
-              {selectedLabelOrders.length} pesanan dipilih
-            </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button
-              onClick={selectAllProcessed}
-              disabled={batchPrinting}
-              style={{
-                padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)',
-                fontSize: 12, fontWeight: 500, cursor: batchPrinting ? 'not-allowed' : 'pointer',
-                background: 'var(--bg)', color: 'var(--text3)',
-                opacity: batchPrinting ? 0.6 : 1,
-              }}
-            >
-              Pilih Semua
-            </button>
-            <button
-              onClick={clearLabelSelection}
-              disabled={batchPrinting}
-              style={{
-                padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)',
-                fontSize: 12, fontWeight: 500, cursor: batchPrinting ? 'not-allowed' : 'pointer',
-                background: 'var(--bg)', color: 'var(--text3)',
-                opacity: batchPrinting ? 0.6 : 1,
-              }}
-            >
-              Batal
-            </button>
-            <div style={{ position: 'relative', display: 'inline-block' }}
-              onMouseEnter={(e) => {
-                const dd = e.currentTarget.querySelector('.batch-label-dd') as HTMLElement;
-                if (dd) dd.style.display = 'block';
-              }}
-              onMouseLeave={(e) => {
-                const dd = e.currentTarget.querySelector('.batch-label-dd') as HTMLElement;
-                if (dd) dd.style.display = 'none';
-              }}
-            >
-              <button
-                onClick={(e) => {
-                  // Toggle dropdown on click (same as single order PrintLabelButton)
-                  const dd = e.currentTarget.parentElement?.querySelector('.batch-label-dd') as HTMLElement;
-                  if (dd) dd.style.display = dd.style.display === 'block' ? 'none' : 'block';
-                }}
-                disabled={batchPrinting}
-                style={{
-                  padding: '6px 16px', borderRadius: 6, border: 'none',
-                  fontSize: 12, fontWeight: 600, cursor: batchPrinting ? 'not-allowed' : 'pointer',
-                  background: batchPrinting ? 'var(--bg3)' : 'var(--accent)',
-                  color: batchPrinting ? 'var(--text4)' : 'var(--accent-f)',
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  opacity: batchPrinting ? 0.6 : 1,
-                }}
-              >
-                {batchPrinting ? (
-                  <Loader2 size={12} className="spin" />
-                ) : (
-                  <Printer size={12} />
-                )}
-                Cetak Label Batch ({selectedLabelOrders.length})
-                <ChevronDown size={10} style={{ opacity: 0.6 }} />
-              </button>
-              {!batchPrinting && (
-                <div className="batch-label-dd" style={{
-                  display: 'none', position: 'absolute', bottom: '100%', right: 0,
-                  marginBottom: 4, background: 'var(--bg1, #fff)', border: '1px solid var(--border)',
-                  borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
-                  minWidth: 170, overflow: 'hidden', zIndex: 9999,
-                }}>
-                  <button onClick={handleBatchPrintLabels} style={{
-                    display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                    padding: '10px 14px', border: 'none', background: 'transparent',
-                    cursor: 'pointer', fontSize: 12, fontWeight: 500, color: 'var(--text1)', textAlign: 'left',
-                  }}
-                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg2)'; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    <Palette size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-                    <div>
-                      <div>Label Custom</div>
-                      <div style={{ fontSize: 10, color: 'var(--text4)', marginTop: 1 }}>Ada info item & SKU</div>
-                    </div>
-                  </button>
-                  <div style={{ height: 1, background: 'var(--border)', margin: '0 10px' }} />
-                  <button onClick={handleBatchPrintOfficialLabels} style={{
-                    display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                    padding: '10px 14px', border: 'none', background: 'transparent',
-                    cursor: 'pointer', fontSize: 12, fontWeight: 500, color: 'var(--text1)', textAlign: 'left',
-                  }}
-                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg2)'; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    <FileText size={14} style={{ color: 'var(--warning, #f59e0b)', flexShrink: 0 }} />
-                    <div>
-                      <div>Label Asli</div>
-                      <div style={{ fontSize: 10, color: 'var(--text4)', marginTop: 1 }}>PDF resmi dari Shopee</div>
-                    </div>
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── ORDER LIST ── */}
       {filtered.length === 0 ? (
         <div className="empty-state">
@@ -1069,7 +1042,27 @@ export function PesananSaya() {
         </div>
       ) : (
         <div>
-          {/* Sticky column header */}
+          {/* Sticky backdrop — covers the 28px page-padding-top so order rows
+              that scroll above the column header disappear behind it instead of
+              leaking through. Pinned at top:-28, height extends 12px past y=0
+              so the column header's rounded corners (which leave transparent
+              triangles at the top edges) are also covered. The header paints
+              on top in the overlap region; only the rounded-corner triangles
+              read through to this backdrop, showing the page background.
+              marginBottom matches height so the bar contributes 0 to flow. */}
+          <div
+            aria-hidden="true"
+            style={{
+              position: 'sticky',
+              top: -28,
+              height: 40,
+              marginBottom: -40,
+              background: 'var(--bg3)',
+              zIndex: 9,
+            }}
+          />
+
+          {/* Sticky column header — matches OrderCard outer chrome so widths align when scrolling */}
           <div style={{
             display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 45px 100px 120px 110px 140px',
             alignItems: 'center',
@@ -1077,9 +1070,12 @@ export function PesananSaya() {
             fontSize: 11, fontWeight: 600, color: 'var(--text4)',
             textTransform: 'uppercase', letterSpacing: '.04em',
             position: 'sticky', top: 0, zIndex: 10,
-            background: 'var(--bg)',
-            borderBottom: '1px solid var(--border)',
-            borderRadius: 0,
+            background: 'var(--bg2)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius)',
+            // Soft shadow appears when the header is sticking; keeps rows visually
+            // separated from the header so they don't read as "leaking" into it.
+            boxShadow: '0 6px 16px -8px rgba(0,0,0,0.25)',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {/* Saat subFilter ALL: 1 checkbox untuk semua order di tab Perlu Dikirim */}
@@ -1186,6 +1182,21 @@ export function PesananSaya() {
         orderSn={modalOrderSn}
         open={modalOpen}
         onClose={handleModalClose}
+      />
+
+      {/* ── FLOATING ACTION BAR (Requirements 1.1, 4.1–4.3, 5.1–5.6, 8.4) ── */}
+      <FloatingActionBar
+        tab={tab}
+        selectedShipOrders={selectedOrders}
+        selectedLabelOrders={selectedLabelOrders}
+        isShipping={false}
+        isPrintingLabels={batchPrinting}
+        isPrintingPickingList={cetakPesananLoading}
+        onAturPengiriman={handleBatchShip}
+        onCetakLabelCustom={handleBatchPrintLabels}
+        onCetakLabelAsli={handleBatchPrintOfficialLabels}
+        onCetakPesanan={handlePrintPickingList}
+        onClearSelection={() => { setSelectedOrders([]); setSelectedLabelOrders([]); }}
       />
     </div>
   );

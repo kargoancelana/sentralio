@@ -1,0 +1,189 @@
+/**
+ * FloatingActionBar.css
+ *
+ * Styles for the Floating Action Bar component.
+ *
+ * Uses CSS custom properties (tokens) from the WMS theme:
+ *   --bg, --bg2, --bg3, --border, --text1, --text2, --text3, --text4,
+ *   --accent, --accent-f, --radius
+ *
+ * Requirements: 1.4, 1.5, 1.6, 1.7, 1.8, 10.1, 10.4, 10.5, 11.1, 11.2
+ */
+
+/* ── Container ──────────────────────────────────────────────────────────────── */
+
+.floating-action-bar {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+  z-index: 100;
+
+  /* Layout */
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  white-space: nowrap;
+
+  /* Theming */
+  background: var(--bg, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: var(--radius, 12px);
+  color: var(--text1, #111827);
+
+  /* Elevation — light mode */
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+
+  /* Entry/exit transitions (150–250ms per Req 1.7, 1.8) */
+  transition: transform 200ms ease-out, opacity 200ms ease-out;
+}
+
+/* Dark mode elevation (Req 10.4, 10.5) */
+[data-theme='dark'] .floating-action-bar,
+.dark .floating-action-bar {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  border-color: var(--border, rgba(255, 255, 255, 0.12));
+}
+
+/* ── data-state transitions ─────────────────────────────────────────────────── */
+
+.floating-action-bar[data-state='closed'] {
+  transform: translateX(-50%) translateY(20px);
+  opacity: 0;
+}
+
+/* ── Reduce motion ──────────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .floating-action-bar {
+    transition: opacity 100ms ease-out;
+    /* Keep centered without translateY animation */
+    transform: translateX(-50%);
+  }
+
+  .floating-action-bar[data-state='closed'] {
+    transform: translateX(-50%);
+    opacity: 0;
+  }
+}
+
+/* ── Summary text ───────────────────────────────────────────────────────────── */
+
+.floating-action-bar__summary {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text2, #374151);
+  flex-shrink: 0;
+}
+
+/* ── Divider ────────────────────────────────────────────────────────────────── */
+
+.floating-action-bar__divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border, #e5e7eb);
+  flex-shrink: 0;
+}
+
+/* ── Buttons area ───────────────────────────────────────────────────────────── */
+
+.floating-action-bar__buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Individual action buttons ──────────────────────────────────────────────── */
+
+.floating-action-bar__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  border-radius: var(--radius, 8px);
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  outline: none;
+  transition: opacity 0.15s, background 0.15s, box-shadow 0.15s;
+  min-height: 36px;
+  min-width: 44px;
+}
+
+/* Primary button (Atur Pengiriman, Cetak Label) */
+.floating-action-bar__btn--primary {
+  background: var(--accent, #2563eb);
+  color: var(--accent-f, #fff);
+  border-color: var(--accent, #2563eb);
+}
+
+.floating-action-bar__btn--primary:not(:disabled):hover {
+  opacity: 0.9;
+}
+
+/* Secondary button (Cetak Pesanan) */
+.floating-action-bar__btn--secondary {
+  background: var(--bg2, #f3f4f6);
+  color: var(--text1, #111827);
+  border-color: var(--border, #e5e7eb);
+}
+
+.floating-action-bar__btn--secondary:not(:disabled):hover {
+  background: var(--bg3, #e5e7eb);
+}
+
+/* Disabled state */
+.floating-action-bar__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Focus-visible ring (Req 9.2 — contrast ≥3:1) */
+.floating-action-bar__btn:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent, #2563eb)55;
+  outline: 2px solid var(--accent, #2563eb);
+  outline-offset: 2px;
+}
+
+/* ── Loader spinner ─────────────────────────────────────────────────────────── */
+
+@keyframes fab-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.floating-action-bar__spinner {
+  animation: fab-spin 1s linear infinite;
+  flex-shrink: 0;
+}
+
+/* ── Mobile breakpoint (≤480px) ─────────────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  .floating-action-bar {
+    max-width: 92vw;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .floating-action-bar__buttons {
+    flex-wrap: wrap;
+  }
+
+  .floating-action-bar__btn {
+    min-height: 44px;
+    flex: 1;
+  }
+
+  .floating-action-bar__divider {
+    display: none;
+  }
+}

@@ -39,9 +39,10 @@ export const orderRoutes = new Elysia({ prefix: "/orders" })
     // Query 1: Get all orders
     const records = await db.select().from(shopeeOrders).orderBy(desc(shopeeOrders.createTime));
 
-    // Query 2: Get items ONLY for active orders (READY_TO_SHIP + PROCESSED)
+    // Query 2: Get items for active/visible orders (READY_TO_SHIP, PROCESSED, SHIPPED, TO_CONFIRM_RECEIVE)
+    // COMPLETED orders don't need items in the order list (too many, and already finished)
     const activeOrderSns = records
-      .filter(o => ['READY_TO_SHIP', 'PROCESSED'].includes(o.orderStatus))
+      .filter(o => ['READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'TO_CONFIRM_RECEIVE'].includes(o.orderStatus))
       .map(o => o.orderSn);
 
     let itemsByOrder = new Map<string, typeof activeItems>();

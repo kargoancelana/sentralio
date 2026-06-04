@@ -5,6 +5,7 @@ import { useApi, useApiMutation } from '../hooks/useApi';
 import { api } from '../lib/api';
 import { HppSection, type HppVariant } from '../components/hpp/HppSection';
 import { HppEntryForm, type HppEntry } from '../components/hpp/HppEntryForm';
+import { MasterPackingCostSection } from '../components/master-packing-cost/MasterPackingCostSection';
 
 import { Search, Edit3, Trash2, Package, Book, Info, CloudUpload, DollarSign } from "lucide-react";
 
@@ -216,6 +217,11 @@ function EditModal({ product, onClose, onSave, saving }: any) {
             />
           </div>
         )}
+
+        {/* ── Master Packing Cost Section ── */}
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 18 }}>
+          <MasterPackingCostSection masterProductId={product.id} />
+        </div>
       </Modal>
 
       {/* ── HPP Entry Form Modal ── */}

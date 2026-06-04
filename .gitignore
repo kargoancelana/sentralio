@@ -35,3 +35,15 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 .kiro
 .vscode
+
+# Local debugging and helper scripts
+apps/api/check-*.ts
+apps/api/migrate-*.ts
+apps/api/create-*.ts
+apps/api/debug-*.ts
+apps/api/trigger-*.ts
+apps/api/fix-*.ts
+apps/api/test-*.ts
+apps/api/test-output.txt
+check-orders.ps1
+referensi_api/

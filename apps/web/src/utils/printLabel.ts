@@ -22,6 +22,13 @@ export interface PickingItem {
   qty: number;
 }
 
+/**
+ * Sentinel SKU value used to group items with empty or "-" SKU under a single
+ * "Belum di mapping" picking-list entry. Items keyed with this sentinel are
+ * always placed at the end of the aggregated picking list (when present).
+ */
+export const UNMAPPED_SKU_SENTINEL = '__unmapped__';
+
 // ─── Common helpers ──────────────────────────────────────────────
 function esc(str: string): string {
   return str
@@ -50,8 +57,13 @@ async function markAsPrinted(orderSns: string[]): Promise<void> {
 
 /**
  * Aggregate items by SKU into a sorted picking list.
+ *
+ * Items with an empty or "-" SKU are merged into a single trailing entry keyed
+ * by `UNMAPPED_SKU_SENTINEL` and labeled "Belum di mapping". When that entry
+ * exists, it is always placed as the LAST element of the returned list so that
+ * downstream renderers can show it after the mapped SKUs.
  */
-function aggregatePickingItems(dataList: any[]): PickingItem[] {
+export function aggregatePickingItems(dataList: any[]): PickingItem[] {
   const skuMap = new Map<string, PickingItem>();
   let unmappedQty = 0;
 
@@ -78,7 +90,7 @@ function aggregatePickingItems(dataList: any[]): PickingItem[] {
     a.variantName.localeCompare(b.variantName)
   );
   if (unmappedQty > 0) {
-    pickingItems.push({ sku: '__unmapped__', variantName: 'Belum di mapping', qty: unmappedQty });
+    pickingItems.push({ sku: UNMAPPED_SKU_SENTINEL, variantName: 'Belum di mapping', qty: unmappedQty });
   }
   return pickingItems;
 }
@@ -170,6 +182,9 @@ body { font-family: Arial, Helvetica, sans-serif; background: white; }
 .picking-item-name { font-weight:bold; }
 .picking-item-qty { font-weight:bold; color:#333; }
 .picking-unmapped { margin-top:12px; padding-top:12px; border-top:2px solid #ddd; color:#999; }
+.picking-list-total { font-size:14px; font-weight:900; margin-top:14px; padding-top:10px; border-top:2px solid black; text-align:right; }
+.picking-total-label { font-weight:900; }
+.picking-total-qty { font-weight:900; }
 
 @page { size: 4in 6in; margin: 0; }
 @media print {
@@ -280,7 +295,7 @@ function buildLabelHtml(data: any): string {
 }
 
 
-function buildPickingListHtml(dataList: any[]): string {
+export function buildPickingListHtml(dataList: any[]): string {
   const allItems = aggregatePickingItems(dataList);
   if (allItems.length === 0) return '';
 
@@ -290,17 +305,27 @@ function buildPickingListHtml(dataList: any[]): string {
     pages.push(allItems.slice(i, i + ITEMS_PER_PAGE));
   }
 
+  // Aggregate total pcs across ALL items, shown only on the last page so the
+  // user reads it once after walking through every variant. Showing it per
+  // page would be confusing — it's a per-batch grand total, not per-page.
+  const totalQty = allItems.reduce((sum, it) => sum + it.qty, 0);
+
   return pages.map((pageItems, pageIdx) => {
     const itemsHtml = pageItems.map(item => {
-      const isUnmapped = item.sku === '__unmapped__';
+      const isUnmapped = item.sku === UNMAPPED_SKU_SENTINEL;
       return `<div class="picking-list-item${isUnmapped ? ' picking-unmapped' : ''}">
         <span class="picking-item-name">${esc(item.variantName)} : </span><span class="picking-item-qty">${item.qty}pcs</span>
       </div>`;
     }).join('');
     const pageLabel = pages.length > 1 ? ` (${pageIdx + 1}/${pages.length})` : '';
+    const isLastPage = pageIdx === pages.length - 1;
+    const totalHtml = isLastPage
+      ? `<div class="picking-list-total"><span class="picking-total-label">Total</span> : <span class="picking-total-qty">${totalQty}pcs</span></div>`
+      : '';
     return `<div class="picking-list-container">
   <div class="picking-list-title">PICKING LIST${pageLabel}</div>
   <div class="picking-list-items">${itemsHtml}</div>
+  ${totalHtml}
 </div>`;
   }).join('\n');
 }
@@ -528,6 +553,11 @@ export async function printOfficialLabels(
       pages.push(pickingItems.slice(i, i + ITEMS_PER_PAGE));
     }
 
+    // Grand total across all picking items, drawn only on the last page so
+    // the user reads it once after walking through every variant. Mirrors
+    // the HTML picking list behavior in `buildPickingListHtml`.
+    const totalQty = pickingItems.reduce((sum, it) => sum + it.qty, 0);
+
     for (let pageIdx = 0; pageIdx < pages.length; pageIdx++) {
       const page = mergedPdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
       let y = PAGE_HEIGHT - MARGIN_TOP;
@@ -554,7 +584,7 @@ export async function printOfficialLabels(
       y -= 18;
 
       for (const item of pages[pageIdx]) {
-        const isUnmapped = item.sku === '__unmapped__';
+        const isUnmapped = item.sku === UNMAPPED_SKU_SENTINEL;
         const textColor = isUnmapped ? rgb(0.5, 0.5, 0.5) : rgb(0, 0, 0);
 
         if (isUnmapped) {
@@ -592,6 +622,30 @@ export async function printOfficialLabels(
         });
 
         y -= LINE_HEIGHT;
+      }
+
+      // Draw grand total on the last page (right-aligned, below a separator line).
+      const isLastPage = pageIdx === pages.length - 1;
+      if (isLastPage) {
+        y -= 4;
+        page.drawLine({
+          start: { x: MARGIN_X, y },
+          end: { x: PAGE_WIDTH - MARGIN_X, y },
+          thickness: 1,
+          color: rgb(0, 0, 0),
+        });
+        y -= 14;
+
+        const TOTAL_SIZE = 11;
+        const totalText = `Total : ${totalQty}pcs`;
+        const totalWidth = fontBold.widthOfTextAtSize(totalText, TOTAL_SIZE);
+        page.drawText(totalText, {
+          x: PAGE_WIDTH - MARGIN_X - totalWidth,
+          y,
+          size: TOTAL_SIZE,
+          font: fontBold,
+          color: rgb(0, 0, 0),
+        });
       }
     }
   }

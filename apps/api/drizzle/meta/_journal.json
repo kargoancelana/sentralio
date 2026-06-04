@@ -78,6 +78,27 @@
       "when": 1777264702498,
       "tag": "0010_damp_enchantress",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "5",
+      "when": 1748000000000,
+      "tag": "0025_master_packing_cost_entries",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "5",
+      "when": 1748100000000,
+      "tag": "0026_shopee_ads_daily_expense",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "5",
+      "when": 1780038100730,
+      "tag": "0027_fresh_mephisto",
+      "breakpoints": true
     }
   ]
 }
