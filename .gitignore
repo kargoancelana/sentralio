@@ -47,3 +47,7 @@ apps/api/test-*.ts
 apps/api/test-output.txt
 check-orders.ps1
 referensi_api/
+
+# Order JSON dump files
+rts_orders.json
+temp_orders.json
