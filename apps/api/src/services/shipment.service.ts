@@ -128,6 +128,7 @@ export async function waitForTrackingNumber(
 ): Promise<string> {
   const maxRetries = 3; // Reduced from 6 for faster UX (6s total)
   const retryInterval = 2000; // 2 seconds (reduced from 5s)
+  const startTime = Date.now();
 
   console.log('[shipment-service] waitForTrackingNumber:', {
     timestamp: new Date().toISOString(),
@@ -160,14 +161,8 @@ export async function waitForTrackingNumber(
         || null;
 
       if (trackingNumber) {
-        console.log('[shipment-service] tracking number retrieved:', {
-          timestamp: new Date().toISOString(),
-          orderSn,
-          shopId,
-          attempt,
-          trackingNumber,
-          message: 'Successfully retrieved tracking number via logistics API'
-        });
+        const elapsed = Date.now() - startTime;
+        console.log(`[shipment-service] ✅ Tracking number ${orderSn}: ${trackingNumber} (${elapsed}ms, attempt ${attempt})`);
 
         return trackingNumber;
       }
@@ -206,6 +201,8 @@ export async function waitForTrackingNumber(
 
   // Timeout reached
   const totalSeconds = maxRetries * retryInterval / 1000;
+  const elapsed = Date.now() - startTime;
+  console.error(`[shipment-service] ❌ Tracking number ${orderSn}: TIMEOUT after ${elapsed}ms (${maxRetries} attempts)`);
   console.error('[shipment-service] tracking number timeout:', {
     timestamp: new Date().toISOString(),
     orderSn,
@@ -1093,7 +1090,8 @@ export async function processBatchGroup(
 
     // Step 4: Process success_list - update database status to PROCESSED
     const successPackageNumbers = new Set(successList.map((s: any) => s.package_number));
-    
+    const prefetchOrderSns: string[] = [];
+
     for (const order of group.orders) {
       if (successPackageNumbers.has(order.packageNumber)) {
         try {
@@ -1107,6 +1105,9 @@ export async function processBatchGroup(
 
           console.log(`[shipment-service] ✅ ${order.orderSn}: batch ship_order success, status → PROCESSED`);
 
+          // Collect for post-batch label prefetch (see fire-and-forget call below).
+          prefetchOrderSns.push(order.orderSn);
+
           results.push({
             success: true,
             orderSn: order.orderSn,
@@ -1114,7 +1115,12 @@ export async function processBatchGroup(
           });
         } catch (dbError: any) {
           console.error(`[shipment-service] DB update failed for ${order.orderSn}:`, dbError.message);
-          
+
+          // Even when our local DB update fails, the order IS shipped on Shopee
+          // and a label CAN be generated — still queue it for prefetch so the
+          // user-visible state catches up automatically once the user prints.
+          prefetchOrderSns.push(order.orderSn);
+
           results.push({
             success: true,
             orderSn: order.orderSn,
@@ -1122,6 +1128,19 @@ export async function processBatchGroup(
           });
         }
       }
+    }
+
+    // Fire-and-forget label prefetch for all orders that successfully shipped
+    // in this batch group. Returns immediately — work runs after a 3 s delay
+    // (default in prefetchLabelsInBackground) so Shopee has time to populate
+    // the shipping document. The user-visible mass-ship response is NOT delayed.
+    //
+    // Why batch (not per-order): the single-order shipSingleOrder() already
+    // does its own prefetch when called outside batch mode (skipPrefetch=true
+    // is passed during fallbacks to avoid double-prefetch).
+    if (prefetchOrderSns.length > 0) {
+      const { prefetchLabelsInBackground } = await import('./label.service');
+      prefetchLabelsInBackground(group.shopId, prefetchOrderSns);
     }
 
     // Step 5: Process fail_list - collect error messages

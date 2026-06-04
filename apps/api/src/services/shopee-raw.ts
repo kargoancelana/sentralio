@@ -159,6 +159,45 @@ export async function getEscrowDetail(shopId: number, orderSn: string) {
   });
 }
 
+/**
+ * Calls Shopee v2.payment.get_escrow_detail_batch.
+ * Path: /api/v2/payment/get_escrow_detail_batch
+ * Body: order_sn_list (array, limit 1-50, recommended 1-20)
+ * Returns: array of escrow_detail objects with order_income per order
+ */
+export async function getEscrowDetailBatch(shopId: number, orderSnList: string[]) {
+  return shopeeRequest({
+    shopId,
+    method: "POST",
+    path: "/api/v2/payment/get_escrow_detail_batch",
+    body: { order_sn_list: orderSnList },
+  });
+}
+
+/**
+ * Calls Shopee v2.payment.get_escrow_list.
+ * Path: /api/v2/payment/get_escrow_list
+ * Query: release_time_from, release_time_to, page_no
+ * Returns: full Shopee response object containing escrow_list, more, page_no
+ */
+export async function getEscrowList(
+  shopId: number,
+  releaseTimeFrom: number,
+  releaseTimeTo: number,
+  pageNo: number = 1
+) {
+  return shopeeRequest({
+    shopId,
+    method: "GET",
+    path: "/api/v2/payment/get_escrow_list",
+    query: {
+      release_time_from: releaseTimeFrom,
+      release_time_to: releaseTimeTo,
+      page_no: pageNo,
+    },
+  });
+}
+
 export async function getShopeeOrderDetails(shopId: number, orderSnList: string[]) {
   // Shopee order details limits to 50 SNs per request
   // CRITICAL: Keep response_optional_fields minimal to ensure pickup_done_time is returned

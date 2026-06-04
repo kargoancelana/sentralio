@@ -188,7 +188,7 @@ export function PrintLabelButton({
           }}
         >
           <div style={{
-            background: 'var(--bg1, #fff)',
+            background: 'var(--bg)',
             border: '1px solid var(--border)',
             borderRadius: 8,
             boxShadow: '0 4px 16px rgba(0,0,0,0.18)',

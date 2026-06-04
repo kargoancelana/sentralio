@@ -1,4 +1,4 @@
-import { int, mysqlTable, timestamp, varchar, text, uniqueIndex, index } from "drizzle-orm/mysql-core";
+import { int, mysqlTable, timestamp, varchar, text, uniqueIndex, index, bigint, date, primaryKey } from "drizzle-orm/mysql-core";
 
 export const masterProducts = mysqlTable("master_products", {
   id: int("id").primaryKey().autoincrement(),
@@ -81,9 +81,11 @@ export const shopeeOrders = mysqlTable("shopee_orders", {
   labelPrintedAt: timestamp("label_printed_at"), // Waktu label terakhir dicetak
   payTime: timestamp("pay_time"),
   createTime: timestamp("create_time").notNull(),
+  escrowReleaseTime: timestamp("escrow_release_time"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => ({
   uniqOrderSn: uniqueIndex("uniq_order_sn").on(t.orderSn),
+  idxEscrowReleaseTime: index("idx_escrow_release_time").on(t.escrowReleaseTime),
 }));
 
 export const shopeeOrderItems = mysqlTable("shopee_order_items", {
@@ -99,6 +101,11 @@ export const shopeeOrderItems = mysqlTable("shopee_order_items", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (t) => ({
   idxLookup: index("idx_order_items_lookup").on(t.orderSn, t.itemId, t.modelId),
+  // Prevent duplicate (order_sn, item_id, model_id) rows. Required because both
+  // order-sync (DELETE+INSERT) and escrow-sync.heal (INSERT-only) can race when
+  // they process the same order concurrently. With this UNIQUE constraint the
+  // ER_DUP_ENTRY catches in those services actually trigger and keep data clean.
+  uniqOrderItemModel: uniqueIndex("uniq_order_item_model").on(t.orderSn, t.itemId, t.modelId),
 }));
 
 // Sync state table for background sync resilience
@@ -149,6 +156,25 @@ export const hppEntries = mysqlTable("hpp_entries", {
   idxVariantPeriod: index("idx_hpp_variant_period").on(t.variantId, t.startDate, t.endDate),
 }));
 
+// ─── Master Packing Cost Entries ──────────────────────────────
+
+export const masterPackingCostEntries = mysqlTable("master_packing_cost_entries", {
+  id: int("id").primaryKey().autoincrement(),
+  masterProductId: int("master_product_id").notNull()
+    .references(() => masterProducts.id, { onDelete: "cascade" }),
+  packingCost: int("packing_cost").notNull(),     // in Rupiah, range [0, 999999999]
+  startDate: varchar("start_date", { length: 10 }).notNull(), // YYYY-MM-DD
+  endDate: varchar("end_date", { length: 10 }),   // YYYY-MM-DD or null
+  note: varchar("note", { length: 255 }),
+  autoClosedBy: int("auto_closed_by"),            // ID of entry that triggered auto-close
+  deletedAt: timestamp("deleted_at"),             // soft delete
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  idxMasterProduct: index("idx_master_packing_master_product").on(t.masterProductId),
+  idxMasterProductPeriod: index("idx_master_packing_period").on(t.masterProductId, t.startDate, t.endDate),
+}));
+
 // ─── Biaya Packing Entries ─────────────────────────────────────
 
 export const packingCostEntries = mysqlTable("packing_cost_entries", {
@@ -168,6 +194,32 @@ export const packingCostEntries = mysqlTable("packing_cost_entries", {
   idxProductGroupPeriod: index("idx_packing_product_group_period").on(t.productGroupId, t.startDate, t.endDate),
 }));
 
+// ─── Shopee Order Fees ─────────────────────────────────────────
+
+export const shopeeOrderFees = mysqlTable("shopee_order_fees", {
+  id: int("id").primaryKey().autoincrement(),
+  orderSn: varchar("order_sn", { length: 100 }).notNull(),
+  commissionFee: int("commission_fee").notNull().default(0),
+  serviceFee: int("service_fee").notNull().default(0),
+  sellerOrderProcessingFee: int("seller_order_processing_fee").notNull().default(0),
+  actualShippingFee: int("actual_shipping_fee").notNull().default(0),
+  shopeeShippingRebate: int("shopee_shipping_rebate").notNull().default(0),
+  sellerVoucher: int("seller_voucher").notNull().default(0),
+  escrowAmount: int("escrow_amount").notNull().default(0),
+  amsCommissionFee: int("ams_commission_fee").notNull().default(0),
+  sellerReturnRefund: int("seller_return_refund").notNull().default(0),
+  // Signed value from Shopee `order_income.final_shipping_fee`. Can be:
+  //   - Negative → seller bears shipping cost (counts as deduction)
+  //   - Positive → seller receives shipping refund (reduces total deductions)
+  // We deliberately do NOT abs() this value; signed semantics are required
+  // for correct grand-total calculation in Rincian Potongan Marketplace.
+  finalShippingFee: int("final_shipping_fee").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  uniqOrderSn: uniqueIndex("uniq_fee_order_sn").on(t.orderSn),
+}));
+
 // ─── Audit Log ─────────────────────────────────────────────────
 
 export const costAuditLog = mysqlTable("cost_audit_log", {
@@ -181,4 +233,15 @@ export const costAuditLog = mysqlTable("cost_audit_log", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (t) => ({
   idxEntityLookup: index("idx_audit_entity").on(t.entityType, t.entityId),
+}));
+
+// ─── Shopee Ads Daily Expense Cache ────────────────────────────
+
+export const shopeeAdsDailyExpense = mysqlTable("shopee_ads_daily_expense", {
+  shopId: bigint("shop_id", { mode: "number" }).notNull(),
+  date: date("date", { mode: "string" }).notNull(),
+  expense: int("expense").notNull().default(0),
+  fetchedAt: timestamp("fetched_at").notNull().defaultNow(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.shopId, t.date] }),
 }));

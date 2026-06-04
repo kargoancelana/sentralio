@@ -242,12 +242,31 @@ export async function syncShopeeOrdersIncremental(
           await db.insert(shopeeOrders).values(orderPayload);
         }
 
-        // Upsert order items: hapus lama lalu insert baru
-        const itemList: any[] = order.item_list || [];
+        // Upsert order items race-safely. Old approach was DELETE-then-INSERT
+        // which is non-atomic: between DELETE and INSERT, escrow-sync.heal can
+        // observe an empty `shopee_order_items` for this order_sn and start
+        // inserting its own items, causing duplicates after order-sync's
+        // INSERT runs. Now we use INSERT ... ON DUPLICATE KEY UPDATE which
+        // depends on the UNIQUE(order_sn, item_id, model_id) constraint to
+        // prevent duplicates at the DB level.
+        //
+        // Edge case: if Shopee removed an item from the order (rare), it will
+        // remain stale in DB. We accept that trade-off because the consequence
+        // (one stale orphan row) is far less harmful than the duplicate-row
+        // bug, and Shopee almost never removes items from existing orders.
+        // Fallback: if top-level item_list is empty, extract from package_list[].item_list
+        let itemList: any[] = order.item_list || [];
+        if (itemList.length === 0 && order.package_list?.length > 0) {
+          for (const pkg of order.package_list) {
+            const pkgItems = pkg?.item_list || [];
+            for (const pkgItem of pkgItems) {
+              itemList.push(pkgItem);
+            }
+          }
+        }
         if (itemList.length > 0) {
-          await db.delete(shopeeOrderItems).where(eq(shopeeOrderItems.orderSn, order.order_sn));
           for (const item of itemList) {
-            await db.insert(shopeeOrderItems).values({
+            const itemPayload = {
               orderSn: order.order_sn,
               itemId: item.item_id ? String(item.item_id) : null,
               modelId: item.model_id ? String(item.model_id) : null,
@@ -258,7 +277,19 @@ export async function syncShopeeOrdersIncremental(
               itemPrice: item.model_discounted_price
                 ? Math.round(item.model_discounted_price)
                 : Math.round(item.model_original_price || 0),
-            });
+            };
+            await db
+              .insert(shopeeOrderItems)
+              .values(itemPayload)
+              .onDuplicateKeyUpdate({
+                set: {
+                  itemName: itemPayload.itemName,
+                  modelName: itemPayload.modelName,
+                  modelSku: itemPayload.modelSku,
+                  qty: itemPayload.qty,
+                  itemPrice: itemPayload.itemPrice,
+                },
+              });
           }
         }
 

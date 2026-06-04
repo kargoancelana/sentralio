@@ -311,7 +311,7 @@ export function ShipmentProgressDialog({ isOpen, orderSn, onClose, onComplete }:
               {showLabelMenu && !printing && (
                 <div style={{
                   position: 'absolute', bottom: '100%', right: 0,
-                  marginBottom: 4, background: 'var(--bg1, #fff)', border: '1px solid var(--border)',
+                  marginBottom: 4, background: 'var(--bg)', border: '1px solid var(--border)',
                   borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
                   minWidth: 170, overflow: 'hidden', zIndex: 9999,
                 }}>
@@ -796,7 +796,7 @@ export function BatchShipmentProgressDialog({ isOpen, orderSns, onClose, onCompl
               {!printing && (
                 <div className="batch-label-dropdown" style={{
                   display: 'none', position: 'absolute', bottom: '100%', right: 0,
-                  marginBottom: 4, background: 'var(--bg1, #fff)', border: '1px solid var(--border)',
+                  marginBottom: 4, background: 'var(--bg)', border: '1px solid var(--border)',
                   borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
                   minWidth: 170, overflow: 'hidden', zIndex: 9999,
                 }}>

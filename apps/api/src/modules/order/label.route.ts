@@ -45,6 +45,7 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
   // Optimized batch endpoint — uses batch APIs (6-8 calls for 50 orders)
   // Returns a single merged PDF for all orders
   .post("/shipping-labels/batch-download", async ({ body, set }) => {
+    const startTime = Date.now();
     try {
       if (!body || typeof body !== 'object') {
         set.status = 400;
@@ -106,12 +107,15 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
       }
 
       const result = await getBatchLabelsOptimized(order_sns as string[]);
+      const elapsed = Date.now() - startTime;
 
       if (result.success && (result.pdfUrl || result.pdfUrls)) {
         // Store in cache if we have a single merged PDF URL
         if (result.pdfUrl) {
           pdfBatchCache.set(cacheKey, { url: result.pdfUrl, timestamp: Date.now() });
-          console.log('[label-routes] PDF batch cache STORED for', (order_sns as string[]).length, 'orders');
+          console.log(`[label-routes] ✅ PDF batch (${(order_sns as string[]).length} orders) completed in ${elapsed}ms — cached`);
+        } else {
+          console.log(`[label-routes] ✅ PDF batch (${(order_sns as string[]).length} orders) completed in ${elapsed}ms`);
         }
 
         set.status = 200;
@@ -127,6 +131,8 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
         };
       } else {
         // Total failure from service — include error details and failedOrders
+        const elapsed2 = Date.now() - startTime;
+        console.error(`[label-routes] ❌ PDF batch (${(order_sns as string[]).length} orders) FAILED in ${elapsed2}ms`);
         set.status = 500;
         return {
           success: false,
@@ -217,6 +223,7 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
 
   .get("/:orderSn/shipping-label", async ({ params, set }) => {
     const { orderSn } = params;
+    const startTime = Date.now();
 
     if (!validateOrderSn(orderSn)) {
       set.status = 422;
@@ -225,8 +232,10 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
 
     try {
       const result = await getSingleLabel(orderSn);
+      const elapsed = Date.now() - startTime;
 
       if (result.success && result.label) {
+        console.log(`[label-routes] ✅ Single label ${orderSn} completed in ${elapsed}ms`);
         set.status = 200;
         return {
           success: true,
@@ -239,6 +248,8 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
           }
         };
       } else {
+        const elapsed2 = Date.now() - startTime;
+        console.log(`[label-routes] ⚠️ Single label ${orderSn} failed in ${elapsed2}ms: ${result.error}`);
         const statusCode = getErrorStatusCode(result.error || '');
         set.status = statusCode;
         return { success: false, error: result.error || 'Gagal mengambil label pengiriman' };
@@ -255,6 +266,7 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
 
   .get("/:orderSn/label-data", async ({ params, set }) => {
     const { orderSn } = params;
+    const startTime = Date.now();
 
     if (!validateOrderSn(orderSn)) {
       set.status = 422;
@@ -264,8 +276,10 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
     try {
       const { getLabelData } = await import("../../services/label-data.service");
       const result = await getLabelData(orderSn);
+      const elapsed = Date.now() - startTime;
 
       if (result.success) {
+        console.log(`[label-routes] ✅ Custom label-data ${orderSn} completed in ${elapsed}ms`);
         set.status = 200;
         return { success: true, data: result.data };
       } else {
@@ -280,6 +294,7 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
   })
 
   .post("/label-data/batch", async ({ body, set }) => {
+    const startTime = Date.now();
     try {
       if (!body || typeof body !== 'object') {
         set.status = 400;
@@ -315,6 +330,8 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
 
       const { getBatchLabelData } = await import("../../services/label-data.service");
       const result = await getBatchLabelData(order_sns);
+      const elapsed = Date.now() - startTime;
+      console.log(`[label-routes] ✅ Custom label-data batch (${order_sns.length} orders) completed in ${elapsed}ms`);
 
       set.status = 200;
       return { success: true, data: result };

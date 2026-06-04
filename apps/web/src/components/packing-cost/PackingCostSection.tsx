@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Plus, Pencil, Trash2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Plus, Pencil, Trash2, AlertCircle, RefreshCw, Lock } from 'lucide-react';
 import { fetchApi } from '../../lib/api';
 import { useApi, useApiMutation } from '../../hooks/useApi';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
@@ -33,6 +33,12 @@ export interface PackingCostSectionProps {
   onAdd?: () => void;
   /** Called when the Edit button is clicked — receives the entry to edit */
   onEdit?: (entry: PackingCostEntry) => void;
+  /**
+   * When true, hides all mutating controls (Tambah/Edit/Hapus) and shows a
+   * persistent read-only banner. Historical entries are still rendered.
+   * Requirements: 22.1, 22.2, 22.3, 22.4
+   */
+  readOnly?: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -68,6 +74,7 @@ export function PackingCostSection({
   userId,
   onAdd,
   onEdit,
+  readOnly = false,
 }: PackingCostSectionProps) {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -128,6 +135,28 @@ export function PackingCostSection({
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <section aria-label="Biaya Packing">
+      {/* Read-only banner — shown when section is managed by Master Produk */}
+      {readOnly && (
+        <div
+          role="note"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 14px',
+            marginBottom: '12px',
+            background: 'var(--bg3, #f3f4f6)',
+            border: '1px solid var(--border)',
+            borderRadius: '8px',
+            fontSize: '13px',
+            color: 'var(--text2)',
+          }}
+        >
+          <Lock size={14} style={{ flexShrink: 0, color: 'var(--text3)' }} />
+          <span>Biaya packing sekarang dikelola di Master Produk</span>
+        </div>
+      )}
+
       {/* Header row */}
       <div
         style={{
@@ -150,7 +179,7 @@ export function PackingCostSection({
         </h3>
 
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          {/* Refresh button */}
+          {/* Refresh button — always visible */}
           <button
             onClick={() => refetch()}
             title="Refresh data biaya packing"
@@ -185,21 +214,23 @@ export function PackingCostSection({
             Refresh
           </button>
 
-          {/* Add button — delegates to parent (form is task 10.2) */}
-          <Button
-            variant="primary"
-            size="sm"
-            icon={<Plus size={14} />}
-            onClick={onAdd}
-            aria-label="Tambah entry biaya packing"
-          >
-            Tambah
-          </Button>
+          {/* Add button — hidden in read-only mode */}
+          {!readOnly && (
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<Plus size={14} />}
+              onClick={onAdd}
+              aria-label="Tambah entry biaya packing"
+            >
+              Tambah
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* Delete error banner */}
-      {deleteError && (
+      {/* Delete error banner — hidden in read-only mode */}
+      {!readOnly && deleteError && (
         <div
           role="alert"
           style={{
@@ -252,7 +283,7 @@ export function PackingCostSection({
         )}
 
         {!loading && !error && entries.length === 0 && (
-          <EmptyEntries onAdd={onAdd} />
+          <EmptyEntries onAdd={readOnly ? undefined : onAdd} />
         )}
 
         {!loading && !error && entries.length > 0 && (
@@ -260,8 +291,9 @@ export function PackingCostSection({
             entries={entries}
             deletingId={deletingId}
             deleteLoading={deleteLoading}
-            onEdit={onEdit}
+            onEdit={readOnly ? undefined : onEdit}
             onDelete={handleDelete}
+            readOnly={readOnly}
           />
         )}
       </div>
@@ -347,6 +379,7 @@ interface EntriesTableProps {
   deleteLoading: boolean;
   onEdit?: (entry: PackingCostEntry) => void;
   onDelete: (entry: PackingCostEntry) => void;
+  readOnly?: boolean;
 }
 
 function EntriesTable({
@@ -355,6 +388,7 @@ function EntriesTable({
   deleteLoading,
   onEdit,
   onDelete,
+  readOnly = false,
 }: EntriesTableProps) {
   return (
     <div style={{ overflowX: 'auto' }}>
@@ -376,7 +410,7 @@ function EntriesTable({
             <Th>Selesai</Th>
             <Th align="right">Nilai</Th>
             <Th>Catatan</Th>
-            <Th align="center">Aksi</Th>
+            {!readOnly && <Th align="center">Aksi</Th>}
           </tr>
         </thead>
         <tbody>
@@ -430,37 +464,40 @@ function EntriesTable({
                   <span style={{ color: 'var(--text4)' }}>—</span>
                 )}
               </Td>
-              <Td align="center">
-                <div
-                  style={{
-                    display: 'inline-flex',
-                    gap: '6px',
-                    alignItems: 'center',
-                  }}
-                >
-                  {/* Edit button */}
-                  <ActionButton
-                    onClick={() => onEdit?.(entry)}
-                    title="Edit entry"
-                    aria-label={`Edit entry biaya packing mulai ${formatDate(entry.startDate)}`}
-                    disabled={deleteLoading}
+              {/* Action column — hidden in read-only mode (Req 22.2) */}
+              {!readOnly && (
+                <Td align="center">
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      gap: '6px',
+                      alignItems: 'center',
+                    }}
                   >
-                    <Pencil size={13} />
-                  </ActionButton>
+                    {/* Edit button */}
+                    <ActionButton
+                      onClick={() => onEdit?.(entry)}
+                      title="Edit entry"
+                      aria-label={`Edit entry biaya packing mulai ${formatDate(entry.startDate)}`}
+                      disabled={deleteLoading}
+                    >
+                      <Pencil size={13} />
+                    </ActionButton>
 
-                  {/* Delete button */}
-                  <ActionButton
-                    onClick={() => onDelete(entry)}
-                    title="Hapus entry"
-                    aria-label={`Hapus entry biaya packing mulai ${formatDate(entry.startDate)}`}
-                    disabled={deleteLoading}
-                    loading={deletingId === entry.id}
-                    danger
-                  >
-                    <Trash2 size={13} />
-                  </ActionButton>
-                </div>
-              </Td>
+                    {/* Delete button */}
+                    <ActionButton
+                      onClick={() => onDelete(entry)}
+                      title="Hapus entry"
+                      aria-label={`Hapus entry biaya packing mulai ${formatDate(entry.startDate)}`}
+                      disabled={deleteLoading}
+                      loading={deletingId === entry.id}
+                      danger
+                    >
+                      <Trash2 size={13} />
+                    </ActionButton>
+                  </div>
+                </Td>
+              )}
             </tr>
           ))}
         </tbody>

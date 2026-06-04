@@ -465,6 +465,34 @@ export async function deleteHppEntry(
   return { success: true, data: { id } };
 }
 
+// ─── Helper: deserialize audit log row ─────────────────────────────────────────
+//
+// Same rationale as the Master Packing Cost service: `previousValues` and
+// `newValues` are stored as JSON strings, but the frontend expects structured
+// objects. Without parsing, `Object.keys(rawString)` would iterate characters.
+function deserialiseAuditLog(
+  log: typeof costAuditLog.$inferSelect,
+): Omit<typeof costAuditLog.$inferSelect, "previousValues" | "newValues"> & {
+  previousValues: Record<string, unknown> | null;
+  newValues: Record<string, unknown> | null;
+} {
+  const safeParse = (raw: string | null): Record<string, unknown> | null => {
+    if (raw === null || raw === undefined) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  return {
+    ...log,
+    previousValues: safeParse(log.previousValues),
+    newValues: safeParse(log.newValues),
+  };
+}
+
 // ─── getHppHistory ─────────────────────────────────────────────────────────────
 
 /**
@@ -477,7 +505,12 @@ export async function getHppHistory(variantId: number): Promise<
   ServiceResult<
     Array<
       typeof hppEntries.$inferSelect & {
-        auditLogs: Array<typeof costAuditLog.$inferSelect>;
+        auditLogs: Array<
+          typeof costAuditLog.$inferSelect & {
+            previousValues: Record<string, unknown> | null;
+            newValues: Record<string, unknown> | null;
+          }
+        >;
       }
     >
   >
@@ -511,12 +544,22 @@ export async function getHppHistory(variantId: number): Promise<
     )
     .orderBy(desc(costAuditLog.createdAt));
 
-  // Group audit logs by entityId
-  const auditLogsByEntryId = new Map<number, Array<typeof costAuditLog.$inferSelect>>();
+  // Group audit logs by entityId. Deserialise JSON strings into objects so the
+  // wire payload matches what the frontend expects — same rationale as the
+  // Master Packing Cost service. Without this, `Object.keys(value)` on the
+  // frontend iterates the string character-by-character.
+  const auditLogsByEntryId = new Map<
+    number,
+    Array<typeof costAuditLog.$inferSelect & {
+      previousValues: Record<string, unknown> | null;
+      newValues: Record<string, unknown> | null;
+    }>
+  >();
   for (const log of auditLogs) {
-    const existing = auditLogsByEntryId.get(log.entityId) ?? [];
-    existing.push(log);
-    auditLogsByEntryId.set(log.entityId, existing);
+    const parsed = deserialiseAuditLog(log);
+    const existing = auditLogsByEntryId.get(parsed.entityId) ?? [];
+    existing.push(parsed);
+    auditLogsByEntryId.set(parsed.entityId, existing);
   }
 
   // Attach audit logs to each entry
