@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { BarChart3, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
+import { BarChart3, AlertTriangle, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { api } from '../lib/api';
-import { PageLoading } from '../components/shared/LoadingSpinner';
 import './LaporanKeuangan.css';
 
 // ── Helpers ──
@@ -107,6 +106,44 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'potongan', label: 'Rincian Potongan Marketplace' },
 ];
 
+// ── Shared loading / state helpers ──
+
+/** Skeleton grid of cards that matches the stat-card footprint, so the layout
+ *  doesn't jump when real data arrives. */
+function CardSkeleton({ count = 5 }: { count?: number }) {
+  return (
+    <div className="laporan-stats">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="laporan-skel-card">
+          <div className="laporan-skel-line short" />
+          <div className="laporan-skel-line tall" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Skeleton for table-based tabs. */
+function TableSkeleton() {
+  return (
+    <div className="laporan-table-wrapper" style={{ padding: '16px' }}>
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div key={i} className="laporan-skel-line" style={{ height: 16, margin: '10px 0' }} />
+      ))}
+    </div>
+  );
+}
+
+/** Small inline chip shown while refetching when stale data is still on screen. */
+function UpdatingChip() {
+  return (
+    <div className="laporan-updating">
+      <Loader2 size={13} className="animate-spin" />
+      Memperbarui…
+    </div>
+  );
+}
+
 // ── Main Component ──
 
 export function LaporanKeuangan() {
@@ -195,17 +232,20 @@ export function LaporanKeuangan() {
 function TabRingkasan({ startDate, endDate, shopId }: { startDate: string; endDate: string; shopId?: number }) {
   const { data, loading, error } = useApi(
     () => api.profitSummary(startDate, endDate, shopId),
-    [startDate, endDate, shopId]
+    [startDate, endDate, shopId],
+    `profit-summary-${startDate}-${endDate}-${shopId ?? 'all'}`
   );
 
-  if (loading) return <PageLoading />;
-  if (error) return <div className="laporan-error">Error: {error}</div>;
+  // First load (no data yet) → skeleton. Refetch with stale data → keep showing it.
+  if (loading && !data?.data) return <CardSkeleton count={5} />;
+  if (error && !data?.data) return <div className="laporan-error">Error: {error}</div>;
   if (!data?.data) return <EmptyState />;
 
   const s = data.data;
 
   return (
     <div>
+      {loading && <UpdatingChip />}
       {s.hasUnresolvedHpp && (
         <div className="laporan-warning">
           <AlertTriangle size={16} />
@@ -219,6 +259,7 @@ function TabRingkasan({ startDate, endDate, shopId }: { startDate: string; endDa
         </div>
       )}
 
+      {/* Ringkasan utama */}
       <div className="laporan-stats">
         <div className="laporan-stat-card">
           <div className="laporan-stat-label">Total Revenue</div>
@@ -246,6 +287,8 @@ function TabRingkasan({ startDate, endDate, shopId }: { startDate: string; endDa
         </div>
       </div>
 
+      {/* Rincian biaya */}
+      <div className="laporan-section-label">Rincian Biaya</div>
       <div className="laporan-breakdown">
         <div className="laporan-breakdown-card">
           <div className="laporan-breakdown-label">HPP (Harga Pokok)</div>
@@ -276,17 +319,19 @@ function TabPerOrder({ startDate, endDate, shopId }: { startDate: string; endDat
 
   const { data, loading, error } = useApi(
     () => api.profitOrders(startDate, endDate, shopId, page, 20),
-    [startDate, endDate, shopId, page]
+    [startDate, endDate, shopId, page],
+    `profit-orders-${startDate}-${endDate}-${shopId ?? 'all'}-${page}`
   );
 
-  if (loading) return <PageLoading />;
-  if (error) return <div className="laporan-error">Error: {error}</div>;
+  if (loading && !data?.data) return <TableSkeleton />;
+  if (error && !data?.data) return <div className="laporan-error">Error: {error}</div>;
   if (!data?.data?.orders?.length) return <EmptyState />;
 
   const { orders, pagination } = data.data;
 
   return (
     <div>
+      {loading && <UpdatingChip />}
       <div className="laporan-table-wrapper">
         <table className="laporan-table">
           <thead>
@@ -385,17 +430,19 @@ function TabPerToko({ startDate, endDate }: { startDate: string; endDate: string
 
   const { data, loading, error } = useApi(
     () => api.profitShops(startDate, endDate, sortBy),
-    [startDate, endDate, sortBy]
+    [startDate, endDate, sortBy],
+    `profit-shops-${startDate}-${endDate}-${sortBy}`
   );
 
-  if (loading) return <PageLoading />;
-  if (error) return <div className="laporan-error">Error: {error}</div>;
+  if (loading && !data?.data) return <TableSkeleton />;
+  if (error && !data?.data) return <div className="laporan-error">Error: {error}</div>;
   if (!data?.data?.shops?.length) return <EmptyState />;
 
   const shops = data.data.shops;
 
   return (
     <div>
+      {loading && <UpdatingChip />}
       <div className="laporan-controls">
         <label>Urutkan:</label>
         <select value={sortBy} onChange={e => setSortBy(e.target.value)}>
@@ -446,17 +493,19 @@ function TabPerProduk({ startDate, endDate, shopId }: { startDate: string; endDa
 
   const { data, loading, error } = useApi(
     () => api.profitProducts(startDate, endDate, shopId, groupBy, sortBy),
-    [startDate, endDate, shopId, groupBy, sortBy]
+    [startDate, endDate, shopId, groupBy, sortBy],
+    `profit-products-${startDate}-${endDate}-${shopId ?? 'all'}-${groupBy}-${sortBy}`
   );
 
-  if (loading) return <PageLoading />;
-  if (error) return <div className="laporan-error">Error: {error}</div>;
+  if (loading && !data?.data) return <TableSkeleton />;
+  if (error && !data?.data) return <div className="laporan-error">Error: {error}</div>;
   if (!data?.data?.products?.length) return <EmptyState />;
 
   const productsList = data.data.products;
 
   return (
     <div>
+      {loading && <UpdatingChip />}
       <div className="laporan-controls">
         <label>Group by:</label>
         <select value={groupBy} onChange={e => setGroupBy(e.target.value)}>
@@ -513,17 +562,19 @@ function TabPerProduk({ startDate, endDate, shopId }: { startDate: string; endDa
 function TabPotongan({ startDate, endDate, shopId }: { startDate: string; endDate: string; shopId?: number }) {
   const { data, loading, error } = useApi(
     () => api.profitDeductions(startDate, endDate, shopId),
-    [startDate, endDate, shopId]
+    [startDate, endDate, shopId],
+    `profit-deductions-${startDate}-${endDate}-${shopId ?? 'all'}`
   );
 
-  if (loading) return <PageLoading />;
-  if (error) return <div className="laporan-error">Error: {error}</div>;
+  if (loading && !data?.data) return <CardSkeleton count={6} />;
+  if (error && !data?.data) return <div className="laporan-error">Error: {error}</div>;
   if (!data?.data) return <EmptyState />;
 
   const d = data.data;
 
   return (
     <div>
+      {loading && <UpdatingChip />}
       <div className="laporan-stats">
         <div className="laporan-stat-card">
           <div className="laporan-stat-label">Biaya Administrasi</div>
@@ -551,9 +602,12 @@ function TabPotongan({ startDate, endDate, shopId }: { startDate: string; endDat
         </div>
       </div>
 
-      <div className="laporan-stat-card" style={{ marginTop: 8 }}>
-        <div className="laporan-stat-label">Grand Total Potongan</div>
-        <div className="laporan-stat-value negative">{formatRupiah(d.grandTotal)}</div>
+      <div className="laporan-section-label">Total</div>
+      <div className="laporan-stats">
+        <div className="laporan-stat-card">
+          <div className="laporan-stat-label">Grand Total Potongan</div>
+          <div className="laporan-stat-value negative">{formatRupiah(d.grandTotal)}</div>
+        </div>
       </div>
     </div>
   );

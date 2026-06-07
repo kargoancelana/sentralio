@@ -1,0 +1,316 @@
+/**
+ * Users service — admin-managed account creation and management.
+ * Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9, 7.1, 7.2
+ *
+ * password and password_hash are NEVER returned from any function here.
+ */
+
+import { and, eq } from 'drizzle-orm';
+import { db as defaultDb } from '../../db/client';
+import { users } from '../../db/schema';
+import { isValidEmailSyntax, normalizeEmail } from '../auth/email';
+import { hashPassword } from '../auth/password';
+import { validatePasswordPolicy } from '../auth/password-policy';
+
+// ───────────────────────────────────────────────────────────────────────────
+// Types
+// ───────────────────────────────────────────────────────────────────────────
+
+/** Public user shape — never includes password or password_hash. */
+export interface PublicUser {
+  id: number;
+  email: string;
+  name: string;
+  role: 'admin' | 'staff';
+}
+
+/** Full user shape for listing — includes isActive, never includes password. */
+export interface UserListItem {
+  id: number;
+  email: string;
+  name: string;
+  role: 'admin' | 'staff';
+  isActive: boolean;
+}
+
+export interface CreateUserData {
+  email: string;
+  name: string;
+  role: string;
+  password: string;
+}
+
+export interface UpdateUserData {
+  name?: string;
+  role?: string;
+  isActive?: boolean;
+}
+
+export interface CreateUserOk {
+  ok: true;
+  user: PublicUser;
+}
+
+export interface CreateUserFail {
+  ok: false;
+  errors: Record<string, string>;
+}
+
+export type CreateUserResult = CreateUserOk | CreateUserFail;
+
+/** Injectable DB client type for testability. */
+export type DrizzleDb = typeof defaultDb;
+
+// ───────────────────────────────────────────────────────────────────────────
+// listUsers
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * List all users. Never includes password or password_hash.
+ * Requirement: 6.1
+ */
+export async function listUsers(db: DrizzleDb = defaultDb): Promise<UserListItem[]> {
+  const rows = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      name: users.name,
+      role: users.role,
+      isActive: users.isActive,
+    })
+    .from(users);
+
+  return rows.map((row) => ({
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    role: row.role as 'admin' | 'staff',
+    isActive: row.isActive === 1,
+  }));
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// createUser
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Validate and create a new user.
+ *
+ * Validation order (Req 6.4):
+ *  1. email: RFC-syntax valid, <= 254 chars, case-insensitive unique
+ *  2. name: trimmed length 1–100
+ *  3. role: exactly 'admin' or 'staff'
+ *  4. password: length 10–128
+ *
+ * On success: bcrypt hash (cost >= 12), insert, return { ok: true, user: { id, email, name, role } }.
+ * On failure: return { ok: false, errors: { field: reason } }.
+ *
+ * password and password_hash are NEVER returned (Req 6.7, 7.2).
+ * Requirements: 6.4, 6.5, 6.6, 6.7, 7.1
+ */
+export async function createUser(
+  data: CreateUserData,
+  db: DrizzleDb = defaultDb,
+): Promise<CreateUserResult> {
+  const errors: Record<string, string> = {};
+
+  // 1. Validate email
+  if (typeof data.email !== 'string' || !isValidEmailSyntax(data.email)) {
+    errors.email = 'Format email tidak valid.';
+  } else if (data.email.length > 254) {
+    errors.email = 'Email maksimal 254 karakter.';
+  }
+
+  // 2. Validate name
+  const trimmedName = typeof data.name === 'string' ? data.name.trim() : '';
+  if (trimmedName.length < 1 || trimmedName.length > 100) {
+    errors.name = 'Nama harus 1–100 karakter.';
+  }
+
+  // 3. Validate role
+  if (data.role !== 'admin' && data.role !== 'staff') {
+    errors.role = 'Peran harus admin atau staff.';
+  }
+
+  // 4. Validate password against the policy (min 8, uppercase, special char)
+  const pw = validatePasswordPolicy(data.password);
+  if (!pw.ok) {
+    errors.password = pw.message!;
+  }
+
+  // If any validation failed so far, return early (Req 6.5)
+  if (Object.keys(errors).length > 0) {
+    return { ok: false, errors };
+  }
+
+  // Check for case-insensitive email uniqueness (Req 6.4)
+  const emailLower = normalizeEmail(data.email);
+  const existing = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.emailLower, emailLower))
+    .limit(1);
+
+  if (existing.length > 0) {
+    return { ok: false, errors: { email: 'Email sudah digunakan.' } };
+  }
+
+  // Hash password with bcrypt cost >= 12 (Req 6.6, 7.1)
+  const passwordHash = await hashPassword(data.password);
+
+  // Insert user with is_active = 1 (Req 6.7)
+  const result = await db.insert(users).values({
+    email: data.email,          // stored verbatim
+    emailLower,                 // normalized for lookups
+    name: trimmedName,          // trimmed
+    role: data.role as 'admin' | 'staff',
+    passwordHash,               // only the hash, never the plaintext
+    isActive: 1,                // always active on creation (Req 6.7)
+  });
+
+  const insertId = Number((result as any)[0]?.insertId ?? (result as any).insertId);
+
+  // Return only id, email, name, role (Req 6.7) — never password or password_hash
+  return {
+    ok: true,
+    user: {
+      id: insertId,
+      email: data.email,
+      name: trimmedName,
+      role: data.role as 'admin' | 'staff',
+    },
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// updateUser
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Update a user's name, role, and/or isActive status.
+ * Cannot update password through this path (use CLI, Req 7.3).
+ * Returns the updated user or null if not found.
+ * Never returns password or password_hash.
+ */
+export async function updateUser(
+  id: number,
+  data: UpdateUserData,
+  db: DrizzleDb = defaultDb,
+): Promise<UserListItem | null> {
+  const updateData: Record<string, unknown> = {};
+
+  if (data.name !== undefined) {
+    const trimmedName = data.name.trim();
+    if (trimmedName.length < 1 || trimmedName.length > 100) {
+      throw new Error('Name must be between 1 and 100 characters after trimming');
+    }
+    updateData.name = trimmedName;
+  }
+
+  if (data.role !== undefined) {
+    if (data.role !== 'admin' && data.role !== 'staff') {
+      throw new Error('Role must be admin or staff');
+    }
+    updateData.role = data.role;
+  }
+
+  if (data.isActive !== undefined) {
+    updateData.isActive = data.isActive ? 1 : 0;
+  }
+
+  if (Object.keys(updateData).length === 0) {
+    // Nothing to update — just return the current user
+    return getUserById(id, db);
+  }
+
+  await db.update(users).set(updateData).where(eq(users.id, id));
+
+  return getUserById(id, db);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// setUserActive
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Set a user's is_active status.
+ * When set to false, all future Auth_Middleware checks for that user will reject
+ * existing sessions (Req 6.8, 10.6).
+ * Returns the updated user or null if not found.
+ */
+export async function setUserActive(
+  id: number,
+  isActive: boolean,
+  db: DrizzleDb = defaultDb,
+): Promise<UserListItem | null> {
+  await db
+    .update(users)
+    .set({ isActive: isActive ? 1 : 0 })
+    .where(eq(users.id, id));
+
+  return getUserById(id, db);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Guards for self-lockout and last-admin protection
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Count how many users are currently active admins.
+ * Used to prevent deactivating or demoting the last remaining admin.
+ */
+export async function countActiveAdmins(db: DrizzleDb = defaultDb): Promise<number> {
+  const rows = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.role, 'admin'), eq(users.isActive, 1)));
+  return rows.length;
+}
+
+/**
+ * Returns the public user (id, email, name, role, isActive) for the given id,
+ * or null if not found. Exposed for route-level guard checks.
+ */
+export async function getUserPublicById(
+  id: number,
+  db: DrizzleDb = defaultDb,
+): Promise<UserListItem | null> {
+  return getUserById(id, db);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Internal helpers
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Look up a user by id and return the public fields.
+ * Returns null when the user does not exist.
+ * Never returns password or password_hash.
+ */
+async function getUserById(
+  id: number,
+  db: DrizzleDb = defaultDb,
+): Promise<UserListItem | null> {
+  const rows = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      name: users.name,
+      role: users.role,
+      isActive: users.isActive,
+    })
+    .from(users)
+    .where(eq(users.id, id))
+    .limit(1);
+
+  if (rows.length === 0 || !rows[0]) return null;
+
+  const row = rows[0];
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    role: row.role as 'admin' | 'staff',
+    isActive: row.isActive === 1,
+  };
+}

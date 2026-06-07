@@ -1,4 +1,4 @@
-import { int, mysqlTable, timestamp, varchar, text, uniqueIndex, index, bigint, date, primaryKey } from "drizzle-orm/mysql-core";
+import { int, mysqlTable, timestamp, varchar, text, uniqueIndex, index, bigint, date, primaryKey, mysqlEnum } from "drizzle-orm/mysql-core";
 
 export const masterProducts = mysqlTable("master_products", {
   id: int("id").primaryKey().autoincrement(),
@@ -244,4 +244,47 @@ export const shopeeAdsDailyExpense = mysqlTable("shopee_ads_daily_expense", {
   fetchedAt: timestamp("fetched_at").notNull().defaultNow(),
 }, (t) => ({
   pk: primaryKey({ columns: [t.shopId, t.date] }),
+}));
+
+// ─── Auth Tables ───────────────────────────────────────────────
+
+export const userRoleEnum = mysqlEnum("role", ["admin", "staff"]);
+
+export const users = mysqlTable("users", {
+  id:           int("id").primaryKey().autoincrement(),
+  email:        varchar("email", { length: 254 }).notNull(),        // stored verbatim
+  emailLower:   varchar("email_lower", { length: 254 }).notNull(),  // ASCII-lowercased + trimmed; used for lookup
+  name:         varchar("name", { length: 100 }).notNull(),
+  role:         userRoleEnum.notNull(),
+  passwordHash: varchar("password_hash", { length: 100 }).notNull(), // bcrypt = 60 chars; widened for safety
+  isActive:     int("is_active").notNull().default(1),               // 1=true, 0=false (MySQL booleanish)
+  tokensValidFrom: bigint("tokens_valid_from", { mode: "number" }).notNull().default(0), // unix seconds; sessions with iat < this are invalid (password change revokes old sessions)
+  createdAt:    timestamp("created_at").notNull().defaultNow(),
+  updatedAt:    timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+}, (t) => ({
+  uniqEmailLower: uniqueIndex("uniq_users_email_lower").on(t.emailLower),
+}));
+
+export const failedLoginAttempts = mysqlTable("failed_login_attempts", {
+  id:          int("id").primaryKey().autoincrement(),
+  emailLower:  varchar("email_lower", { length: 254 }).notNull(),
+  ip:          varchar("ip", { length: 45 }).notNull(), // IPv4/IPv6 textual
+  attemptedAt: timestamp("attempted_at").notNull().defaultNow(),
+}, (t) => ({
+  idxEmailTime: index("idx_failed_email_time").on(t.emailLower, t.attemptedAt),
+}));
+
+export const accountLockouts = mysqlTable("account_lockouts", {
+  emailLower:  varchar("email_lower", { length: 254 }).primaryKey(),
+  lockedUntil: timestamp("locked_until").notNull(),
+  lockedAt:    timestamp("locked_at").notNull().defaultNow(),
+});
+
+export const revokedSessions = mysqlTable("revoked_sessions", {
+  jti:       varchar("jti", { length: 36 }).primaryKey(), // UUIDv4
+  userId:    int("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  revokedAt: timestamp("revoked_at").notNull().defaultNow(),
+  expiresAt: timestamp("expires_at").notNull(), // = original JWT exp; rows older than this can be GC'd
+}, (t) => ({
+  idxExpiresAt: index("idx_revoked_expires").on(t.expiresAt),
 }));

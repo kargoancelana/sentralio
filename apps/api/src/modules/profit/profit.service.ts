@@ -243,6 +243,57 @@ export async function fetchCompletedOrders(
   shopId?: number,
 ): Promise<FetchedOrder[]> {
   const { startDate, endDate } = range;
+
+  // Short-lived cache: all profit tabs (summary, shops, products, ...) call
+  // this with the SAME (range, shopId), each re-pulling 1000+ orders + items +
+  // fees and re-resolving costs. The heavy cost is downstream cost-resolution,
+  // so we additionally cache the FINAL endpoint responses (see responseCache
+  // helper) — this fetch cache mainly helps repeated calls within one request.
+  const cacheKey = `${startDate}|${endDate}|${shopId ?? 'all'}`;
+  const cached = completedOrdersCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < COMPLETED_ORDERS_TTL_MS) {
+    return cached.data;
+  }
+
+  const data = await fetchCompletedOrdersUncached(range, shopId);
+  completedOrdersCache.set(cacheKey, { data, ts: Date.now() });
+  return data;
+}
+
+/** In-memory cache for fetchCompletedOrders results, keyed by range+shop. */
+const completedOrdersCache = new Map<string, { data: FetchedOrder[]; ts: number }>();
+const COMPLETED_ORDERS_TTL_MS = 60_000; // 60s
+
+/** Invalidate the profit caches (call after a sync writes new data). */
+export function invalidateProfitCache(): void {
+  completedOrdersCache.clear();
+  responseCache.clear();
+}
+
+// ─── Endpoint response cache ─────────────────────────────────────────────────
+//
+// The dominant cost of profit tabs is downstream cost-resolution over 1000+
+// orders, repeated per endpoint. Caching the FINAL response per (endpoint,
+// params) for a short TTL makes the 2nd..Nth tab — and re-opens within the
+// window — effectively instant. TTL is short so figures stay fresh relative to
+// background sync (which also calls invalidateProfitCache implicitly via TTL).
+const responseCache = new Map<string, { data: unknown; ts: number }>();
+
+async function withResponseCache<T>(key: string, producer: () => Promise<T>): Promise<T> {
+  const hit = responseCache.get(key);
+  if (hit && Date.now() - hit.ts < COMPLETED_ORDERS_TTL_MS) {
+    return hit.data as T;
+  }
+  const data = await producer();
+  responseCache.set(key, { data, ts: Date.now() });
+  return data;
+}
+
+async function fetchCompletedOrdersUncached(
+  range: ProfitDateRange,
+  shopId?: number,
+): Promise<FetchedOrder[]> {
+  const { startDate, endDate } = range;
   console.log("[fetchCompletedOrders] start");
 
   // Convert WIB calendar-date range to UTC DATETIME literals so SQL filters
@@ -685,6 +736,13 @@ async function computeTotalAdCostSafely(
 export async function getProfitSummary(
   params: ProfitQueryParams,
 ): Promise<ProfitSummaryResponse> {
+  const key = `summary|${params.startDate}|${params.endDate}|${params.shopId ?? 'all'}`;
+  return withResponseCache(key, () => getProfitSummaryUncached(params));
+}
+
+async function getProfitSummaryUncached(
+  params: ProfitQueryParams,
+): Promise<ProfitSummaryResponse> {
   const { startDate, endDate, shopId } = params;
 
   // Compute ads cost BEFORE checking orders.length (Requirement 1.4)
@@ -925,6 +983,13 @@ export async function getOrderProfitList(
 export async function getShopPerformance(
   params: Omit<ProfitQueryParams, "shopId"> & { sortBy?: string },
 ): Promise<ShopPerformanceResponse> {
+  const key = `shops|${params.startDate}|${params.endDate}|${params.sortBy ?? 'revenue'}`;
+  return withResponseCache(key, () => getShopPerformanceUncached(params));
+}
+
+async function getShopPerformanceUncached(
+  params: Omit<ProfitQueryParams, "shopId"> & { sortBy?: string },
+): Promise<ShopPerformanceResponse> {
   const { startDate, endDate, sortBy } = params;
 
   const orders = await fetchOrdersInRange(startDate, endDate);
@@ -1019,6 +1084,13 @@ export async function getShopPerformance(
  * Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 8.4, 15.1, 15.2
  */
 export async function getProductPerformance(
+  params: ProfitQueryParams & { groupBy?: GroupByLevel; sortBy?: string },
+): Promise<ProductPerformanceResponse> {
+  const key = `products|${params.startDate}|${params.endDate}|${params.shopId ?? 'all'}|${params.groupBy ?? 'msku'}|${params.sortBy ?? 'netProfit'}`;
+  return withResponseCache(key, () => getProductPerformanceUncached(params));
+}
+
+async function getProductPerformanceUncached(
   params: ProfitQueryParams & { groupBy?: GroupByLevel; sortBy?: string },
 ): Promise<ProductPerformanceResponse> {
   const { startDate, endDate, shopId, groupBy = "msku", sortBy } = params;

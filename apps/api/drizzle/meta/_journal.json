@@ -99,6 +99,13 @@
       "when": 1780038100730,
       "tag": "0027_fresh_mephisto",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "5",
+      "when": 1780200000000,
+      "tag": "0030_user_auth",
+      "breakpoints": true
     }
   ]
 }

@@ -5,6 +5,9 @@
  * and error handling for a single shop's expense computation.
  */
 
+// Set auth env vars before any import loads config/env.ts
+import "../../modules/auth/__tests__/helpers/auth-env-setup";
+
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 import { getShopExpense, readCache, upsertCache } from "../ads-expense.service";
 import * as shopeeAds from "../shopee-ads";
