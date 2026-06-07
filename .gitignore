@@ -1,53 +1,67 @@
-# dependencies (bun install)
-node_modules
+# ── Dependencies ──────────────────────────────────────────────
+node_modules/
 
-# output
-out
-dist
+# ── Build output ──────────────────────────────────────────────
+out/
+dist/
+build/
 *.tgz
 
-# code coverage
-coverage
+# ── Code coverage ─────────────────────────────────────────────
+coverage/
 *.lcov
 
-# logs
-logs
-_.log
-report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
+# ── Logs ──────────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
-# dotenv environment variable files
+# ── Environment variables (RAHASIA — JANGAN di-commit) ────────
 .env
+.env.*
+!.env.example
 .env.development.local
 .env.test.local
 .env.production.local
 .env.local
 
-# caches
+# ── Caches & build info ───────────────────────────────────────
 .eslintcache
-.cache
+.cache/
 *.tsbuildinfo
+.vite/
 
-# IntelliJ based IDEs
-.idea
-
-# Finder (MacOS) folder config
+# ── Editor / OS ───────────────────────────────────────────────
+.idea/
+.vscode/
 .DS_Store
+Thumbs.db
 
-.kiro
-.vscode
+# ── Kiro / referensi internal ─────────────────────────────────
+.kiro/
+referensi_api/
+api_logistik.md
 
-# Local debugging and helper scripts
+# ── Local debugging & helper scripts (apps/api) ───────────────
 apps/api/check-*.ts
 apps/api/migrate-*.ts
 apps/api/create-*.ts
 apps/api/debug-*.ts
+apps/api/diag-*.ts
+apps/api/backfill-*.ts
 apps/api/trigger-*.ts
 apps/api/fix-*.ts
 apps/api/test-*.ts
 apps/api/test-output.txt
+apps/api/.verify_build/
 check-orders.ps1
-referensi_api/
 
-# Order JSON dump files
+# ── Database dumps / backup (RAHASIA — berisi data asli) ──────
+*.sql
+!apps/api/drizzle/**/*.sql
 rts_orders.json
 temp_orders.json
+*_orders.json

@@ -185,12 +185,18 @@ export async function fetchApi<T = any>(
 ): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     ...options,
   });
 
   const data = await res.json();
 
   if (!res.ok) {
+    // Dispatch session-expired event on 401 for any non-login path (Req 4.5, 10.2).
+    // Skipped for /auth/login to avoid a redirect loop on bad credentials.
+    if (res.status === 401 && path !== '/auth/login') {
+      window.dispatchEvent(new CustomEvent('wms.session-expired'));
+    }
     throw new ApiError(res.status, data.message || data.error || `API error ${res.status}`);
   }
 

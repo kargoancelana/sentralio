@@ -2,6 +2,7 @@ import { db } from "../db/client";
 import { shopeeOrders, shopeeOrderItems } from "../db/schema";
 import { getShopeeOrderList, getShopeeOrderDetails } from "./shopee-raw";
 import { eq } from "drizzle-orm";
+import { aggregateOrderItems, collectRawItems } from "./order-items.util";
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -242,41 +243,26 @@ export async function syncShopeeOrdersIncremental(
           await db.insert(shopeeOrders).values(orderPayload);
         }
 
-        // Upsert order items race-safely. Old approach was DELETE-then-INSERT
-        // which is non-atomic: between DELETE and INSERT, escrow-sync.heal can
-        // observe an empty `shopee_order_items` for this order_sn and start
-        // inserting its own items, causing duplicates after order-sync's
-        // INSERT runs. Now we use INSERT ... ON DUPLICATE KEY UPDATE which
-        // depends on the UNIQUE(order_sn, item_id, model_id) constraint to
-        // prevent duplicates at the DB level.
+        // Upsert order items race-safely using INSERT ... ON DUPLICATE KEY UPDATE
+        // against UNIQUE(order_sn, item_id, model_id).
         //
-        // Edge case: if Shopee removed an item from the order (rare), it will
-        // remain stale in DB. We accept that trade-off because the consequence
-        // (one stale orphan row) is far less harmful than the duplicate-row
-        // bug, and Shopee almost never removes items from existing orders.
-        // Fallback: if top-level item_list is empty, extract from package_list[].item_list
-        let itemList: any[] = order.item_list || [];
-        if (itemList.length === 0 && order.package_list?.length > 0) {
-          for (const pkg of order.package_list) {
-            const pkgItems = pkg?.item_list || [];
-            for (const pkgItem of pkgItems) {
-              itemList.push(pkgItem);
-            }
-          }
-        }
-        if (itemList.length > 0) {
-          for (const item of itemList) {
+        // CRITICAL: Shopee can return multiple rows in item_list that share the
+        // same (item_id, model_id) — e.g. the same variant split across promo
+        // tiers/packages (3 pcs + 2 pcs = 5 pcs). Those rows MUST be aggregated
+        // (qty summed) before insert; otherwise onDuplicateKeyUpdate overwrites
+        // qty and a 5-pcs order is stored as 2. See order-items.util.ts.
+        const aggregatedItems = aggregateOrderItems(collectRawItems(order));
+        if (aggregatedItems.length > 0) {
+          for (const item of aggregatedItems) {
             const itemPayload = {
               orderSn: order.order_sn,
-              itemId: item.item_id ? String(item.item_id) : null,
-              modelId: item.model_id ? String(item.model_id) : null,
-              itemName: item.item_name || "—",
-              modelName: item.model_name || null,
-              modelSku: item.model_sku || null,
-              qty: item.model_quantity_purchased || item.quantity_purchased || 1,
-              itemPrice: item.model_discounted_price
-                ? Math.round(item.model_discounted_price)
-                : Math.round(item.model_original_price || 0),
+              itemId: item.itemId,
+              modelId: item.modelId,
+              itemName: item.itemName,
+              modelName: item.modelName,
+              modelSku: item.modelSku,
+              qty: item.qty,
+              itemPrice: item.itemPrice,
             };
             await db
               .insert(shopeeOrderItems)

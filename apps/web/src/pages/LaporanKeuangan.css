@@ -113,10 +113,11 @@
   border-bottom-color: var(--accent);
 }
 
-/* Stats Grid */
+/* Stats Grid — uniform cards, auto-fill so every card is the same size and
+   rows wrap cleanly instead of leaving a lone card hanging. */
 .laporan-stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 16px;
   margin-bottom: 24px;
 }
@@ -125,7 +126,11 @@
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 20px;
+  padding: 18px 20px;
+  min-height: 92px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .laporan-stat-label {
@@ -152,31 +157,86 @@
   color: var(--error);
 }
 
-/* Breakdown Cards */
+/* Section label above a grouped set of cards */
+.laporan-section-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text4);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 4px 0 12px;
+}
+
+/* Breakdown cards — SAME visual treatment as stat cards (uniform size),
+   just a slightly smaller value to signal secondary hierarchy. */
 .laporan-breakdown {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 12px;
+  gap: 16px;
   margin-bottom: 24px;
 }
 
 .laporan-breakdown-card {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 16px;
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  min-height: 92px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .laporan-breakdown-label {
   font-size: 0.75rem;
+  font-weight: 500;
   color: var(--text3);
-  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
 }
 
 .laporan-breakdown-value {
-  font-size: 1.125rem;
-  font-weight: 600;
+  font-size: 1.25rem;
+  font-weight: 700;
   color: var(--text1);
+  line-height: 1.2;
+}
+
+/* Skeleton loading card */
+.laporan-skel-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  min-height: 92px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+}
+.laporan-skel-line {
+  height: 10px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--bg3) 25%, var(--bg4) 37%, var(--bg3) 63%);
+  background-size: 400% 100%;
+  animation: laporanShimmer 1.2s ease-in-out infinite;
+}
+.laporan-skel-line.short { width: 50%; }
+.laporan-skel-line.tall { height: 22px; width: 70%; }
+@keyframes laporanShimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* Subtle "updating" chip shown while refetching with stale data on screen */
+.laporan-updating {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--text3);
+  margin-bottom: 12px;
 }
 
 /* Warning Badge */
@@ -404,16 +464,7 @@
 }
 
 /* Responsive */
-@media (max-width: 900px) {
-  .laporan-stats {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
 @media (max-width: 640px) {
-  .laporan-stats {
-    grid-template-columns: 1fr;
-  }
   .laporan-filters {
     flex-direction: column;
     align-items: stretch;

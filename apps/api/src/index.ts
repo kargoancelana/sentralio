@@ -1,7 +1,7 @@
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
 import { rateLimit } from "elysia-rate-limit";
-import { eq } from "drizzle-orm";
+import { eq, lt, sql } from "drizzle-orm";
 import { env } from "./config/env";
 import { productRoutes } from "./modules/product/product.route";
 import { shopeeRoutes } from "./modules/shopee/shopee.route";
@@ -16,10 +16,14 @@ import { masterPackingCostRoutes } from "./modules/master/packing-cost/master-pa
 import { packingCostRoutes } from "./modules/packing-cost/packing-cost.route";
 import { profitRoutes } from "./modules/profit/profit.route";
 import { db } from "./db/client";
-import { shopeeCredentials } from "./db/schema";
+import { shopeeCredentials, revokedSessions, failedLoginAttempts } from "./db/schema";
 import { ensureAllTokensFresh } from "./services/shopee-auth";
 import { backgroundSyncService } from "./services/background-sync.service";
 import { EscrowSyncService } from "./services/escrow-sync.service";
+import { authPublicRoutes, authProtectedRoutes } from "./modules/auth/auth.route";
+import { authMiddleware } from "./modules/auth/auth.middleware";
+import { originMiddleware } from "./modules/auth/origin.middleware";
+import { usersRoutes } from "./modules/users/users.route";
 
 const app = new Elysia()
   .use(cors({
@@ -60,18 +64,44 @@ const app = new Elysia()
   .get("/", () => ({
     message: "wms-sync API is running",
   }))
+
+  // ─── Public routes: no auth required ─────────────────────────────────────
+  // Must be mounted BEFORE originMiddleware + authMiddleware so they are
+  // accessible without a session (Req 4.3, 5.4).
   .use(healthRoutes)
-  .use(hppRoutes)
-  .use(masterPackingCostRoutes)
-  .use(packingCostRoutes)
-  .use(profitRoutes)
-  .use(productRoutes)
-  .use(shopeeRoutes)
-  .use(shopeeAuthRoutes)
-  .use(masterRoutes)
+  .use(authPublicRoutes)   // POST /auth/login
+
+  // ─── Protected routes: require valid session ──────────────────────────────
+  // Apply Origin_Middleware then Auth_Middleware to all routes below.
+  .use(originMiddleware)
+  .use(authMiddleware)
+
+  // Auth protected routes (logout, me, renew) — Req 5.5
+  .use(authProtectedRoutes)
+
+  // User management — Req 5.9 (user_management feature, admin only)
+  .use(usersRoutes)
+
+  // Order management — orders / cetak_label features (staff + admin)
   .use(orderRoutes)
   .use(labelRoutes)
   .use(orderDetailRoutes)
+
+  // Master data / products — master_produk / produk_channel features (admin only)
+  .use(masterRoutes)
+  .use(productRoutes)
+
+  // Cost management (HPP / packing costs) — master_produk feature (admin only)
+  .use(hppRoutes)
+  .use(masterPackingCostRoutes)
+  .use(packingCostRoutes)
+
+  // Financial reports — laporan_keuangan feature (admin only)
+  .use(profitRoutes)
+
+  // Shopee integration — integrasi_toko feature (admin only)
+  .use(shopeeRoutes)
+  .use(shopeeAuthRoutes)
 
   // ─── Background Sync Status & Control ────────────────────────
   .get("/sync/status", () => {
@@ -250,6 +280,30 @@ setInterval(async () => {
     }
   } catch (err: any) {
     console.error(`[CRON] Token refresh error: ${err.message}`);
+  }
+
+  // ─── Session cleanup (Req 5.10, 11.4) ────────────────────────────────
+  // Delete expired revoked_sessions rows (jti rows whose JWT has already
+  // expired — no longer needed in the denylist).
+  // Delete old failed_login_attempts rows (> 24h old — no longer relevant
+  // for the 15-minute sliding window lockout check).
+  try {
+    const now = new Date();
+
+    const [deletedSessions] = await db
+      .delete(revokedSessions)
+      .where(lt(revokedSessions.expiresAt, now));
+
+    const [deletedAttempts] = await db
+      .delete(failedLoginAttempts)
+      .where(lt(failedLoginAttempts.attemptedAt, sql`NOW() - INTERVAL 24 HOUR`));
+
+    console.log(
+      `[CRON] Session cleanup: removed ${(deletedSessions as any)?.affectedRows ?? 0} expired revoked_sessions, ` +
+      `${(deletedAttempts as any)?.affectedRows ?? 0} old failed_login_attempts`,
+    );
+  } catch (err: any) {
+    console.error(`[CRON] Session cleanup error: ${err.message}`);
   }
 }, TOKEN_REFRESH_INTERVAL);
 console.log(`[CRON] Token auto-refresh scheduled every ${TOKEN_REFRESH_INTERVAL / 3600000}h`);

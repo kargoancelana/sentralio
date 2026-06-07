@@ -18,6 +18,7 @@ import { db } from "../db/client";
 import { shopeeCredentials, shopeeOrders, shopeeOrderItems, shopeeOrderFees, syncState } from "../db/schema";
 import { getEscrowList, getEscrowDetail, getEscrowDetailBatch, getShopeeOrderDetails } from "./shopee-raw";
 import { eq, and, inArray } from "drizzle-orm";
+import { aggregateOrderItems, collectRawItems } from "./order-items.util";
 
 // ─── Interfaces ───────────────────────────────────────────────
 
@@ -278,15 +279,9 @@ export class EscrowSyncService {
               throw insertErr;
             }
 
-            // Insert items (gather from item_list or package_list[].item_list).
-            // We only INSERT here (no DELETE) because race-safe path: if the
-            // order was just inserted by order-sync, it already wrote items.
-            let itemList: any[] = order.item_list || [];
-            if (itemList.length === 0 && order.package_list?.length > 0) {
-              for (const pkg of order.package_list) {
-                for (const it of pkg?.item_list ?? []) itemList.push(it);
-              }
-            }
+            // Insert items (aggregated by item_id+model_id so duplicate variant
+            // rows have their qty summed — see order-items.util.ts).
+            const aggregated = aggregateOrderItems(collectRawItems(order));
             // Only write items if the order had no items yet (avoid duplicates).
             const existingItems = await db
               .select({ id: shopeeOrderItems.id })
@@ -294,19 +289,17 @@ export class EscrowSyncService {
               .where(eq(shopeeOrderItems.orderSn, order.order_sn))
               .limit(1);
             if (existingItems.length === 0) {
-              for (const item of itemList) {
+              for (const item of aggregated) {
                 try {
                   await db.insert(shopeeOrderItems).values({
                     orderSn: order.order_sn,
-                    itemId: item.item_id ? String(item.item_id) : null,
-                    modelId: item.model_id ? String(item.model_id) : null,
-                    itemName: item.item_name || "—",
-                    modelName: item.model_name || null,
-                    modelSku: item.model_sku || null,
-                    qty: item.model_quantity_purchased || item.quantity_purchased || 1,
-                    itemPrice: item.model_discounted_price
-                      ? Math.round(item.model_discounted_price)
-                      : Math.round(item.model_original_price || 0),
+                    itemId: item.itemId,
+                    modelId: item.modelId,
+                    itemName: item.itemName,
+                    modelName: item.modelName,
+                    modelSku: item.modelSku,
+                    qty: item.qty,
+                    itemPrice: item.itemPrice,
                   });
                 } catch (itemErr: any) {
                   // Race with order-sync inserting items concurrently — just skip
