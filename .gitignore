@@ -56,6 +56,8 @@ apps/api/trigger-*.ts
 apps/api/fix-*.ts
 apps/api/test-*.ts
 apps/api/test-output.txt
+apps/api/test-full-output.txt
+apps/api/investigate-results.txt
 apps/api/.verify_build/
 check-orders.ps1
 
