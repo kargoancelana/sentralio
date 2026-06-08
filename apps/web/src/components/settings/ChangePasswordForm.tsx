@@ -120,7 +120,7 @@ export function ChangePasswordForm() {
   }
 
   return (
-    <section className="card" style={{ padding: '24px', maxWidth: '460px' }}>
+    <section className="card" style={{ padding: '24px', maxWidth: '460px', margin: '0 auto' }}>
       <h2 style={{ fontSize: '1.05rem', fontWeight: 600, color: 'var(--text1)', marginBottom: '4px' }}>
         Ubah Password
       </h2>

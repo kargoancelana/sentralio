@@ -218,7 +218,7 @@ export function UsersAdmin() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ maxWidth: '960px' }}>
+    <div>
       <h2 style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text1)', marginBottom: '4px' }}>
         Manajemen Pengguna
       </h2>

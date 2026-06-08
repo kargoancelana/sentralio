@@ -56,16 +56,16 @@ function DisconnectModal({ shop, onClose, onConfirm }: any) {
       {shop && (
         <div>
           <div style={{
-            background: '#FEF2F2', border: '1px solid #FECACA',
+            background: 'var(--danger-bg, rgba(220,38,38,0.1))', border: '1px solid var(--error)',
             borderRadius: 10, padding: '14px 16px', marginBottom: 16,
             display: 'flex', gap: 12, alignItems: 'flex-start',
           }}>
-            <AlertTriangle size={24} style={{ color: '#DC2626', flexShrink: 0 }} />
+            <AlertTriangle size={24} style={{ color: 'var(--error)', flexShrink: 0 }} />
             <div>
-              <div style={{ fontSize: 13.5, fontWeight: 600, color: '#991B1B', marginBottom: 4 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--error)', marginBottom: 4 }}>
                 Peringatan: Aksi Berisiko Tinggi
               </div>
-              <div style={{ fontSize: 13, color: '#B91C1C', lineHeight: 1.55 }}>
+              <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.55 }}>
                 Memutus koneksi akan menghapus token akses dan menghentikan semua sinkronisasi
                 otomatis untuk toko ini. Data produk channel yang sudah tersimpan tidak akan ikut terhapus.
               </div>
@@ -109,7 +109,7 @@ function ShopCard({ shop, onTest, onDisconnect, onSync, onReauth, testing, synci
         </div>
         <div className="shop-meta-row">
           <svg width="13" height="13" fill="none" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" strokeWidth="1.5"/></svg>
-          <span>Token exp: <span style={{ color: shop.is_expired ? '#DC2626' : 'var(--text3)' }}>{new Date(shop.expires_at).toLocaleDateString('id-ID')}</span></span>
+          <span>Token exp: <span style={{ color: shop.is_expired ? 'var(--error)' : 'var(--text3)' }}>{new Date(shop.expires_at).toLocaleDateString('id-ID')}</span></span>
         </div>
       </div>
 
@@ -267,12 +267,12 @@ export function IntegrasiShopee() {
         </div>
         <div className="stat-card">
           <div className="stat-label">Toko Aktif</div>
-          <div className="stat-value" style={{ color: '#16A34A' }}>{active}</div>
+          <div className="stat-value" style={{ color: 'var(--success)' }}>{active}</div>
           <div className="stat-sub">Token valid</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Token Kadaluwarsa</div>
-          <div className="stat-value" style={{ color: expired > 0 ? '#DC2626' : 'var(--text1)' }}>{expired}</div>
+          <div className="stat-value" style={{ color: expired > 0 ? 'var(--error)' : 'var(--text1)' }}>{expired}</div>
           <div className="stat-sub">{expired > 0 ? 'Perlu re-authorisasi segera' : 'Semua token OK'}</div>
         </div>
         <div className="stat-card">

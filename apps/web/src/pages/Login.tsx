@@ -106,11 +106,14 @@ export function LoginPage() {
       }}
     >
       <div className="card" style={{ width: '100%', maxWidth: '400px', padding: '40px 32px' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+          <img src="/logo.png" alt="Hubsentra" style={{ height: '56px', width: 'auto' }} />
+        </div>
         <h1 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: '8px', color: 'var(--text1)' }}>
           Masuk
         </h1>
         <p style={{ fontSize: '0.9rem', color: 'var(--text3)', marginBottom: '28px' }}>
-          Masuk ke akun WMS Anda
+          Masuk ke akun Hubsentra Anda
         </p>
 
         <form onSubmit={handleSubmit} noValidate>
