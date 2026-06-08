@@ -216,6 +216,9 @@ export async function syncShopeeOrdersIncremental(
           buyerUsername: order.buyer_username || "",
           shippingCarrier,
           trackingNumber,
+          // Shopee ship-by deadline (unix seconds). 0 = order is held ("tertunda"):
+          // READY_TO_SHIP but not yet processable. Non-zero = genuinely shippable.
+          shipByDate: order.ship_by_date ?? 0,
           payTime: order.pay_time ? new Date(order.pay_time * 1000) : null,
           createTime: new Date(order.create_time * 1000),
           updatedAt: new Date(),

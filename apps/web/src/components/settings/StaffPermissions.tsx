@@ -14,12 +14,23 @@ import { Icon } from '../ui/Icon';
 
 /** Friendly labels + descriptions for configurable features. */
 const FEATURE_META: Record<string, { label: string; desc: string; icon: string }> = {
-  orders: { label: 'Pesanan Saya', desc: 'Lihat dan proses pesanan', icon: 'orders' },
+  orders: { label: 'Pesanan Saya', desc: 'Lihat, proses pesanan & cetak label', icon: 'orders' },
   cetak_label: { label: 'Cetak Label', desc: 'Cetak label pengiriman', icon: 'orders' },
   master_produk: { label: 'Master Produk', desc: 'Kelola data master produk & HPP', icon: 'master' },
   produk_channel: { label: 'Produk Channel', desc: 'Kelola listing produk channel', icon: 'products' },
   laporan_keuangan: { label: 'Laporan Keuangan', desc: 'Lihat laporan laba rugi', icon: 'reports' },
 };
+
+/**
+ * Features that are not shown as their own row because they're an inseparable
+ * part of another feature. `cetak_label` lives inside the Pesanan Saya page
+ * (the batch "Cetak Label" action), so it's folded into the `orders` toggle:
+ * flipping Pesanan Saya flips cetak_label to match.
+ */
+const HIDDEN_FEATURES = new Set<string>(['cetak_label']);
+
+/** Features that should mirror the state of `orders` when it's toggled. */
+const ORDERS_LINKED_FEATURES = ['cetak_label'] as const;
 
 interface Row {
   feature: string;
@@ -58,18 +69,23 @@ export function StaffPermissions() {
     if (!current) return;
     const nextEnabled = !current.enabled;
 
+    // `cetak_label` is part of the Pesanan Saya page, so the `orders` toggle
+    // controls both. Flipping orders flips its linked features to match.
+    const linked = feature === 'orders' ? [...ORDERS_LINKED_FEATURES] : [];
+    const affected = new Set<string>([feature, ...linked]);
+
     // Optimistic update.
-    setRows((prev) => prev.map((r) => (r.feature === feature ? { ...r, enabled: nextEnabled } : r)));
+    setRows((prev) => prev.map((r) => (affected.has(r.feature) ? { ...r, enabled: nextEnabled } : r)));
     setSavingFeature(feature);
     setError(null);
 
     try {
-      const payload = rows.map((r) => (r.feature === feature ? { ...r, enabled: nextEnabled } : r));
+      const payload = rows.map((r) => (affected.has(r.feature) ? { ...r, enabled: nextEnabled } : r));
       const res = await api.permissionsUpdate(payload);
       setRows(res.permissions);
     } catch {
       // Revert on error.
-      setRows((prev) => prev.map((r) => (r.feature === feature ? { ...r, enabled: current.enabled } : r)));
+      setRows((prev) => prev.map((r) => (affected.has(r.feature) ? { ...r, enabled: current.enabled } : r)));
       setError('Gagal menyimpan perubahan. Coba lagi.');
     } finally {
       setSavingFeature(null);
@@ -109,7 +125,7 @@ export function StaffPermissions() {
       )}
 
       <div className="card" style={{ padding: '4px 0' }}>
-        {rows.map((row, idx) => {
+        {rows.filter((row) => !HIDDEN_FEATURES.has(row.feature)).map((row, idx) => {
           const meta = FEATURE_META[row.feature] ?? {
             label: row.feature,
             desc: '',

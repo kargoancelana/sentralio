@@ -741,6 +741,20 @@ class BackgroundSyncService {
                 finalStatus = 'SHIPPED';
               }
 
+              // A "tertunda" (held) order flips to shippable WITHOUT a status
+              // change: it stays READY_TO_SHIP and only ship_by_date goes from 0
+              // to a real timestamp. So we must refresh ship_by_date even when
+              // the status is unchanged, otherwise the "Tertunda" badge would
+              // never clear via background sync (only via manual sync).
+              const apiShipByDate = order.ship_by_date ?? existing.shipByDate;
+              if (finalStatus === oldStatus && apiShipByDate !== existing.shipByDate) {
+                await db.update(shopeeOrders)
+                  .set({ shipByDate: apiShipByDate, updatedAt: new Date() })
+                  .where(eq(shopeeOrders.orderSn, order.order_sn));
+                console.log(`[background-sync] Job "${jobName}": 🔄 ${order.order_sn} ship_by_date ${existing.shipByDate} → ${apiShipByDate} (status unchanged)`);
+                totalUpdated++;
+              }
+
               // Only update if status actually changed AND is not a downgrade
               // CRITICAL: CANCELLED has priority 99, so it will always override PROCESSED
               if (finalStatus !== oldStatus) {
@@ -763,6 +777,7 @@ class BackgroundSyncService {
                       orderStatus: finalStatus,
                       shippingCarrier,
                       totalAmount: order.total_amount ? Math.round(order.total_amount) : existing.totalAmount,
+                      shipByDate: order.ship_by_date ?? existing.shipByDate,
                       updatedAt: new Date(),
                     })
                     .where(eq(shopeeOrders.orderSn, order.order_sn));
