@@ -90,11 +90,9 @@ interface SidebarProps {
   active: string;
   collapsed: boolean;
   setCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
-  dark: boolean;
-  toggleDark: () => void;
 }
 
-export function Sidebar({ active, collapsed, setCollapsed, dark, toggleDark }: SidebarProps) {
+export function Sidebar({ active, collapsed, setCollapsed }: SidebarProps) {
   const auth = useAuth();
   const { state } = auth;
 
@@ -190,10 +188,6 @@ export function Sidebar({ active, collapsed, setCollapsed, dark, toggleDark }: S
 
       {/* Footer */}
       <div className="sb-footer">
-        <button className="nav-btn" onClick={toggleDark} title="Toggle theme">
-          <Icon name={dark ? 'sun' : 'moon'} size={16} />
-          {!collapsed && <span className="nav-label">{dark ? 'Light Mode' : 'Dark Mode'}</span>}
-        </button>
         <button className="nav-btn" title={collapsed ? 'Help' : undefined}>
           <Icon name="help" size={16} />
           {!collapsed && <span className="nav-label">Bantuan</span>}
