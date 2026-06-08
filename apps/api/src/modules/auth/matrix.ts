@@ -42,11 +42,31 @@ const MATRIX: Record<Role, Record<Feature, boolean>> = {
 };
 
 /**
+ * Pluggable resolver for staff feature access. Defaults to the static matrix
+ * (used in tests and before the dynamic permissions service registers itself).
+ * The permissions service overrides this at startup so staff access reflects
+ * admin-configured toggles. This indirection avoids a circular import between
+ * matrix.ts and permissions.service.ts.
+ */
+let staffResolver: (feature: Feature) => boolean = (feature) =>
+  MATRIX.staff[feature] ?? false;
+
+/** Register the dynamic staff resolver (called by permissions.service). */
+export function registerStaffResolver(resolver: (feature: Feature) => boolean): void {
+  staffResolver = resolver;
+}
+
+/**
  * Returns true if the given role is allowed to access the given feature.
+ *
+ * Admin always has full access. Staff access is resolved via the registered
+ * staff resolver (dynamic, admin-configurable; defaults to the static matrix).
+ *
  * Implements Requirement 5.10 and 11.1.
  */
 export function decide(role: Role, feature: Feature): boolean {
-  return MATRIX[role]?.[feature] ?? false;
+  if (role === 'admin') return MATRIX.admin[feature] ?? false;
+  return staffResolver(feature);
 }
 
 /**
@@ -54,7 +74,5 @@ export function decide(role: Role, feature: Feature): boolean {
  * Used to filter sidebar navigation entries per Requirement 11.5.
  */
 export function visibleNavFor(role: Role): Feature[] {
-  const row = MATRIX[role];
-  if (!row) return [];
-  return FEATURES.filter((feature) => row[feature]);
+  return FEATURES.filter((feature) => decide(role, feature));
 }

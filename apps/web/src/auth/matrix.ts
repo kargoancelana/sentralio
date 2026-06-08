@@ -58,3 +58,20 @@ export function visibleNavFor(role: Role): Feature[] {
   if (!row) return [];
   return FEATURES.filter((feature) => row[feature]);
 }
+
+/**
+ * Returns the effective list of allowed features for a user. Prefers the
+ * backend-provided `features` array (dynamic, admin-configurable staff
+ * permissions); falls back to the static matrix when absent (older sessions).
+ */
+export function effectiveFeatures(user: { role: Role; features?: string[] }): Set<Feature> {
+  if (Array.isArray(user.features)) {
+    return new Set(user.features.filter((f): f is Feature => (FEATURES as readonly string[]).includes(f)));
+  }
+  return new Set(visibleNavFor(user.role));
+}
+
+/** True if the user can access a feature, using effective (dynamic) features. */
+export function canAccess(user: { role: Role; features?: string[] }, feature: Feature): boolean {
+  return effectiveFeatures(user).has(feature);
+}

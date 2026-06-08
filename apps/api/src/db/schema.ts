@@ -288,3 +288,12 @@ export const revokedSessions = mysqlTable("revoked_sessions", {
 }, (t) => ({
   idxExpiresAt: index("idx_revoked_expires").on(t.expiresAt),
 }));
+
+// Configurable per-feature access for the `staff` role. Admin always has full
+// access (not represented here). One row per configurable feature key.
+// enabled: 1 = staff may access this feature, 0 = denied (403 on backend, hidden on frontend).
+export const staffPermissions = mysqlTable("staff_permissions", {
+  feature: varchar("feature", { length: 64 }).primaryKey(),
+  enabled: int("enabled").notNull().default(0), // 1=true, 0=false
+  updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+});

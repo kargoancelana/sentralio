@@ -25,6 +25,8 @@ import {
 } from './auth.service';
 import { authMiddleware } from './auth.middleware';
 import { buildClearCookie } from './cookie';
+import { FEATURES } from './matrix';
+import { decide } from './matrix';
 
 const COOKIE_NAME = 'wms_session';
 
@@ -85,6 +87,7 @@ export const authPublicRoutes = new Elysia({ prefix: '/auth' })
             email: result.user.email,
             name: result.user.name,
             role: result.user.role,
+            features: FEATURES.filter((f) => decide(result.user.role, f)),
           },
         };
 
@@ -175,6 +178,8 @@ export const authProtectedRoutes = new Elysia({ prefix: '/auth' })
       email: user.email,
       name: user.name,
       role: user.role,
+      // Effective feature access for this user (admin = all; staff = configured).
+      features: FEATURES.filter((f) => decide(user.role, f)),
     };
   })
 

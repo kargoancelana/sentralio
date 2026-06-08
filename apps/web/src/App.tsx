@@ -12,6 +12,7 @@ import { LaporanKeuangan } from './pages/LaporanKeuangan';
 import { LoginPage } from './pages/Login';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { RoleGate } from './auth/RoleGate';
+import { FeatureGate } from './auth/FeatureGate';
 import { Pengaturan } from './pages/Pengaturan';
 import './styles/globals.css';
 
@@ -33,11 +34,20 @@ function App() {
                 {/* Cetak Label shares the orders page */}
                 <Route path="/cetak-label" element={<PesananSaya />} />
 
-                {/* Admin-only routes */}
-                <Route element={<RoleGate allow={['admin']} />}>
+                {/* Configurable feature routes — gated by effective feature
+                    access so admin-granted staff permissions take effect. */}
+                <Route element={<FeatureGate feature="master_produk" />}>
                   <Route path="/produk/master" element={<MasterProduk />} />
+                </Route>
+                <Route element={<FeatureGate feature="produk_channel" />}>
                   <Route path="/produk/channel" element={<ProdukChannel />} />
+                </Route>
+                <Route element={<FeatureGate feature="laporan_keuangan" />}>
                   <Route path="/keuangan/laporan" element={<LaporanKeuangan />} />
+                </Route>
+
+                {/* Shopee integration stays admin-only (manages credentials). */}
+                <Route element={<RoleGate allow={['admin']} />}>
                   <Route path="/integrasi/shopee" element={<IntegrasiShopee />} />
                   <Route path="/integrasi/shopee/callback" element={<ShopeeCallback />} />
                 </Route>

@@ -378,4 +378,15 @@ export const api = {
     if (shopId) params.set('shop_id', String(shopId));
     return fetchApi(`/profit/deductions?${params}`);
   },
+
+  // Staff permissions (admin only)
+  permissionsList: () =>
+    fetchApi<{ ok: boolean; permissions: Array<{ feature: string; enabled: boolean }> }>(
+      '/auth/permissions',
+    ),
+  permissionsUpdate: (permissions: Array<{ feature: string; enabled: boolean }>) =>
+    fetchApi<{ ok: boolean; permissions: Array<{ feature: string; enabled: boolean }> }>(
+      '/auth/permissions',
+      { method: 'PUT', body: JSON.stringify({ permissions }) },
+    ),
 };

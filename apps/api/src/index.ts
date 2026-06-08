@@ -22,6 +22,9 @@ import { backgroundSyncService } from "./services/background-sync.service";
 import { EscrowSyncService } from "./services/escrow-sync.service";
 import { authPublicRoutes, authProtectedRoutes } from "./modules/auth/auth.route";
 import { authMiddleware } from "./modules/auth/auth.middleware";
+import { featureGuardMiddleware } from "./modules/auth/feature-guard.middleware";
+import { permissionsRoutes } from "./modules/auth/permissions.route";
+import { ensureStaffPermissionsLoaded } from "./modules/auth/permissions.service";
 import { originMiddleware } from "./modules/auth/origin.middleware";
 import { usersRoutes } from "./modules/users/users.route";
 
@@ -78,6 +81,13 @@ const app = new Elysia()
 
   // Auth protected routes (logout, me, renew) — Req 5.5
   .use(authProtectedRoutes)
+
+  // Staff permission configuration (admin only)
+  .use(permissionsRoutes)
+
+  // Centralized feature authorization (path-based) — enforces configurable
+  // staff permissions on the backend (403) for all feature routes below.
+  .use(featureGuardMiddleware)
 
   // User management — Req 5.9 (user_management feature, admin only)
   .use(usersRoutes)
@@ -233,6 +243,12 @@ const app = new Elysia()
   .listen(env.appPort);
 
 console.log(`Server running at http://${app.server?.hostname}:${app.server?.port}`);
+
+// Warm the staff-permissions cache so decide('staff', ...) is accurate from the
+// first request (otherwise the first reads fall back to compiled defaults).
+ensureStaffPermissionsLoaded()
+  .then(() => console.log("[STARTUP] Staff permissions cache loaded"))
+  .catch((err) => console.error(`[STARTUP] Failed to load staff permissions: ${err.message}`));
 
 // ─── Background Sync: Auto-sync orders from Shopee ───────────
 // Start background sync service after server is ready

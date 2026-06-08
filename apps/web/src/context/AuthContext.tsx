@@ -28,6 +28,8 @@ export interface PublicUser {
   email: string;
   name: string;
   role: 'admin' | 'staff';
+  /** Effective feature access for this user, provided by the backend (/me, /login). */
+  features?: string[];
 }
 
 export type AuthState =

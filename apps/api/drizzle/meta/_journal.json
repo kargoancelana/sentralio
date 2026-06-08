@@ -106,6 +106,13 @@
       "when": 1780200000000,
       "tag": "0030_user_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "5",
+      "when": 1780300000000,
+      "tag": "0032_staff_permissions",
+      "breakpoints": true
     }
   ]
 }

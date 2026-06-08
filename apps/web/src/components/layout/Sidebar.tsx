@@ -23,7 +23,7 @@ import { Link } from 'react-router-dom';
 import { Icon } from '../ui/Icon';
 import { Avatar } from '../ui/Avatar';
 import { useAuth } from '../../context/AuthContext';
-import { visibleNavFor, type Feature } from '../../auth/matrix';
+import { effectiveFeatures, type Feature } from '../../auth/matrix';
 
 /** 10-second timeout for the logout request (Req 3.2). */
 const LOGOUT_TIMEOUT_MS = 10_000;
@@ -103,6 +103,7 @@ export function Sidebar({ active, collapsed, setCollapsed, dark, toggleDark }: S
 
   const [logoutDisabled, setLogoutDisabled] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
 
   // ── Derive identity ──────────────────────────────────────────────────────
   const user = state.status === 'authenticated' ? state.user : null;
@@ -114,7 +115,7 @@ export function Sidebar({ active, collapsed, setCollapsed, dark, toggleDark }: S
   // When authenticated, hide nav entries the user's role cannot access.
   // When not yet authenticated, show nothing (loading / anonymous handled by ProtectedRoute).
   const visibleFeatures: Set<Feature> = user
-    ? new Set(visibleNavFor(user.role))
+    ? effectiveFeatures(user)
     : new Set<Feature>();
 
   // Build the filtered list; also strip orphaned section headers.
@@ -165,21 +166,114 @@ export function Sidebar({ active, collapsed, setCollapsed, dark, toggleDark }: S
   // ── Render ───────────────────────────────────────────────────────────────
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
-      {/* User identity (Req 3.1, 4.6) */}
+      {/* User identity (Req 3.1, 4.6) — clickable to open account menu (logout) */}
       <div
         className={`sb-user ${collapsed ? 'collapsed' : ''}`}
-        style={collapsed ? { justifyContent: 'center', padding: '15px 0 11px 0' } : {}}
+        style={{ position: 'relative', ...(collapsed ? { justifyContent: 'center', padding: '15px 0 11px 0' } : {}) }}
       >
-        {!collapsed && <Avatar initials={initials} color="#111827" size={34} />}
-        {!collapsed && (
-          <div className="sb-user-info">
-            <div className="sb-user-name">{primaryLabel}</div>
-            {roleLabel && <div className="sb-user-role">{roleLabel}</div>}
-          </div>
+        {state.status === 'authenticated' ? (
+          <button
+            type="button"
+            onClick={() => setShowUserMenu((v) => !v)}
+            aria-haspopup="menu"
+            aria-expanded={showUserMenu}
+            title={collapsed ? primaryLabel : 'Menu akun'}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: collapsed ? 0 : '10px',
+              flex: 1,
+              minWidth: 0,
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              font: 'inherit',
+              color: 'inherit',
+              textAlign: 'left',
+            }}
+          >
+            <Avatar initials={initials} color="#111827" size={34} />
+            {!collapsed && (
+              <div className="sb-user-info" style={{ minWidth: 0 }}>
+                <div className="sb-user-name">{primaryLabel}</div>
+                {roleLabel && <div className="sb-user-role">{roleLabel}</div>}
+              </div>
+            )}
+            {!collapsed && (
+              <span style={{ marginLeft: 'auto', color: 'var(--text3)', display: 'flex' }}>
+                <Icon name="menu" size={12} />
+              </span>
+            )}
+          </button>
+        ) : (
+          <>
+            {!collapsed && <Avatar initials={initials} color="#111827" size={34} />}
+            {!collapsed && (
+              <div className="sb-user-info">
+                <div className="sb-user-name">{primaryLabel}</div>
+                {roleLabel && <div className="sb-user-role">{roleLabel}</div>}
+              </div>
+            )}
+          </>
         )}
         <button className="ic-btn" onClick={() => setCollapsed(c => !c)} title="Toggle sidebar">
           <Icon name="menu" size={14} />
         </button>
+
+        {/* Account dropdown menu */}
+        {showUserMenu && state.status === 'authenticated' && (
+          <>
+            {/* click-away overlay */}
+            <div
+              onClick={() => setShowUserMenu(false)}
+              style={{ position: 'fixed', inset: 0, zIndex: 40 }}
+            />
+            <div
+              role="menu"
+              style={{
+                position: 'absolute',
+                top: 'calc(100% - 4px)',
+                left: collapsed ? '50%' : '12px',
+                transform: collapsed ? 'translateX(-50%)' : 'none',
+                minWidth: '180px',
+                background: 'var(--bg)',
+                border: '1px solid var(--border)',
+                borderRadius: '10px',
+                boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+                padding: '6px',
+                zIndex: 41,
+              }}
+            >
+              <button
+                role="menuitem"
+                onClick={() => {
+                  setShowUserMenu(false);
+                  setShowLogoutConfirm(true);
+                }}
+                disabled={logoutDisabled}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  width: '100%',
+                  padding: '9px 10px',
+                  border: 'none',
+                  borderRadius: '7px',
+                  background: 'none',
+                  cursor: 'pointer',
+                  font: 'inherit',
+                  fontSize: '0.875rem',
+                  color: 'var(--danger, #dc2626)',
+                  textAlign: 'left',
+                }}
+              >
+                <Icon name="logout" size={16} />
+                <span>{logoutDisabled ? 'Keluar…' : 'Keluar'}</span>
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Nav — filtered by role (Req 5.6, 11.5) */}
@@ -223,22 +317,6 @@ export function Sidebar({ active, collapsed, setCollapsed, dark, toggleDark }: S
           <Icon name="help" size={16} />
           {!collapsed && <span className="nav-label">Bantuan</span>}
         </button>
-
-        {/* Logout control — only when authenticated (Req 3.1, 3.2, 3.6) */}
-        {state.status === 'authenticated' && (
-          <button
-            className="nav-btn"
-            onClick={() => setShowLogoutConfirm(true)}
-            disabled={logoutDisabled}
-            title={collapsed ? 'Keluar' : undefined}
-            aria-disabled={logoutDisabled}
-          >
-            <Icon name="logout" size={16} />
-            {!collapsed && (
-              <span className="nav-label">{logoutDisabled ? 'Keluar…' : 'Keluar'}</span>
-            )}
-          </button>
-        )}
       </div>
 
       {/* Logout confirmation modal */}

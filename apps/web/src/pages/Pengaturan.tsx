@@ -12,9 +12,10 @@ import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Icon } from '../components/ui/Icon';
 import { ChangePasswordForm } from '../components/settings/ChangePasswordForm';
+import { StaffPermissions } from '../components/settings/StaffPermissions';
 import { UsersAdmin } from './UsersAdmin';
 
-type Tab = 'password' | 'users';
+type Tab = 'password' | 'users' | 'permissions';
 
 export function Pengaturan() {
   const { state } = useAuth();
@@ -25,6 +26,7 @@ export function Pengaturan() {
   const tabs: { id: Tab; label: string; icon: string; show: boolean }[] = [
     { id: 'password', label: 'Ubah Password', icon: 'lock', show: true },
     { id: 'users', label: 'Manajemen Pengguna', icon: 'users', show: isAdmin },
+    { id: 'permissions', label: 'Akses Staff', icon: 'settings', show: isAdmin },
   ];
 
   return (
@@ -68,6 +70,7 @@ export function Pengaturan() {
         {/* Tab content */}
         {tab === 'password' && <ChangePasswordForm />}
         {tab === 'users' && isAdmin && <UsersAdmin />}
+        {tab === 'permissions' && isAdmin && <StaffPermissions />}
       </div>
     </div>
   );
