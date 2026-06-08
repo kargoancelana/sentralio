@@ -278,6 +278,24 @@ export async function getUserPublicById(
   return getUserById(id, db);
 }
 
+/**
+ * Permanently delete a user by id. Related revoked_sessions rows are removed
+ * automatically via ON DELETE CASCADE. Returns the deleted user's public
+ * fields, or null if the user did not exist.
+ *
+ * Caller is responsible for guard checks (cannot delete self / last admin).
+ */
+export async function deleteUser(
+  id: number,
+  db: DrizzleDb = defaultDb,
+): Promise<UserListItem | null> {
+  const existing = await getUserById(id, db);
+  if (!existing) return null;
+
+  await db.delete(users).where(eq(users.id, id));
+  return existing;
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // Internal helpers
 // ───────────────────────────────────────────────────────────────────────────

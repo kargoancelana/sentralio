@@ -13,6 +13,7 @@
 import { type FormEvent, useEffect, useState } from 'react';
 import { fetchApi, ApiError } from '../lib/api';
 import { PasswordInput } from '../components/ui/PasswordInput';
+import { Icon } from '../components/ui/Icon';
 import { useAuth } from '../context/AuthContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -63,6 +64,10 @@ export function UsersAdmin() {
   const [togglingId, setTogglingId] = useState<number | null>(null);
   const [confirmTarget, setConfirmTarget] = useState<User | null>(null);
   const [toggleError, setToggleError] = useState<string | null>(null);
+
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
@@ -180,6 +185,33 @@ export function UsersAdmin() {
       setToggleError('Terjadi kesalahan jaringan. Silakan coba lagi.');
     } finally {
       setTogglingId(null);
+    }
+  }
+
+  async function performDelete(user: User) {
+    setDeletingId(user.id);
+    setDeleteError(null);
+
+    try {
+      const res = await fetch(`/api/users/${user.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      });
+
+      if (res.ok) {
+        setUsers((prev) => prev.filter((u) => u.id !== user.id));
+        setDeleteTarget(null);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) window.dispatchEvent(new CustomEvent('wms.session-expired'));
+        setDeleteError((data && (data.message || data.error)) || 'Gagal menghapus pengguna.');
+        setDeleteTarget(null);
+      }
+    } catch {
+      setDeleteError('Terjadi kesalahan jaringan. Silakan coba lagi.');
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -379,14 +411,30 @@ export function UsersAdmin() {
                         {user.id === currentUserId ? (
                           <span style={{ fontSize: '0.8rem', color: 'var(--text4)' }}>(Anda)</span>
                         ) : (
-                          <button
-                            onClick={() => handleToggleClick(user)}
-                            disabled={toggling || togglingId !== null}
-                            className={`btn btn-xs ${active ? 'btn-danger' : 'btn-ghost'}`}
-                            aria-label={active ? `Nonaktifkan ${user.email}` : `Aktifkan ${user.email}`}
-                          >
-                            {toggling ? '…' : active ? 'Nonaktifkan' : 'Aktifkan'}
-                          </button>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <button
+                              onClick={() => handleToggleClick(user)}
+                              disabled={toggling || togglingId !== null || deletingId !== null}
+                              className={`btn btn-xs ${active ? 'btn-danger' : 'btn-ghost'}`}
+                              aria-label={active ? `Nonaktifkan ${user.email}` : `Aktifkan ${user.email}`}
+                            >
+                              {toggling ? '…' : active ? 'Nonaktifkan' : 'Aktifkan'}
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (deletingId !== null || togglingId !== null) return;
+                                setDeleteError(null);
+                                setDeleteTarget(user);
+                              }}
+                              disabled={deletingId !== null || togglingId !== null}
+                              className="btn btn-xs btn-danger"
+                              title={`Hapus ${user.email}`}
+                              aria-label={`Hapus ${user.email}`}
+                              style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 8px' }}
+                            >
+                              {deletingId === user.id ? '…' : <Icon name="trash" size={14} />}
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -412,6 +460,23 @@ export function UsersAdmin() {
           }}
         >
           {toggleError}
+        </div>
+      )}
+
+      {deleteError && (
+        <div
+          role="alert"
+          style={{
+            marginTop: '16px',
+            padding: '11px 14px',
+            backgroundColor: 'var(--bg2)',
+            border: '1px solid var(--error)',
+            color: 'var(--error)',
+            borderRadius: 'var(--radius-sm)',
+            fontSize: '0.85rem',
+          }}
+        >
+          {deleteError}
         </div>
       )}
 
@@ -444,6 +509,41 @@ export function UsersAdmin() {
                 className="btn btn-danger"
               >
                 {togglingId !== null ? 'Memproses…' : 'Ya, Nonaktifkan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation modal */}
+      {deleteTarget && (
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Konfirmasi hapus pengguna"
+          onClick={() => deletingId === null && setDeleteTarget(null)}
+        >
+          <div className="modal-box" style={{ maxWidth: '400px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-body">
+              <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text1)', marginBottom: '8px' }}>
+                Hapus pengguna?
+              </h2>
+              <p style={{ fontSize: '0.9rem', color: 'var(--text3)' }}>
+                <strong style={{ color: 'var(--text1)' }}>{deleteTarget.name || deleteTarget.email}</strong>{' '}
+                akan dihapus permanen beserta sesi loginnya. Tindakan ini tidak dapat dibatalkan.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setDeleteTarget(null)} disabled={deletingId !== null} className="btn btn-ghost">
+                Batal
+              </button>
+              <button
+                onClick={() => deleteTarget && performDelete(deleteTarget)}
+                disabled={deletingId !== null}
+                className="btn btn-danger"
+              >
+                {deletingId !== null ? 'Menghapus…' : 'Ya, Hapus'}
               </button>
             </div>
           </div>

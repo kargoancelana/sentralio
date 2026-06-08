@@ -16,7 +16,7 @@
 
 import { Elysia } from 'elysia';
 import { authMiddleware } from '../auth/auth.middleware';
-import { listUsers, createUser, updateUser, setUserActive, countActiveAdmins, getUserPublicById } from './users.service';
+import { listUsers, createUser, updateUser, setUserActive, deleteUser, countActiveAdmins, getUserPublicById } from './users.service';
 
 export const usersRoutes = new Elysia({ prefix: '/users' })
   .use(authMiddleware)
@@ -229,4 +229,56 @@ export const usersRoutes = new Elysia({ prefix: '/users' })
       id: updated.id,
       isActive: updated.isActive,
     };
+  })
+
+  // ─── DELETE /users/:id ────────────────────────────────────────────────
+  // Permanently delete a user. Guards mirror deactivation:
+  //  - cannot delete your own account
+  //  - cannot delete the last remaining active admin
+  // revoked_sessions rows cascade-delete via FK.
+  .delete('/:id', async ({ params, user, requireFeature, set }) => {
+    requireFeature('user_management');
+
+    const id = parseInt(params.id, 10);
+    if (!Number.isFinite(id) || id <= 0) {
+      set.status = 400;
+      return { ok: false, error: 'invalid_id', message: 'User ID must be a positive integer' };
+    }
+
+    // (a) Cannot delete your own account.
+    if (id === user.id) {
+      set.status = 400;
+      return {
+        ok: false,
+        error: 'cannot_delete_self',
+        message: 'Anda tidak dapat menghapus akun Anda sendiri.',
+      };
+    }
+
+    // (b) Cannot delete the last remaining active admin.
+    const target = await getUserPublicById(id);
+    if (!target) {
+      set.status = 404;
+      return { ok: false, error: 'not_found', message: `User ${id} not found` };
+    }
+    if (target.role === 'admin' && target.isActive) {
+      const activeAdmins = await countActiveAdmins();
+      if (activeAdmins <= 1) {
+        set.status = 400;
+        return {
+          ok: false,
+          error: 'last_admin',
+          message: 'Tidak dapat menghapus admin aktif terakhir.',
+        };
+      }
+    }
+
+    const deleted = await deleteUser(id);
+    if (!deleted) {
+      set.status = 404;
+      return { ok: false, error: 'not_found', message: `User ${id} not found` };
+    }
+
+    set.status = 200;
+    return { ok: true, id: deleted.id };
   });
