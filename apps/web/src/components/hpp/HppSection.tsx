@@ -642,16 +642,18 @@ export function HppSection({
   // ── Copy to all variants ──
   const [copyingToAll, setCopyingToAll] = useState(false);
   const [copyResult, setCopyResult] = useState<{ success: number; failed: number } | null>(null);
+  const [showCopyConfirm, setShowCopyConfirm] = useState(false);
 
-  const handleCopyToAll = useCallback(async () => {
+  const handleCopyToAll = useCallback(() => {
+    if (!selectedVariantId || entries.length === 0 || variants.length <= 1) return;
+    setCopyResult(null);
+    setShowCopyConfirm(true);
+  }, [selectedVariantId, entries.length, variants.length]);
+
+  const executeCopyToAll = useCallback(async () => {
     if (!selectedVariantId || entries.length === 0 || variants.length <= 1) return;
 
-    const variantName = variants.find((v) => v.id === selectedVariantId)?.name ?? '';
-    const confirmed = window.confirm(
-      `Terapkan ${entries.length} entry HPP dari "${variantName}" ke ${variants.length - 1} variasi lainnya?\n\nEntry yang sudah ada di variasi lain tidak akan ditimpa — hanya entry baru yang ditambahkan jika periodenya tidak overlap.`
-    );
-    if (!confirmed) return;
-
+    setShowCopyConfirm(false);
     setCopyingToAll(true);
     setCopyResult(null);
 
@@ -678,7 +680,7 @@ export function HppSection({
           });
           success++;
         } catch {
-          // Overlap or other error — skip silently
+          // Entry with a duplicate/overlapping period — skip silently.
           failed++;
         }
       }
@@ -890,7 +892,7 @@ export function HppSection({
             >
               <span>
                 ✓ {copyResult.success} entry berhasil disalin.
-                {copyResult.failed > 0 && ` ${copyResult.failed} dilewati (overlap/duplikat).`}
+                {copyResult.failed > 0 && ` ${copyResult.failed} dilewati (duplikat).`}
               </span>
               <button
                 onClick={() => setCopyResult(null)}
@@ -950,6 +952,88 @@ export function HppSection({
           onCancel={handleDeleteCancel}
           loading={deletingId === deleteTarget.id}
         />
+      )}
+
+      {/* Copy-to-all confirmation dialog */}
+      {showCopyConfirm && selectedVariant && (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-label="Konfirmasi salin HPP ke semua variasi"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.45)',
+            zIndex: 10000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+          onClick={() => setShowCopyConfirm(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--bg)',
+              border: '1px solid var(--border)',
+              borderRadius: '12px',
+              padding: '24px',
+              maxWidth: '400px',
+              width: '100%',
+              boxShadow: '0 16px 48px rgba(0,0,0,0.2)',
+            }}
+          >
+            <h3 style={{ margin: '0 0 8px', fontSize: '15px', fontWeight: 600, color: 'var(--text1)' }}>
+              Salin HPP ke Semua Variasi?
+            </h3>
+            <p style={{ margin: '0 0 12px', fontSize: '13px', color: 'var(--text2)', lineHeight: 1.5 }}>
+              {entries.length} entry HPP dari <strong>"{selectedVariant.name}"</strong> akan diterapkan ke{' '}
+              <strong>{variants.length - 1} variasi lainnya</strong>.
+            </p>
+            <p style={{ margin: '0 0 20px', fontSize: '12px', color: 'var(--text3)', lineHeight: 1.5 }}>
+              Entry yang sudah ada tidak akan ditimpa. Entry dengan periode yang <strong>duplikat</strong> akan
+              dilewati otomatis.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button
+                onClick={() => setShowCopyConfirm(false)}
+                style={{
+                  padding: '7px 16px',
+                  background: 'transparent',
+                  border: '1px solid var(--border)',
+                  borderRadius: '7px',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  color: 'var(--text2)',
+                }}
+              >
+                Batal
+              </button>
+              <button
+                onClick={executeCopyToAll}
+                style={{
+                  padding: '7px 16px',
+                  background: 'var(--accent)',
+                  color: 'var(--accent-f, #fff)',
+                  border: 'none',
+                  borderRadius: '7px',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <Copy size={13} />
+                Salin ke Semua
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </section>
   );
