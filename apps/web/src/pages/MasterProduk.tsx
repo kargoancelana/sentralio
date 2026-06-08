@@ -32,6 +32,7 @@ function ProductThumb({ name, imageUrl }: { name: string; imageUrl?: string }) {
 function EditModal({ product, onClose, onSave, saving }: any) {
   const [name, setName] = useState('');
   const [variants, setVariants] = useState<any[]>([]);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // ── HPP state ──
   const [hppFormVariantId, setHppFormVariantId] = useState<number | null>(null);
@@ -76,6 +77,7 @@ function EditModal({ product, onClose, onSave, saving }: any) {
 
   const updateVariant = (id: string, field: string, value: any) => {
     setVariants(vs => vs.map(v => v.id === id ? { ...v, [field]: value } : v));
+    if (formError) setFormError(null);
   };
 
   const addVariant = () => {
@@ -89,6 +91,21 @@ function EditModal({ product, onClose, onSave, saving }: any) {
 
   const removeVariant = (id: string) => {
     setVariants(vs => vs.filter(v => v.id !== id));
+    if (formError) setFormError(null);
+  };
+
+  /** Validate inline (no toast), then delegate to onSave. */
+  const handleSaveClick = () => {
+    // A row that has any content but no MSKU is invalid.
+    const missingMsku = variants.some(
+      (v) => (String(v.varName).trim() || v.dbId != null) && !String(v.msku).trim(),
+    );
+    if (missingMsku) {
+      setFormError('MSKU belum diisi. Setiap variasi wajib memiliki MSKU sebelum disimpan.');
+      return;
+    }
+    setFormError(null);
+    onSave(product, name, variants);
   };
   
   const handleFocus = (e: any) => e.target.select();
@@ -138,7 +155,7 @@ function EditModal({ product, onClose, onSave, saving }: any) {
         footer={
           <>
             <button className="btn btn-ghost btn-sm" onClick={onClose} disabled={saving}>Batal</button>
-            <button className="btn btn-primary btn-sm" onClick={() => onSave(product, name, variants)} disabled={saving}>
+            <button className="btn btn-primary btn-sm" onClick={handleSaveClick} disabled={saving}>
               {saving ? 'Menyimpan...' : 'Simpan & Push ke Shopee'}
             </button>
           </>
@@ -198,7 +215,12 @@ function EditModal({ product, onClose, onSave, saving }: any) {
                           placeholder="MSKU"
                           onChange={e => updateVariant(v.id, 'msku', e.target.value)}
                           disabled={saving} 
-                          style={{ textAlign: 'left' }} 
+                          style={{
+                            textAlign: 'left',
+                            ...(formError && !String(v.msku).trim() && (String(v.varName).trim() || v.dbId != null)
+                              ? { borderColor: '#DC2626' }
+                              : {}),
+                          }}
                         />
                       </td>
                       <td>
@@ -249,6 +271,27 @@ function EditModal({ product, onClose, onSave, saving }: any) {
              <Info size={14} style={{ flexShrink: 0, marginTop: 2 }} />
              <span>Saat Anda menekan "Simpan & Push", WMS akan otomatis menembakkan API Shopee Update Stock ke seluruh produk channel yang terhubung dengan MSKU di atas.</span>
           </p>
+
+          {formError && (
+            <div
+              role="alert"
+              style={{
+                marginTop: 10,
+                padding: '10px 12px',
+                background: 'var(--bg2)',
+                border: '1px solid #DC2626',
+                color: '#DC2626',
+                borderRadius: 8,
+                fontSize: 12.5,
+                display: 'flex',
+                gap: 6,
+                alignItems: 'flex-start',
+              }}
+            >
+              <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+              <span>{formError}</span>
+            </div>
+          )}
         </div>
 
         {/* ── HPP Section ── */}
@@ -354,8 +397,22 @@ export function MasterProduk() {
       }
       
       toast(toastMsg, 'success');
+
+      // Refresh the list, then re-sync the open modal to the updated product so
+      // newly-added variants (now with real DB ids) appear in the HPP section
+      // and can have their HPP values filled without reopening.
       await refetch();
-      setEditTarget(null);
+      try {
+        const fresh: any = await api.masterList();
+        const updatedProduct = (fresh?.data || []).find((p: any) => p.id === product.id);
+        if (updatedProduct) {
+          setEditTarget(updatedProduct);
+        } else {
+          setEditTarget(null);
+        }
+      } catch {
+        // If the re-fetch fails, just keep the modal as-is.
+      }
     } catch (err: any) {
       toast(err.message || 'Gagal menyimpan perubahan.', 'error');
     } finally {

@@ -51,7 +51,7 @@ export const masterRoutes = new Elysia({ prefix: "/master" })
       body: t.Object({
         master_product_id: t.Number(),
         variants: t.Array(t.Object({
-          id: t.Optional(t.Number()),
+          id: t.Optional(t.Union([t.Number(), t.Null()])),
           sku: t.String(),
           name: t.String(),
           stock: t.Number(),
