@@ -11,9 +11,12 @@
  * hari oleh service supaya patuh limit Shopee Ads daily-performance API.
  *
  * Usage:
- *   bun run apps/api/src/scripts/backfill-ads-expense.ts [days]
+ *   bun run apps/api/src/scripts/backfill-ads-expense.ts [days] [--force]
  *
- *   - days   : opsional, jumlah hari ke belakang (default: 180)
+ *   - days    : opsional, jumlah hari ke belakang (default: 180)
+ *   - --force : opsional, paksa tarik ulang dari Shopee (timpa cache lama).
+ *               Gunakan ini untuk mengoreksi data lama yang sudah "beku" di
+ *               cache padahal Shopee sudah merevisi angkanya.
  *
  * Catatan:
  *   - Shopee Ads API hanya menyimpan data ~6 bulan (180 hari) ke belakang.
@@ -47,10 +50,13 @@ function wibDateOffset(daysBack: number): string {
 // ─── Main ─────────────────────────────────────────────────────
 
 async function main() {
-  const argDays = Number.parseInt(process.argv[2] ?? "180", 10);
+  const args = process.argv.slice(2);
+  const forceRefresh = args.includes("--force");
+  const daysArg = args.find((a) => !a.startsWith("--"));
+  const argDays = Number.parseInt(daysArg ?? "180", 10);
   if (!Number.isInteger(argDays) || argDays < 1 || argDays > 365) {
     console.error(
-      `[backfill-ads] Invalid days argument "${process.argv[2]}" — must be integer 1..365`
+      `[backfill-ads] Invalid days argument "${daysArg}" — must be integer 1..365`
     );
     process.exit(1);
   }
@@ -68,6 +74,7 @@ async function main() {
   console.log(`[backfill-ads] Start date    : ${startDate}`);
   console.log(`[backfill-ads] End date      : ${endDate}  (today excluded)`);
   console.log(`[backfill-ads] Days to cover : ${argDays}`);
+  console.log(`[backfill-ads] Force refresh : ${forceRefresh ? "YES (overwrite cache)" : "no (cache-first)"}`);
   console.log("");
 
   // Ambil daftar toko
@@ -97,7 +104,7 @@ async function main() {
     const startedAt = Date.now();
 
     try {
-      const total = await getShopExpense(shop.shopId, startDate, endDate);
+      const total = await getShopExpense(shop.shopId, startDate, endDate, { forceRefresh });
       const duration = Date.now() - startedAt;
       totalsPerShop.push({
         shopId: shop.shopId,

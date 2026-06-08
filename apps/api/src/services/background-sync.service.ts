@@ -990,7 +990,12 @@ class BackgroundSyncService {
         }
 
         const shopIds = shops.map((s) => s.shopId);
-        const result = await getTotalAdsExpense(shopIds, startDate, endDate);
+        // forceRefresh: re-fetch from Shopee instead of trusting the cache.
+        // Shopee revises ad spend retroactively for several days, so a plain
+        // cache-first read leaves past days frozen at their first-fetched value.
+        // The scheduled job exists precisely to keep those numbers accurate, so
+        // it always pulls fresh data and overwrites the cache.
+        const result = await getTotalAdsExpense(shopIds, startDate, endDate, { forceRefresh: true });
         synced = shopIds.length - result.skippedShops.length;
 
         stats.lastSyncTime = new Date();
