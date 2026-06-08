@@ -762,7 +762,8 @@ function delay(ms: number): Promise<void> {
 export async function getShopExpense(
   shopId: number,
   startDate: WibDate,
-  endDate: WibDate
+  endDate: WibDate,
+  options: { forceRefresh?: boolean } = {}
 ): Promise<number> {
   // Validate inputs
   if (!Number.isInteger(shopId) || shopId <= 0) {
@@ -789,7 +790,18 @@ export async function getShopExpense(
     todayWib
   );
   
-  const { freshDates, needFetchDates, beyondCutoffDates } = classification;
+  let { freshDates, needFetchDates } = classification;
+  const { beyondCutoffDates } = classification;
+
+  // Force refresh: Shopee adjusts ad spend retroactively for several days, so a
+  // cache-first read can lag behind Seller Center. When the caller asks for a
+  // forced refresh (e.g. the scheduled ads sync), re-fetch every in-window date
+  // instead of trusting the cache. Dates beyond the 6-month cutoff stay
+  // cache-only because Shopee no longer serves data that old.
+  if (options.forceRefresh && freshDates.length > 0) {
+    needFetchDates = [...needFetchDates, ...freshDates].sort();
+    freshDates = [];
+  }
   
   // Step 3: If no dates need fetching, compute total from cache
   if (needFetchDates.length === 0) {
@@ -1041,6 +1053,7 @@ export async function getTotalAdsExpense(
   shopIds: number[],
   startDate: WibDate,
   endDate: WibDate,
+  options: { forceRefresh?: boolean } = {},
 ): Promise<AdsExpenseTotal> {
   // Validate inputs
   if (!Array.isArray(shopIds)) {
@@ -1082,7 +1095,7 @@ export async function getTotalAdsExpense(
       }
       
       // Call getShopExpense
-      const shopTotal = await getShopExpense(shopId, startDate, endDate);
+      const shopTotal = await getShopExpense(shopId, startDate, endDate, options);
       
       // Validate result
       if (!Number.isFinite(shopTotal)) {
