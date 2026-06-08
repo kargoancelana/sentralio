@@ -4,7 +4,6 @@
  * Defines Elysia routes for profit analytics:
  *   GET /profit/summary    → getProfitSummary
  *   GET /profit/orders     → getOrderProfitList
- *   GET /profit/shops      → getShopPerformance
  *   GET /profit/products   → getProductPerformance
  *   GET /profit/deductions → getShopeeDeductions
  *
@@ -15,7 +14,6 @@ import { Elysia, t } from "elysia";
 import {
   getProfitSummary,
   getOrderProfitList,
-  getShopPerformance,
   getProductPerformance,
   getShopeeDeductions,
 } from "./profit.service";
@@ -164,42 +162,6 @@ export const profitRoutes = new Elysia({ prefix: "/profit" })
         shop_id: t.Optional(t.String()),
         page: t.Optional(t.String()),
         limit: t.Optional(t.String()),
-      }),
-    },
-  )
-
-  // ─── GET /profit/shops ────────────────────────────────────────────────────
-  .get(
-    "/shops",
-    async ({ query, set }) => {
-      try {
-        const dateError = validateDateRange(query.start_date, query.end_date);
-        if (dateError) {
-          set.status = 400;
-          return { success: false, message: dateError };
-        }
-
-        const validSortBy = ["revenue", "netProfit", "profitMarginPercent", "orderCount"] as const;
-        if (query.sort_by !== undefined && !validSortBy.includes(query.sort_by as typeof validSortBy[number])) {
-          set.status = 400;
-          return { success: false, message: "Parameter sort_by tidak valid" };
-        }
-
-        return await getShopPerformance({
-          startDate: query.start_date!,
-          endDate: query.end_date!,
-          sortBy: query.sort_by,
-        });
-      } catch (err) {
-        set.status = 500;
-        return { success: false, message: "Terjadi kesalahan pada server" };
-      }
-    },
-    {
-      query: t.Object({
-        start_date: t.Optional(t.String()),
-        end_date: t.Optional(t.String()),
-        sort_by: t.Optional(t.String()),
       }),
     },
   )

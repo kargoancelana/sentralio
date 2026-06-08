@@ -364,10 +364,6 @@ export const api = {
       },
     };
   },
-  profitShops: (startDate: string, endDate: string, sortBy = 'revenue') => {
-    const params = new URLSearchParams({ start_date: startDate, end_date: endDate, sort_by: sortBy });
-    return fetchApi(`/profit/shops?${params}`);
-  },
   profitProducts: (startDate: string, endDate: string, shopId?: number, groupBy = 'msku', sortBy = 'netProfit') => {
     const params = new URLSearchParams({ start_date: startDate, end_date: endDate, group_by: groupBy, sort_by: sortBy });
     if (shopId) params.set('shop_id', String(shopId));
