@@ -5,6 +5,7 @@ export const masterProducts = mysqlTable("master_products", {
   sku: varchar("sku", { length: 100 }).notNull().unique(),
   name: varchar("name", { length: 255 }).notNull(),
   stock: int("stock").notNull().default(0),
+  imageUrl: varchar("image_url", { length: 500 }), // cover thumbnail captured at import time
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

@@ -180,8 +180,20 @@ export async function updateMasterVariants(masterProductId: number, variants: an
         .set({ sku: v.sku, name: v.name, stock: v.stock })
         .where(eq(masterProductVariants.id, v.id));
     } else {
-      await db.insert(masterProductVariants)
-        .values({ masterProductId, sku: v.sku, name: v.name, stock: v.stock });
+      // New variant. Guard against duplicate SKU (unique constraint): if a
+      // variant with this SKU already exists, update it instead of inserting.
+      const existing = v.sku
+        ? await db.select().from(masterProductVariants)
+            .where(eq(masterProductVariants.sku, v.sku)).limit(1)
+        : [];
+      if (existing.length > 0) {
+        await db.update(masterProductVariants)
+          .set({ name: v.name, stock: v.stock, masterProductId })
+          .where(eq(masterProductVariants.id, existing[0].id));
+      } else {
+        await db.insert(masterProductVariants)
+          .values({ masterProductId, sku: v.sku, name: v.name, stock: v.stock });
+      }
     }
   }
 
@@ -390,6 +402,7 @@ export async function importFromListing(shopeeItemId: string) {
     sku: masterSku,
     name: masterName,
     stock: 0,
+    imageUrl: group.imageUrl ?? null, // capture cover thumbnail from the source listing
   });
   const masterId = (result as any).insertId as number;
   console.log(`[MASTER IMPORT] Created master id=${masterId} sku=${masterSku} name="${masterName}"`);
@@ -468,7 +481,9 @@ export async function listMasterProducts() {
       sku: m.sku,
       name: m.name,
       stock: m.stock,
-      imageUrl: groups[0]?.imageUrl || null,
+      // Prefer the master's own captured cover image; fall back to a linked
+      // group's image only when the master has none (e.g. older records).
+      imageUrl: m.imageUrl || groups[0]?.imageUrl || null,
       variants: variants, // Return true master variants
       linked_models: linked,
       linked_groups: groups.map(g => ({

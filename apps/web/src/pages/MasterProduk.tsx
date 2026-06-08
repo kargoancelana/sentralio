@@ -7,7 +7,7 @@ import { HppSection, type HppVariant } from '../components/hpp/HppSection';
 import { HppEntryForm, type HppEntry } from '../components/hpp/HppEntryForm';
 import { MasterPackingCostSection } from '../components/master-packing-cost/MasterPackingCostSection';
 
-import { Search, Edit3, Trash2, Package, Book, Info, CloudUpload, DollarSign } from "lucide-react";
+import { Search, Edit3, Trash2, Package, Book, Info, CloudUpload, DollarSign, Plus } from "lucide-react";
 
 /* ── PRODUCT IMAGE PLACEHOLDER ── */
 function ProductThumb({ name, imageUrl }: { name: string; imageUrl?: string }) {
@@ -77,6 +77,19 @@ function EditModal({ product, onClose, onSave, saving }: any) {
   const updateVariant = (id: string, field: string, value: any) => {
     setVariants(vs => vs.map(v => v.id === id ? { ...v, [field]: value } : v));
   };
+
+  const addVariant = () => {
+    // New, unsaved variant row. dbId=null marks it as an insert on save.
+    const tempId = `__new_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    setVariants(vs => [
+      ...vs,
+      { dbId: null, id: tempId, varName: '', msku: '', stock: 0, originalMsku: '', isNew: true },
+    ]);
+  };
+
+  const removeVariant = (id: string) => {
+    setVariants(vs => vs.filter(v => v.id !== id));
+  };
   
   const handleFocus = (e: any) => e.target.select();
 
@@ -136,7 +149,13 @@ function EditModal({ product, onClose, onSave, saving }: any) {
           <div className="form-row">
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">Nama Produk (Global)</label>
-              <input className="form-input readonly" value={name} readOnly />
+              <input
+                className="form-input"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                disabled={saving}
+                placeholder="Nama master produk"
+              />
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">Master SKU</label>
@@ -154,6 +173,7 @@ function EditModal({ product, onClose, onSave, saving }: any) {
                   <th>Nama Variasi</th>
                   <th>MSKU</th>
                   <th style={{ textAlign: 'right' }}>Stok Global</th>
+                  <th style={{ width: 40 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -161,13 +181,21 @@ function EditModal({ product, onClose, onSave, saving }: any) {
                   const isMatch = v.msku === product.sku;
                   return (
                     <tr key={v.id}>
-                      <td style={{ color: 'var(--text4)', fontSize: 12.5 }}>
-                        {v.varName}
+                      <td>
+                        <input
+                          className="variant-input"
+                          value={v.varName}
+                          placeholder="Nama variasi"
+                          onChange={e => updateVariant(v.id, 'varName', e.target.value)}
+                          disabled={saving}
+                          style={{ textAlign: 'left' }}
+                        />
                       </td>
                       <td>
                         <input 
                           className="variant-input" 
                           value={v.msku} 
+                          placeholder="MSKU"
                           onChange={e => updateVariant(v.id, 'msku', e.target.value)}
                           disabled={saving} 
                           style={{ textAlign: 'left' }} 
@@ -190,12 +218,33 @@ function EditModal({ product, onClose, onSave, saving }: any) {
                           title={isMatch ? '' : 'Stok tidak akan di-push karena MSKU tidak cocok'}
                         />
                       </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-xs"
+                          style={{ color: '#DC2626', padding: 4 }}
+                          title="Hapus variasi ini"
+                          onClick={() => removeVariant(v.id)}
+                          disabled={saving}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{ marginTop: 10 }}
+            onClick={addVariant}
+            disabled={saving}
+          >
+            <Plus size={14} style={{ marginRight: 6 }} /> Tambah Variasi
+          </button>
           <p className="form-hint" style={{ marginTop: 8, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
              <Info size={14} style={{ flexShrink: 0, marginTop: 2 }} />
              <span>Saat Anda menekan "Simpan & Push", WMS akan otomatis menembakkan API Shopee Update Stock ke seluruh produk channel yang terhubung dengan MSKU di atas.</span>
@@ -275,10 +324,25 @@ export function MasterProduk() {
       }
 
       // 2. Update and Push Variants
-      const payloadVariants = newVariants.map(v => ({
+      // Skip brand-new rows that are completely empty (no name + no MSKU).
+      const cleanedVariants = newVariants.filter(
+        (v) => !(v.dbId == null && !String(v.varName).trim() && !String(v.msku).trim()),
+      );
+
+      // Guard: a new variant must have an MSKU (used for mapping to Shopee models).
+      const invalidNew = cleanedVariants.find(
+        (v) => v.dbId == null && !String(v.msku).trim(),
+      );
+      if (invalidNew) {
+        toast('Variasi baru harus memiliki MSKU.', 'error');
+        setSavingEdit(false);
+        return;
+      }
+
+      const payloadVariants = cleanedVariants.map(v => ({
         id: v.dbId,
-        sku: v.msku,
-        name: v.varName,
+        sku: String(v.msku).trim(),
+        name: String(v.varName).trim() || 'Default',
         stock: v.stock,
       }));
 
