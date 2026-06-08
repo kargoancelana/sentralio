@@ -113,6 +113,26 @@ describe('Sidebar', () => {
     expect(screen.getByText('ws@example.com')).toBeTruthy()
   })
 
+  // ── Dashboard visibility (regression) ───────────────────────────────────────
+
+  it('Dashboard nav entry is visible to admin', () => {
+    const user: PublicUser = { id: 10, email: 'admin@wms.local', name: 'Admin', role: 'admin' }
+    mockAuth = makeAuthApi(makeAuthenticatedState(user))
+
+    renderSidebar()
+
+    expect(screen.getByText('Dashboard')).toBeTruthy()
+  })
+
+  it('Dashboard nav entry is visible to staff (always-visible, not role-gated)', () => {
+    const user: PublicUser = { id: 11, email: 'staff@wms.local', name: 'Staff', role: 'staff' }
+    mockAuth = makeAuthApi(makeAuthenticatedState(user))
+
+    renderSidebar()
+
+    expect(screen.getByText('Dashboard')).toBeTruthy()
+  })
+
   // ── Test 3 ──────────────────────────────────────────────────────────────────
 
   it('Test 3 (Req 5.6, 11.5): Staff never sees Admin-only nav entries', () => {

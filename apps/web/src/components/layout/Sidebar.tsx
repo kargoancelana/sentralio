@@ -47,11 +47,14 @@ interface NavItem {
   badge?: string | null;
   /** The matrix Feature that gates this nav item. */
   feature: Feature;
+  /** When true, the item is always shown regardless of role (e.g. Dashboard). */
+  alwaysVisible?: boolean;
 }
 
 type NavEntry = NavHeader | NavItem;
 
 const ALL_NAV: NavEntry[] = [
+  { id: 'dashboard',        label: 'Dashboard',        icon: 'dashboard',    path: '/',                 feature: 'me_logout', alwaysVisible: true },
   { id: 'header-produk',    label: 'PRODUK',          isHeader: true },
   { id: 'master',           label: 'Master Produk',    icon: 'master',       path: '/produk/master',    feature: 'master_produk' },
   { id: 'channel',          label: 'Produk Channel',   icon: 'products',     path: '/produk/channel',   feature: 'produk_channel' },
@@ -125,14 +128,16 @@ export function Sidebar({ active, collapsed, setCollapsed, dark, toggleDark }: S
       for (let j = i + 1; j < ALL_NAV.length; j++) {
         const next = ALL_NAV[j];
         if (next.isHeader) break;
-        if (visibleFeatures.has((next as NavItem).feature)) {
+        const nextItem = next as NavItem;
+        if (nextItem.alwaysVisible || visibleFeatures.has(nextItem.feature)) {
           hasVisible = true;
           break;
         }
       }
       if (hasVisible) filteredNav.push(entry);
     } else {
-      if (visibleFeatures.has((entry as NavItem).feature)) {
+      const item = entry as NavItem;
+      if (item.alwaysVisible || visibleFeatures.has(item.feature)) {
         filteredNav.push(entry);
       }
     }
