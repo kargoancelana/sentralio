@@ -78,6 +78,10 @@ export const shopeeOrders = mysqlTable("shopee_orders", {
   buyerUsername: varchar("buyer_username", { length: 255 }),
   shippingCarrier: varchar("shipping_carrier", { length: 100 }),
   trackingNumber: varchar("tracking_number", { length: 100 }),
+  // Shopee ship-by deadline (unix seconds). 0 means Shopee is holding the order
+  // ("tertunda"/Menunggu) — it cannot be processed yet even though order_status
+  // is READY_TO_SHIP. A non-zero value means the order is genuinely shippable.
+  shipByDate: int("ship_by_date").notNull().default(0),
   labelPrinted: int("label_printed").notNull().default(0), // 0 = belum dicetak, 1 = sudah dicetak
   labelPrintedAt: timestamp("label_printed_at"), // Waktu label terakhir dicetak
   payTime: timestamp("pay_time"),

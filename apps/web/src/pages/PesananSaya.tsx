@@ -79,6 +79,12 @@ function OrderCard({
   const isProcessed = order.orderStatus === 'PROCESSED';
   const isLabelPrinted = order.labelPrinted === 1;
 
+  // Shopee holds some READY_TO_SHIP orders ("tertunda"/Menunggu): they report
+  // shipByDate === 0 and cannot be processed yet. Detect that so we can disable
+  // "Atur Pengiriman" and show a "Tertunda" label instead of letting the staff
+  // hit a Shopee error. A genuinely shippable order has a non-zero shipByDate.
+  const isHeld = isReadyToShip && (order.shipByDate ?? 0) === 0;
+
   // Show "Lihat Rincian" only in the "Perlu Dikirim" tab for READY_TO_SHIP / PROCESSED orders
   // (Requirements 1.1, 1.2, 1.3)
   const showLihatRincian =
@@ -102,7 +108,14 @@ function OrderCard({
               type="checkbox"
               checked={isSelected}
               onChange={() => onToggleSelection(order.orderSn)}
-              style={{ width: 14, height: 14, cursor: 'pointer' }}
+              disabled={isHeld}
+              title={isHeld ? 'Pesanan tertunda Shopee, belum bisa diproses' : undefined}
+              style={{
+                width: 14,
+                height: 14,
+                cursor: isHeld ? 'not-allowed' : 'pointer',
+                opacity: isHeld ? 0.4 : 1,
+              }}
             />
           )}
           {isProcessed && (
@@ -218,19 +231,32 @@ function OrderCard({
               <div style={{ textAlign: 'center' }}>
                 {idx === 0 && order.orderStatus === 'READY_TO_SHIP' ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                    <button
-                      onClick={() => onShipOrder(order.orderSn)}
-                      style={{
-                        padding: '6px 12px', borderRadius: 6, border: 'none',
-                        fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                        background: 'var(--accent)', color: 'var(--accent-f)',
-                        display: 'flex', alignItems: 'center', gap: 6,
-                        justifyContent: 'center', transition: 'all .15s',
+                    {isHeld ? (
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        padding: '6px 12px', borderRadius: 6,
+                        fontSize: 12, fontWeight: 600,
+                        background: 'var(--bg3)', color: 'var(--text4)',
+                        cursor: 'not-allowed', whiteSpace: 'nowrap',
                       }}
-                    >
-                      <Truck size={12} />
-                      Atur Pengiriman
-                    </button>
+                      title="Pesanan tertunda Shopee, belum bisa diproses">
+                        Tertunda
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => onShipOrder(order.orderSn)}
+                        style={{
+                          padding: '6px 12px', borderRadius: 6, border: 'none',
+                          fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                          background: 'var(--accent)', color: 'var(--accent-f)',
+                          display: 'flex', alignItems: 'center', gap: 6,
+                          justifyContent: 'center', transition: 'all .15s',
+                        }}
+                      >
+                        <Truck size={12} />
+                        Atur Pengiriman
+                      </button>
+                    )}
                     {showLihatRincian && (
                       <LihatRincianButton
                         orderSn={order.orderSn}
@@ -307,19 +333,32 @@ function OrderCard({
             <div style={{ textAlign: 'center' }}>
               {order.orderStatus === 'READY_TO_SHIP' ? (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                  <button
-                    onClick={() => onShipOrder(order.orderSn)}
-                    style={{
-                      padding: '6px 12px', borderRadius: 6, border: 'none',
-                      fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                      background: 'var(--accent)', color: 'var(--accent-f)',
-                      display: 'flex', alignItems: 'center', gap: 6,
-                      justifyContent: 'center', transition: 'all .15s',
+                  {isHeld ? (
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      padding: '6px 12px', borderRadius: 6,
+                      fontSize: 12, fontWeight: 600,
+                      background: 'var(--bg3)', color: 'var(--text4)',
+                      cursor: 'not-allowed', whiteSpace: 'nowrap',
                     }}
-                  >
-                    <Truck size={12} />
-                    Atur Pengiriman
-                  </button>
+                    title="Pesanan tertunda Shopee, belum bisa diproses">
+                      Tertunda
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => onShipOrder(order.orderSn)}
+                      style={{
+                        padding: '6px 12px', borderRadius: 6, border: 'none',
+                        fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                        background: 'var(--accent)', color: 'var(--accent-f)',
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        justifyContent: 'center', transition: 'all .15s',
+                      }}
+                    >
+                      <Truck size={12} />
+                      Atur Pengiriman
+                    </button>
+                  )}
                   {showLihatRincian && (
                     <LihatRincianButton
                       orderSn={order.orderSn}
@@ -474,8 +513,12 @@ export function PesananSaya() {
   };
 
   const selectAllReadyToShip = () => {
-    const readyToShipOrders = filtered.filter(o => o.orderStatus === 'READY_TO_SHIP');
-    const allSelected = readyToShipOrders.every(o => selectedOrders.includes(o.orderSn));
+    // Exclude held ("tertunda") orders — shipByDate === 0 means Shopee won't let
+    // them be processed yet, so they must not be batch-selectable.
+    const readyToShipOrders = filtered.filter(
+      o => o.orderStatus === 'READY_TO_SHIP' && (o.shipByDate ?? 0) !== 0
+    );
+    const allSelected = readyToShipOrders.length > 0 && readyToShipOrders.every(o => selectedOrders.includes(o.orderSn));
     
     if (allSelected) {
       // Deselect all ready to ship orders
@@ -1084,7 +1127,7 @@ export function PesananSaya() {
                   type="checkbox"
                   checked={
                     filtered.length > 0 &&
-                    filtered.filter(o => o.orderStatus === 'READY_TO_SHIP').every(o => selectedOrders.includes(o.orderSn)) &&
+                    filtered.filter(o => o.orderStatus === 'READY_TO_SHIP' && (o.shipByDate ?? 0) !== 0).every(o => selectedOrders.includes(o.orderSn)) &&
                     filtered.filter(o => o.orderStatus === 'PROCESSED').every(o => selectedLabelOrders.includes(o.orderSn))
                   }
                   onChange={() => {
@@ -1100,8 +1143,8 @@ export function PesananSaya() {
               {countRts > 0 && mainFilter === 'NEED_SHIP' && subFilter === 'READY_TO_SHIP' && (
                 <input
                   type="checkbox"
-                  checked={filtered.filter(o => o.orderStatus === 'READY_TO_SHIP').length > 0 && 
-                           filtered.filter(o => o.orderStatus === 'READY_TO_SHIP').every(o => selectedOrders.includes(o.orderSn))}
+                  checked={filtered.filter(o => o.orderStatus === 'READY_TO_SHIP' && (o.shipByDate ?? 0) !== 0).length > 0 && 
+                           filtered.filter(o => o.orderStatus === 'READY_TO_SHIP' && (o.shipByDate ?? 0) !== 0).every(o => selectedOrders.includes(o.orderSn))}
                   onChange={selectAllReadyToShip}
                   style={{ width: 12, height: 12, cursor: 'pointer' }}
                   title="Pilih semua pesanan yang perlu diproses"

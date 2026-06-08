@@ -120,6 +120,13 @@
       "when": 1780400000000,
       "tag": "0033_master_image_url",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "5",
+      "when": 1780500000000,
+      "tag": "0034_order_ship_by_date",
+      "breakpoints": true
     }
   ]
 }
