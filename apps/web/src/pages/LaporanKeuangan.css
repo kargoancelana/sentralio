@@ -420,6 +420,27 @@
   cursor: not-allowed;
 }
 
+/* Active page number */
+.laporan-pagination-buttons button.active {
+  background: var(--accent);
+  color: var(--accent-f);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.laporan-pagination-buttons button.active:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Ellipsis between page-number gaps */
+.laporan-pagination-ellipsis {
+  padding: 6px 4px;
+  font-size: 0.75rem;
+  color: var(--text4);
+  user-select: none;
+}
+
 /* Sort/Group Controls */
 .laporan-controls {
   display: flex;

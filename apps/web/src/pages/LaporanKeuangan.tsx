@@ -7,6 +7,25 @@ import './LaporanKeuangan.css';
 
 // ── Helpers ──
 
+/**
+ * Build a compact pagination range with ellipsis, e.g. for current=4/total=10:
+ * [1, '…', 3, 4, 5, '…', 10]. Always shows first/last, and a window around the
+ * current page. Returns numbers for clickable pages and '…' for gaps.
+ */
+function getPageNumbers(current: number, total: number): (number | '…')[] {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  const pages: (number | '…')[] = [1];
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+  if (start > 2) pages.push('…');
+  for (let p = start; p <= end; p++) pages.push(p);
+  if (end < total - 1) pages.push('…');
+  pages.push(total);
+  return pages;
+}
+
 function formatRupiah(value: number): string {
   if (value == null || isNaN(value)) return 'Rp 0';
   const abs = Math.abs(Math.round(value));
@@ -37,12 +56,11 @@ function formatDate(dateStr: string): string {
 
 // ── Types ──
 
-type TabKey = 'ringkasan' | 'per-order' | 'per-toko' | 'per-produk' | 'potongan';
+type TabKey = 'ringkasan' | 'per-order' | 'per-produk' | 'potongan';
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'ringkasan', label: 'Ringkasan' },
   { key: 'per-order', label: 'Per Order' },
-  { key: 'per-toko', label: 'Per Toko' },
   { key: 'per-produk', label: 'Per Produk' },
   { key: 'potongan', label: 'Rincian Potongan Marketplace' },
 ];
@@ -149,7 +167,6 @@ export function LaporanKeuangan() {
       {/* Tab Content */}
       {activeTab === 'ringkasan' && <TabRingkasan startDate={startDate} endDate={endDate} shopId={shopId} />}
       {activeTab === 'per-order' && <TabPerOrder startDate={startDate} endDate={endDate} shopId={shopId} />}
-      {activeTab === 'per-toko' && <TabPerToko startDate={startDate} endDate={endDate} />}
       {activeTab === 'per-produk' && <TabPerProduk startDate={startDate} endDate={endDate} shopId={shopId} />}
       {activeTab === 'potongan' && <TabPotongan startDate={startDate} endDate={endDate} shopId={shopId} />}
     </div>
@@ -228,7 +245,7 @@ function TabRingkasan({ startDate, endDate, shopId }: { startDate: string; endDa
           <div className="laporan-breakdown-value">{formatRupiah(s.totalPackingCost)}</div>
         </div>
         <div className="laporan-breakdown-card">
-          <div className="laporan-breakdown-label">Potongan Shopee</div>
+          <div className="laporan-breakdown-label">Potongan Marketplace</div>
           <div className="laporan-breakdown-value">{formatRupiah(s.totalShopeeDeductions)}</div>
         </div>
         <div className="laporan-breakdown-card">
@@ -296,6 +313,19 @@ function TabPerOrder({ startDate, endDate, shopId }: { startDate: string; endDat
             </div>
             <div className="laporan-pagination-buttons">
               <button disabled={page <= 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
+              {getPageNumbers(pagination.page, pagination.totalPages).map((p, idx) =>
+                p === '…' ? (
+                  <span key={`gap-${idx}`} className="laporan-pagination-ellipsis">…</span>
+                ) : (
+                  <button
+                    key={p}
+                    className={p === pagination.page ? 'active' : ''}
+                    onClick={() => setPage(p)}
+                  >
+                    {p}
+                  </button>
+                )
+              )}
               <button disabled={page >= pagination.totalPages} onClick={() => setPage(p => p + 1)}>Next →</button>
             </div>
           </div>
@@ -353,66 +383,7 @@ function OrderRow({ order, expanded, onToggle }: { order: any; expanded: boolean
 }
 
 // ── Tab: Per Toko ──
-
-function TabPerToko({ startDate, endDate }: { startDate: string; endDate: string }) {
-  const [sortBy, setSortBy] = useState('revenue');
-
-  const { data, loading, error } = useApi(
-    () => api.profitShops(startDate, endDate, sortBy),
-    [startDate, endDate, sortBy],
-    `profit-shops-${startDate}-${endDate}-${sortBy}`
-  );
-
-  if (loading && !data?.data) return <TableSkeleton />;
-  if (error && !data?.data) return <div className="laporan-error">Error: {error}</div>;
-  if (!data?.data?.shops?.length) return <EmptyState />;
-
-  const shops = data.data.shops;
-
-  return (
-    <div>
-      {loading && <UpdatingChip />}
-      <div className="laporan-controls">
-        <label>Urutkan:</label>
-        <select value={sortBy} onChange={e => setSortBy(e.target.value)}>
-          <option value="revenue">Revenue</option>
-          <option value="netProfit">Net Profit</option>
-          <option value="profitMarginPercent">Margin %</option>
-          <option value="orderCount">Jumlah Order</option>
-        </select>
-      </div>
-
-      <div className="laporan-table-wrapper">
-        <table className="laporan-table">
-          <thead>
-            <tr>
-              <th>Nama Toko</th>
-              <th className="text-right">Revenue</th>
-              <th className="text-right">Net Profit</th>
-              <th className="text-right">Margin %</th>
-              <th className="text-right">Jumlah Order</th>
-            </tr>
-          </thead>
-          <tbody>
-            {shops.map((shop: any) => (
-              <tr key={shop.shopId}>
-                <td>{shop.shopName || `Shop ${shop.shopId}`}</td>
-                <td className="text-right">{formatRupiah(shop.totalRevenue)}</td>
-                <td className={`text-right ${shop.totalNetProfit >= 0 ? 'positive' : 'negative'}`}>
-                  {formatRupiah(shop.totalNetProfit)}
-                </td>
-                <td className={`text-right ${shop.profitMarginPercent >= 0 ? 'positive' : 'negative'}`}>
-                  {formatPercent(shop.profitMarginPercent)}
-                </td>
-                <td className="text-right">{shop.orderCount}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
+// Removed: redundant with the Ringkasan tab (shop-level summary is covered there).
 
 // ── Tab: Per Produk ──
 
