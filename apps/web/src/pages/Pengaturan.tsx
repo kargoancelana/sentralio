@@ -33,7 +33,7 @@ export function Pengaturan() {
 
   return (
     <div className="wms-page animate-fade-in">
-      <div style={{ maxWidth: '1080px', margin: '0 auto' }}>
+      <div style={{ maxWidth: '860px' }}>
         <div className="page-header">
           <div>
             <h1 className="page-title">Pengaturan</h1>
