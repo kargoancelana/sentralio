@@ -1,8 +1,11 @@
 /**
  * StaffPermissions — admin UI to configure which features the `staff` role can
- * access. Renders a themed toggle per configurable feature. Persists via
- * PUT /auth/permissions. Admin always has full access; some features
- * (user management, Shopee integration) are admin-only and not shown here.
+ * access. Renders a themed toggle per configurable feature.
+ *
+ * Auto-save: flipping a toggle persists immediately via PUT /auth/permissions.
+ * The row shows a saving indicator while in flight and reverts on error.
+ * Admin always has full access; some features (user management, Shopee
+ * integration) are admin-only and not shown here.
  */
 
 import { useEffect, useState } from 'react';
@@ -26,9 +29,8 @@ interface Row {
 export function StaffPermissions() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [savingFeature, setSavingFeature] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [savedAt, setSavedAt] = useState<number | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -48,22 +50,29 @@ export function StaffPermissions() {
     };
   }, []);
 
-  function toggle(feature: string) {
-    setRows((prev) => prev.map((r) => (r.feature === feature ? { ...r, enabled: !r.enabled } : r)));
-    setSavedAt(null);
-  }
+  /** Auto-save: optimistically flip, persist, revert on failure. */
+  async function toggle(feature: string) {
+    if (savingFeature !== null) return;
 
-  async function save() {
-    setSaving(true);
+    const current = rows.find((r) => r.feature === feature);
+    if (!current) return;
+    const nextEnabled = !current.enabled;
+
+    // Optimistic update.
+    setRows((prev) => prev.map((r) => (r.feature === feature ? { ...r, enabled: nextEnabled } : r)));
+    setSavingFeature(feature);
     setError(null);
+
     try {
-      const res = await api.permissionsUpdate(rows);
+      const payload = rows.map((r) => (r.feature === feature ? { ...r, enabled: nextEnabled } : r));
+      const res = await api.permissionsUpdate(payload);
       setRows(res.permissions);
-      setSavedAt(Date.now());
     } catch {
-      setError('Gagal menyimpan. Coba lagi.');
+      // Revert on error.
+      setRows((prev) => prev.map((r) => (r.feature === feature ? { ...r, enabled: current.enabled } : r)));
+      setError('Gagal menyimpan perubahan. Coba lagi.');
     } finally {
-      setSaving(false);
+      setSavingFeature(null);
     }
   }
 
@@ -79,8 +88,8 @@ export function StaffPermissions() {
         </h2>
         <p style={{ fontSize: '0.875rem', color: 'var(--text3)' }}>
           Tentukan fitur apa saja yang dapat diakses oleh pengguna dengan peran <strong>staff</strong>.
-          Admin selalu memiliki akses penuh. Dashboard, ganti password, dan keluar selalu tersedia
-          untuk staff.
+          Perubahan tersimpan otomatis. Admin selalu memiliki akses penuh. Dashboard, ganti password,
+          dan keluar selalu tersedia untuk staff.
         </p>
       </div>
 
@@ -106,6 +115,8 @@ export function StaffPermissions() {
             desc: '',
             icon: 'dashboard',
           };
+          const saving = savingFeature === row.feature;
+          const disabled = savingFeature !== null;
           return (
             <div
               key={row.feature}
@@ -116,6 +127,7 @@ export function StaffPermissions() {
                 gap: '16px',
                 padding: '14px 16px',
                 borderTop: idx === 0 ? 'none' : '1px solid var(--border)',
+                opacity: disabled && !saving ? 0.6 : 1,
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -132,52 +144,47 @@ export function StaffPermissions() {
                 </div>
               </div>
 
-              {/* Themed toggle switch */}
-              <button
-                role="switch"
-                aria-checked={row.enabled}
-                aria-label={`${meta.label}: ${row.enabled ? 'aktif' : 'nonaktif'}`}
-                onClick={() => toggle(row.feature)}
-                style={{
-                  position: 'relative',
-                  width: '44px',
-                  height: '24px',
-                  borderRadius: '999px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  flexShrink: 0,
-                  background: row.enabled ? 'var(--accent)' : 'var(--border)',
-                  transition: 'background 0.18s ease',
-                }}
-              >
-                <span
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                {saving && (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>Menyimpan…</span>
+                )}
+                {/* Themed toggle switch */}
+                <button
+                  role="switch"
+                  aria-checked={row.enabled}
+                  aria-label={`${meta.label}: ${row.enabled ? 'aktif' : 'nonaktif'}`}
+                  onClick={() => toggle(row.feature)}
+                  disabled={disabled}
                   style={{
-                    position: 'absolute',
-                    top: '2px',
-                    left: row.enabled ? '22px' : '2px',
-                    width: '20px',
-                    height: '20px',
-                    borderRadius: '50%',
-                    background: '#fff',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.25)',
-                    transition: 'left 0.18s ease',
+                    position: 'relative',
+                    width: '44px',
+                    height: '24px',
+                    borderRadius: '999px',
+                    border: 'none',
+                    cursor: disabled ? 'not-allowed' : 'pointer',
+                    flexShrink: 0,
+                    background: row.enabled ? 'var(--accent)' : 'var(--border)',
+                    transition: 'background 0.18s ease',
                   }}
-                />
-              </button>
+                >
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: '2px',
+                      left: row.enabled ? '22px' : '2px',
+                      width: '20px',
+                      height: '20px',
+                      borderRadius: '50%',
+                      background: '#fff',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.25)',
+                      transition: 'left 0.18s ease',
+                    }}
+                  />
+                </button>
+              </div>
             </div>
           );
         })}
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '16px' }}>
-        <button onClick={save} disabled={saving} className="btn btn-primary">
-          {saving ? 'Menyimpan…' : 'Simpan Perubahan'}
-        </button>
-        {savedAt && !saving && (
-          <span style={{ fontSize: '0.85rem', color: 'var(--success, #16a34a)' }}>
-            Tersimpan ✓
-          </span>
-        )}
       </div>
     </div>
   );
