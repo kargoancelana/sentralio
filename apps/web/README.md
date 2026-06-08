@@ -1,73 +1,34 @@
-# React + TypeScript + Vite
+# WMS-Sync — Web
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Frontend for WMS-Sync, built with React 19, Vite, and TypeScript. See the [root README](../../README.md) for full project setup.
 
-Currently, two official plugins are available:
+## Development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```bash
+# from repo root (runs api + web together)
+bun run dev
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+# or web only
+bun run dev:web
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Dev server runs on `http://localhost:5173` (falls forward to 5174–5179 if the port is taken). Make sure the matching port is listed in `AUTH_ALLOWED_ORIGINS` in the root `.env`.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Scripts
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+- `bun run dev` — start Vite dev server
+- `bun run build` — type-check and build for production
+- `bun run preview` — preview the production build
+- `bun run lint` — run ESLint
+- `bun run test` — run the Vitest suite
+
+## Structure
+
+- `src/pages/` — feature pages (Dashboard, PesananSaya, MasterProduk, ProdukChannel, LaporanKeuangan, Pengaturan, IntegrasiShopee, UsersAdmin, Login)
+- `src/auth/` — role matrix and route guards (`ProtectedRoute`, `RoleGate`)
+- `src/context/` — `AuthContext` for session state
+- `src/components/` — shared UI components
+
+## Authentication
+
+The app uses session-based auth (JWT in an HttpOnly cookie). Routes are protected by `ProtectedRoute`, and feature visibility is controlled by a role matrix (`admin` / `staff`) in `src/auth/matrix.ts`.
