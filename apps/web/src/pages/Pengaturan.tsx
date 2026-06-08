@@ -26,9 +26,9 @@ export function Pengaturan() {
 
   const tabs: { id: Tab; label: string; icon: string; show: boolean }[] = [
     { id: 'password', label: 'Ubah Password', icon: 'lock', show: true },
-    { id: 'appearance', label: 'Tampilan & Aksesibilitas', icon: 'sun', show: true },
     { id: 'users', label: 'Manajemen Pengguna', icon: 'users', show: isAdmin },
     { id: 'permissions', label: 'Akses Staff', icon: 'settings', show: isAdmin },
+    { id: 'appearance', label: 'Tampilan & Aksesibilitas', icon: 'sun', show: true },
   ];
 
   return (
