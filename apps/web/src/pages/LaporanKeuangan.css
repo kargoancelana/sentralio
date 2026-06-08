@@ -476,3 +476,44 @@
     flex-wrap: wrap;
   }
 }
+
+/* ── Period Picker (Shopee-style) ── */
+.laporan-period-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text1);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+  white-space: nowrap;
+}
+
+.laporan-period-btn:hover {
+  border-color: var(--text3);
+  background: var(--bg2);
+}
+
+.laporan-cal-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text2);
+  cursor: pointer;
+  transition: background .15s;
+}
+
+.laporan-cal-nav:hover:not(:disabled) {
+  background: var(--bg2);
+}

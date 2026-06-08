@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { BarChart3, AlertTriangle, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { api } from '../lib/api';
+import { PeriodPicker, getPresetRange, type PresetKey } from '../components/laporan/PeriodPicker';
 import './LaporanKeuangan.css';
 
 // ── Helpers ──
@@ -18,45 +19,11 @@ function formatPercent(value: number): string {
   return `${value.toFixed(1)}%`;
 }
 
-// ─── Timezone-safe WIB helpers ────────────────────────────────────────────────
+// ─── Timezone-safe WIB date display helper ────────────────────────────────────
 //
-// Reports are scoped to Asia/Jakarta calendar dates. Client browser may sit in
-// any timezone; we must NOT use raw `new Date()` calendar fields because they
-// reflect the user's local timezone. These helpers always speak WIB.
-
-const WIB_DATE_PARTS = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'Asia/Jakarta',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-});
-
-/** Returns "YYYY-MM-DD" in WIB for the given instant (defaults to now). */
-function wibDateOnly(date: Date = new Date()): string {
-  const parts = WIB_DATE_PARTS.formatToParts(date);
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '00';
-  return `${get('year')}-${get('month')}-${get('day')}`;
-}
-
-/** Returns a new "YYYY-MM-DD" offset by `daysBack` days from the WIB anchor. */
-function wibDateOffset(daysBack: number): string {
-  // Anchor on WIB midnight to avoid drifting across DST/zones in the math.
-  const todayStr = wibDateOnly();
-  const [y, m, d] = todayStr.split('-').map(Number);
-  // Construct as UTC to keep arithmetic safe, then re-format via the WIB helper.
-  const anchor = new Date(Date.UTC(y, m - 1, d));
-  anchor.setUTCDate(anchor.getUTCDate() - daysBack);
-  return wibDateOnly(anchor);
-}
-
-/** Returns a new "YYYY-MM-DD" offset by `monthsBack` calendar months from WIB anchor. */
-function wibMonthOffset(monthsBack: number): string {
-  const todayStr = wibDateOnly();
-  const [y, m, d] = todayStr.split('-').map(Number);
-  const anchor = new Date(Date.UTC(y, m - 1, d));
-  anchor.setUTCMonth(anchor.getUTCMonth() - monthsBack);
-  return wibDateOnly(anchor);
-}
+// Reports are scoped to Asia/Jakarta calendar dates. Period selection now lives
+// in the PeriodPicker component (which has its own WIB math). Here we only need
+// to format the WIB date strings the backend returns.
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return '-';
@@ -66,32 +33,6 @@ function formatDate(dateStr: string): string {
   const [yyyy, mm, dd] = datePart.split('-');
   if (!yyyy || !mm || !dd) return dateStr;
   return `${dd}/${mm}/${yyyy}`;
-}
-
-function toISODate(date: Date): string {
-  // Kept for backward compatibility with custom date pickers, which use the
-  // browser-local calendar from <input type="date">.
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function getPresetDates(preset: string): { start: string; end: string } {
-  const today = wibDateOnly();
-  if (preset === 'today') {
-    return { start: today, end: today };
-  }
-  if (preset === 'yesterday') {
-    const yesterday = wibDateOffset(1);
-    return { start: yesterday, end: yesterday };
-  }
-  // Inclusive ranges: "7 hari" = today + 6 days back, "30 hari" = today + 29 days back.
-  // (e.g. on May 24 WIB, "7 hari" = May 18..24, "30 hari" = Apr 25..May 24.)
-  if (preset === '7d') return { start: wibDateOffset(6), end: today };
-  if (preset === '30d') return { start: wibDateOffset(29), end: today };
-  if (preset === '3m') return { start: wibMonthOffset(3), end: today };
-  return { start: today, end: today };
 }
 
 // ── Types ──
@@ -147,24 +88,21 @@ function UpdatingChip() {
 // ── Main Component ──
 
 export function LaporanKeuangan() {
-  const defaultDates = getPresetDates('30d');
+  const defaultDates = getPresetRange('30d');
   const [startDate, setStartDate] = useState(defaultDates.start);
   const [endDate, setEndDate] = useState(defaultDates.end);
   const [shopId, setShopId] = useState<number | undefined>(undefined);
   const [activeTab, setActiveTab] = useState<TabKey>('ringkasan');
-  const [datePreset, setDatePreset] = useState<string>('30d');
+  const [datePreset, setDatePreset] = useState<PresetKey>('30d');
 
   // Shop list for filter
   const { data: shopsData } = useApi(() => api.shopeeCredentialsList(), [], 'shopee-credentials');
   const shops = shopsData?.data || [];
 
-  const handlePreset = (preset: string) => {
+  const handlePeriodChange = (preset: PresetKey, start: string, end: string) => {
     setDatePreset(preset);
-    if (preset !== 'custom') {
-      const { start, end } = getPresetDates(preset);
-      setStartDate(start);
-      setEndDate(end);
-    }
+    setStartDate(start);
+    setEndDate(end);
   };
 
   return (
@@ -179,21 +117,12 @@ export function LaporanKeuangan() {
       {/* Filters */}
       <div className="laporan-filters">
         <label>Periode:</label>
-        <div className="laporan-date-presets">
-          <button className={datePreset === 'today' ? 'active' : ''} onClick={() => handlePreset('today')}>Hari ini</button>
-          <button className={datePreset === 'yesterday' ? 'active' : ''} onClick={() => handlePreset('yesterday')}>Kemarin</button>
-          <button className={datePreset === '7d' ? 'active' : ''} onClick={() => handlePreset('7d')}>7 hari</button>
-          <button className={datePreset === '30d' ? 'active' : ''} onClick={() => handlePreset('30d')}>30 hari</button>
-          <button className={datePreset === '3m' ? 'active' : ''} onClick={() => handlePreset('3m')}>3 bulan</button>
-          <button className={datePreset === 'custom' ? 'active' : ''} onClick={() => handlePreset('custom')}>Custom</button>
-        </div>
-        {datePreset === 'custom' && (
-          <div className="laporan-date-inputs">
-            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
-            <span>—</span>
-            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
-          </div>
-        )}
+        <PeriodPicker
+          startDate={startDate}
+          endDate={endDate}
+          preset={datePreset}
+          onChange={handlePeriodChange}
+        />
         <div className="laporan-shop-filter">
           <select value={shopId ?? ''} onChange={e => setShopId(e.target.value ? Number(e.target.value) : undefined)}>
             <option value="">Semua Toko</option>
