@@ -33,6 +33,7 @@ function EditModal({ product, onClose, onSave, saving }: any) {
   const [name, setName] = useState('');
   const [variants, setVariants] = useState<any[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
+  const [variantToDelete, setVariantToDelete] = useState<any | null>(null);
 
   // ── HPP state ──
   const [hppFormVariantId, setHppFormVariantId] = useState<number | null>(null);
@@ -246,7 +247,15 @@ function EditModal({ product, onClose, onSave, saving }: any) {
                           className="btn btn-ghost btn-xs"
                           style={{ color: '#DC2626', padding: 4 }}
                           title="Hapus variasi ini"
-                          onClick={() => removeVariant(v.id)}
+                          onClick={() => {
+                            // New, completely-empty rows can be dropped without asking.
+                            const isEmptyNew = v.dbId == null && !String(v.varName).trim() && !String(v.msku).trim();
+                            if (isEmptyNew) {
+                              removeVariant(v.id);
+                            } else {
+                              setVariantToDelete(v);
+                            }
+                          }}
                           disabled={saving}
                         >
                           <Trash2 size={13} />
@@ -325,6 +334,50 @@ function EditModal({ product, onClose, onSave, saving }: any) {
           onCancel={handleHppFormCancel}
         />
       )}
+
+      {/* ── Delete Variant Confirmation ── */}
+      <Modal
+        open={!!variantToDelete}
+        onClose={() => setVariantToDelete(null)}
+        title="Hapus Variasi"
+      >
+        {variantToDelete && (
+          <div>
+            <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 8 }}>
+              Yakin ingin menghapus variasi:
+            </p>
+            <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--text1)', marginBottom: 4 }}>
+              {variantToDelete.varName?.trim() || '(Tanpa nama)'}
+            </p>
+            <p style={{ fontSize: 12, color: 'var(--text4)', marginBottom: 12 }}>
+              MSKU: {variantToDelete.msku?.trim() || '(kosong)'}
+            </p>
+            {variantToDelete.dbId != null && (
+              <div style={{ background: 'var(--bg2)', border: '1px solid #FECACA', borderRadius: 8, padding: '10px 12px', marginBottom: 16 }}>
+                <p style={{ color: '#991B1B', fontSize: 12.5 }}>
+                  Variasi ini dan data HPP yang terkait akan dihapus permanen setelah Anda menekan
+                  "Simpan & Push". Mapping ke produk channel dengan MSKU ini juga akan dilepas.
+                </p>
+              </div>
+            )}
+            <div className="form-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button className="btn btn-ghost" onClick={() => setVariantToDelete(null)} disabled={saving}>
+                Batal
+              </button>
+              <button
+                className="btn btn-danger"
+                disabled={saving}
+                onClick={() => {
+                  removeVariant(variantToDelete.id);
+                  setVariantToDelete(null);
+                }}
+              >
+                Hapus Variasi
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </>
   );
 }

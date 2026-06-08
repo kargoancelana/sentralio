@@ -173,6 +173,21 @@ export async function updateMasterVariants(masterProductId: number, variants: an
   const masterRows = await db.select().from(masterProducts).where(eq(masterProducts.id, masterProductId)).limit(1);
   if (masterRows.length === 0) throw new Error("Master product not found");
 
+  // ── Delete variants removed from the list ──
+  // Any existing variant of this master whose id is NOT present in the incoming
+  // payload was removed by the user and must be deleted. HPP entries referencing
+  // it cascade-delete via FK.
+  const existingVariants = await db.select().from(masterProductVariants)
+    .where(eq(masterProductVariants.masterProductId, masterProductId));
+  const keepIds = new Set(
+    variants.map((v) => v.id).filter((id): id is number => typeof id === 'number'),
+  );
+  for (const ev of existingVariants) {
+    if (!keepIds.has(ev.id)) {
+      await db.delete(masterProductVariants).where(eq(masterProductVariants.id, ev.id));
+    }
+  }
+
   // Upsert variants
   for (const v of variants) {
     if (v.id) {
