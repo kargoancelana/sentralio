@@ -97,7 +97,7 @@ export function StaffPermissions() {
   }
 
   return (
-    <div style={{ maxWidth: '640px', margin: '0 auto' }}>
+    <div style={{ maxWidth: '640px' }}>
       <div style={{ marginBottom: '16px' }}>
         <h2 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text1)', marginBottom: '4px' }}>
           Akses Fitur Staff
