@@ -205,23 +205,11 @@ function TabRingkasan({ startDate, endDate, shopId }: { startDate: string; endDa
         </div>
       )}
 
-      {/* Ringkasan utama */}
+      {/* Ringkasan — satu grid, urutan: revenue → order → pcs → biaya → net profit */}
       <div className="laporan-stats">
         <div className="laporan-stat-card">
           <div className="laporan-stat-label">Total Revenue</div>
           <div className="laporan-stat-value">{formatRupiah(s.totalRevenue)}</div>
-        </div>
-        <div className="laporan-stat-card">
-          <div className="laporan-stat-label">Net Profit</div>
-          <div className={`laporan-stat-value ${s.totalNetProfit >= 0 ? 'positive' : 'negative'}`}>
-            {formatRupiah(s.totalNetProfit)}
-          </div>
-        </div>
-        <div className="laporan-stat-card">
-          <div className="laporan-stat-label">Profit Margin</div>
-          <div className={`laporan-stat-value ${s.profitMarginPercent >= 0 ? 'positive' : 'negative'}`}>
-            {formatPercent(s.profitMarginPercent)}
-          </div>
         </div>
         <div className="laporan-stat-card">
           <div className="laporan-stat-label">Jumlah Order</div>
@@ -231,26 +219,27 @@ function TabRingkasan({ startDate, endDate, shopId }: { startDate: string; endDa
           <div className="laporan-stat-label">Jumlah Pcs</div>
           <div className="laporan-stat-value">{s.totalQty ?? 0}</div>
         </div>
-      </div>
-
-      {/* Rincian biaya */}
-      <div className="laporan-section-label">Rincian Biaya</div>
-      <div className="laporan-breakdown">
-        <div className="laporan-breakdown-card">
-          <div className="laporan-breakdown-label">HPP (Harga Pokok)</div>
-          <div className="laporan-breakdown-value">{formatRupiah(s.totalHpp)}</div>
+        <div className="laporan-stat-card">
+          <div className="laporan-stat-label">HPP (Harga Pokok)</div>
+          <div className="laporan-stat-value">{formatRupiah(s.totalHpp)}</div>
         </div>
-        <div className="laporan-breakdown-card">
-          <div className="laporan-breakdown-label">Biaya Packing</div>
-          <div className="laporan-breakdown-value">{formatRupiah(s.totalPackingCost)}</div>
+        <div className="laporan-stat-card">
+          <div className="laporan-stat-label">Potongan Marketplace</div>
+          <div className="laporan-stat-value">{formatRupiah(s.totalShopeeDeductions)}</div>
         </div>
-        <div className="laporan-breakdown-card">
-          <div className="laporan-breakdown-label">Potongan Marketplace</div>
-          <div className="laporan-breakdown-value">{formatRupiah(s.totalShopeeDeductions)}</div>
+        <div className="laporan-stat-card">
+          <div className="laporan-stat-label">Biaya Iklan</div>
+          <div className="laporan-stat-value">{formatRupiah(s.totalAdCost ?? 0)}</div>
         </div>
-        <div className="laporan-breakdown-card">
-          <div className="laporan-breakdown-label">Biaya Iklan</div>
-          <div className="laporan-breakdown-value">{formatRupiah(s.totalAdCost ?? 0)}</div>
+        <div className="laporan-stat-card">
+          <div className="laporan-stat-label">Biaya Packing</div>
+          <div className="laporan-stat-value">{formatRupiah(s.totalPackingCost)}</div>
+        </div>
+        <div className="laporan-stat-card">
+          <div className="laporan-stat-label">Net Profit</div>
+          <div className={`laporan-stat-value ${s.totalNetProfit >= 0 ? 'positive' : 'negative'}`}>
+            {formatRupiah(s.totalNetProfit)}
+          </div>
         </div>
       </div>
     </div>
@@ -475,7 +464,7 @@ function TabPotongan({ startDate, endDate, shopId }: { startDate: string; endDat
   return (
     <div>
       {loading && <UpdatingChip />}
-      <div className="laporan-stats">
+      <div className="laporan-stats laporan-stats--cols-3">
         <div className="laporan-stat-card">
           <div className="laporan-stat-label">Biaya Administrasi</div>
           <div className="laporan-stat-value">{formatRupiah(d.totalCommission)}</div>
@@ -503,7 +492,7 @@ function TabPotongan({ startDate, endDate, shopId }: { startDate: string; endDat
       </div>
 
       <div className="laporan-section-label">Total</div>
-      <div className="laporan-stats">
+      <div className="laporan-stats laporan-stats--single">
         <div className="laporan-stat-card">
           <div className="laporan-stat-label">Grand Total Potongan</div>
           <div className="laporan-stat-value negative">{formatRupiah(d.grandTotal)}</div>

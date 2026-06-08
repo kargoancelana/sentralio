@@ -113,13 +113,47 @@
   border-bottom-color: var(--accent);
 }
 
-/* Stats Grid — uniform cards, auto-fill so every card is the same size and
-   rows wrap cleanly instead of leaving a lone card hanging. */
+/* Stats Grid — fixed 4 columns so 8 cards form a clean 4×2 layout.
+   Collapses to 2 columns on tablets and 1 on phones. */
 .laporan-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(4, 1fr);
   gap: 16px;
   margin-bottom: 24px;
+}
+
+@media (max-width: 900px) {
+  .laporan-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 520px) {
+  .laporan-stats {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Deductions tab: max 3 columns per row (e.g. 6 cards → 3×2). */
+.laporan-stats--cols-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+@media (max-width: 900px) {
+  .laporan-stats--cols-3 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 520px) {
+  .laporan-stats--cols-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Grand-total row: a single full-width card, not squeezed into a grid column. */
+.laporan-stats--single {
+  grid-template-columns: 1fr;
 }
 
 .laporan-stat-card {
