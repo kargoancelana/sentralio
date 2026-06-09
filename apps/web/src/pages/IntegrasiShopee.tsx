@@ -66,8 +66,10 @@ function DisconnectModal({ shop, onClose, onConfirm }: any) {
                 Peringatan: Aksi Berisiko Tinggi
               </div>
               <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.55 }}>
-                Memutus koneksi akan menghapus token akses dan menghentikan semua sinkronisasi
-                otomatis untuk toko ini. Data produk channel yang sudah tersimpan tidak akan ikut terhapus.
+                Memutus koneksi akan menghentikan sinkronisasi otomatis dan menyembunyikan
+                semua data toko ini (pesanan, produk channel, dan laporan) dari aplikasi.
+                Data tidak dihapus — semuanya akan muncul kembali dan sinkronisasi berjalan lagi
+                begitu Anda menghubungkan ulang toko ini.
               </div>
             </div>
           </div>

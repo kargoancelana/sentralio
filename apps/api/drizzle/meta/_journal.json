@@ -127,6 +127,13 @@
       "when": 1780500000000,
       "tag": "0034_order_ship_by_date",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "5",
+      "when": 1780600000000,
+      "tag": "0035_shop_connection_status",
+      "breakpoints": true
     }
   ]
 }

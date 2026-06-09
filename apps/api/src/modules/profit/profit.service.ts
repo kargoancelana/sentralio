@@ -133,6 +133,7 @@ import {
 import type { GroupByLevel, OrderCostInput } from "./profit-calculator";
 import { getTotalAdsExpense } from "../../services/ads-expense.service";
 import type { AdsExpenseTotal } from "../../services/ads-expense.service";
+import { getConnectedShopIds } from "../../services/active-shops";
 
 // ─── Exported Query Params Interface ──────────────────────────────────────────
 
@@ -311,6 +312,11 @@ async function fetchCompletedOrdersUncached(
 
   if (shopId !== undefined) {
     conditions.push(eq(shopeeOrders.shopId, shopId));
+  } else {
+    // No specific shop → restrict to connected shops (soft-disconnect, Opsi B).
+    const connectedShopIds = await getConnectedShopIds();
+    if (connectedShopIds.length === 0) return [];
+    conditions.push(inArray(shopeeOrders.shopId, connectedShopIds));
   }
 
   const orderRows = await db
@@ -463,6 +469,11 @@ async function fetchOrdersInRange(
 
   if (shopId !== undefined) {
     conditions.push(eq(shopeeOrders.shopId, shopId));
+  } else {
+    // No specific shop → restrict to connected shops (soft-disconnect, Opsi B).
+    const connectedShopIds = await getConnectedShopIds();
+    if (connectedShopIds.length === 0) return [];
+    conditions.push(inArray(shopeeOrders.shopId, connectedShopIds));
   }
 
   const rows = await db
@@ -639,9 +650,12 @@ async function resolveAdsShopIds(callerShopId?: number): Promise<number[]> {
     return [callerShopId];
   }
   
+  // Only connected shops contribute ad cost when no specific shop is requested
+  // (soft-disconnect hides a disconnected shop's spend from reports — Opsi B).
   const rows = await db
     .select({ shopId: shopeeCredentials.shopId })
-    .from(shopeeCredentials);
+    .from(shopeeCredentials)
+    .where(eq(shopeeCredentials.status, "connected"));
   
   return rows.map((r) => r.shopId);
 }

@@ -140,7 +140,10 @@ export async function refreshAccessToken(row: TokenRow): Promise<TokenRow> {
  * Called by cron job and smart-refresh endpoints.
  */
 export async function ensureAllTokensFresh(): Promise<{ refreshed: number; failed: number }> {
-  const rows = await db.select().from(shopeeCredentials);
+  // Only refresh connected shops — disconnected ones have their tokens cleared
+  // and must not be touched until reconnected.
+  const rows = await db.select().from(shopeeCredentials)
+    .where(eq(shopeeCredentials.status, "connected"));
   let refreshed = 0;
   let failed = 0;
   const margin = 30 * 60 * 1000; // 30 minutes before expiry

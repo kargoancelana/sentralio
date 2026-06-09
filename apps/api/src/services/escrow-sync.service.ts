@@ -93,7 +93,8 @@ export class EscrowSyncService {
       // Ambil semua toko yang terdaftar
       const shops = await db
         .select({ shopId: shopeeCredentials.shopId })
-        .from(shopeeCredentials);
+        .from(shopeeCredentials)
+        .where(eq(shopeeCredentials.status, "connected"));
 
       if (shops.length === 0) {
         console.warn("[escrow-sync] No shops found, nothing to sync");
