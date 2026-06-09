@@ -24,7 +24,7 @@ export function Dashboard() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Dashboard</h1>
-          <p className="page-subtitle">Overview of your Hubsentra system</p>
+          <p className="page-subtitle">Overview of your Sentralio system</p>
         </div>
       </div>
 

@@ -61,7 +61,7 @@ export function TopBar({ active }: { active: string }) {
   return (
     <header className="topbar">
       <div className="topbar-left">
-        <span className="bc-root">Hubsentra</span>
+        <span className="bc-root">Sentralio</span>
         <span className="bc-sep">›</span>
         <span className="bc-curr">{meta.label}</span>
       </div>
