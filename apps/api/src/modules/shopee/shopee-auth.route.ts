@@ -118,6 +118,9 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
         accessToken: encrypt(data.access_token),
         refreshToken: encrypt(data.refresh_token),
         expiresAt,
+        // (Re)connecting always marks the shop active again — this is what
+        // restores a previously soft-disconnected shop's data and sync.
+        status: "connected",
         updatedAt: new Date(),
       };
 

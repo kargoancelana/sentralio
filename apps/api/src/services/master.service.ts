@@ -1,6 +1,6 @@
 import { eq, isNull, inArray } from "drizzle-orm";
 import { db } from "../db/client";
-import { masterProducts, products, productGroups, masterProductVariants } from "../db/schema";
+import { masterProducts, products, productGroups, masterProductVariants, shopeeCredentials } from "../db/schema";
 import { 
   updateStockOnShopee, 
   updateStockOnShopeeBatch, 
@@ -466,10 +466,20 @@ export async function importFromListing(shopeeItemId: string) {
 export async function listMasterProducts() {
   const masters = await db.select().from(masterProducts);
 
+  // Only count/show links from connected shops (soft-disconnect hides a
+  // disconnected shop's product links — Opsi B). A master linked solely to
+  // disconnected shops will therefore read as "Unlinked".
+  const connectedRows = await db
+    .select({ shopId: shopeeCredentials.shopId })
+    .from(shopeeCredentials)
+    .where(eq(shopeeCredentials.status, "connected"));
+  const connectedShopIds = new Set(connectedRows.map((r) => r.shopId));
+
   const result = [];
   for (const m of masters) {
-    const linked = await db.select({
+    const linkedAll = await db.select({
       id: products.id,
+      shopId: products.shopId,
       shopeeModelId: products.shopeeModelId,
       shopeeItemId: products.shopeeItemId,
       groupId: products.groupId,
@@ -479,6 +489,9 @@ export async function listMasterProducts() {
       shopeeStock: products.shopeeStock,
       syncStatus: products.syncStatus,
     }).from(products).where(eq(products.masterProductId, m.id));
+
+    // Drop links from disconnected shops.
+    const linked = linkedAll.filter((l) => connectedShopIds.has(l.shopId));
 
     // Get unique product groups for image + group info
     const groupIds = [...new Set(linked.map(l => l.groupId))];

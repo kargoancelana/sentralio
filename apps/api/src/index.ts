@@ -170,7 +170,9 @@ const app = new Elysia()
       // Smart-refresh: proactively refresh any expired/near-expired tokens
       await ensureAllTokensFresh();
 
-      const rows = await db.select().from(shopeeCredentials);
+      // Only list connected shops — disconnected shops are hidden everywhere.
+      const rows = await db.select().from(shopeeCredentials)
+        .where(eq(shopeeCredentials.status, "connected"));
       return {
         success: true,
         data: rows.map(r => ({
@@ -217,7 +219,11 @@ const app = new Elysia()
     }
   })
 
-  // ─── Multi-Seller: Disconnect a shop ────────────────────────
+  // ─── Multi-Seller: Disconnect a shop (soft) ─────────────────
+  // Soft-disconnect: keep the credentials row (so shop name + historical data
+  // survive) but mark it disconnected and clear tokens. All of the shop's data
+  // is then hidden across the app and sync skips it, until it's reconnected via
+  // OAuth re-auth (which flips status back to 'connected').
   .delete("/shopee/credentials/:shopId", async ({ params, set }) => {
     const shopId = parseInt(params.shopId);
     if (!Number.isFinite(shopId)) {
@@ -231,8 +237,16 @@ const app = new Elysia()
         set.status = 404;
         return { success: false, message: `Shop ${shopId} not found` };
       }
-      await db.delete(shopeeCredentials).where(eq(shopeeCredentials.shopId, shopId));
-      console.log(`[shopee-cred] Disconnected shop_id=${shopId}`);
+      await db.update(shopeeCredentials)
+        .set({
+          status: "disconnected",
+          // Clear tokens — we never keep credentials for a disconnected shop.
+          accessToken: "",
+          refreshToken: "",
+          updatedAt: new Date(),
+        })
+        .where(eq(shopeeCredentials.shopId, shopId));
+      console.log(`[shopee-cred] Soft-disconnected shop_id=${shopId} (data hidden, sync skipped)`);
       return { success: true, message: `Shop ${shopId} disconnected` };
     } catch (err: any) {
       set.status = 500;

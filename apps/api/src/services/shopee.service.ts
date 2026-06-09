@@ -154,7 +154,8 @@ export async function syncShopeeProducts(targetShopId?: number) {
   if (targetShopId) {
     shopsToSync = [{ shopId: targetShopId }];
   } else {
-    shopsToSync = await db.select({ shopId: shopeeCredentials.shopId }).from(shopeeCredentials);
+    shopsToSync = await db.select({ shopId: shopeeCredentials.shopId }).from(shopeeCredentials)
+      .where(eq(shopeeCredentials.status, "connected"));
   }
 
   let grandTotalItems = 0;
@@ -330,8 +331,16 @@ async function syncShopeeProductsForShop(shopId: number) {
  * Returns a structured array of items, each with their variants and master linkage.
  */
 export async function getShopeeCatalog() {
-  // 1. Fetch all product groups (items)
-  const groups = await db.select().from(productGroups);
+  // 1. Fetch product groups, but only from connected shops (soft-disconnect
+  //    hides a disconnected shop's products until it's reconnected).
+  const connectedRows = await db
+    .select({ shopId: shopeeCredentials.shopId })
+    .from(shopeeCredentials)
+    .where(eq(shopeeCredentials.status, "connected"));
+  const connectedShopIds = new Set(connectedRows.map((r) => r.shopId));
+
+  const allGroups = await db.select().from(productGroups);
+  const groups = allGroups.filter((g) => connectedShopIds.has(g.shopId));
 
   // 2. Pre-load shop name map from credentials
   const shopRows = await db.select({ shopId: shopeeCredentials.shopId, shopName: shopeeCredentials.shopName }).from(shopeeCredentials);

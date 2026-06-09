@@ -3,6 +3,7 @@ import { db } from "../../db/client";
 import { shopeeOrders, shopeeOrderItems, shopeeCredentials } from "../../db/schema";
 import { syncShopeeOrdersService } from "../../services/order.service";
 import { shipSingleOrder, shipBatchOrders, fetchAndUpdateTrackingNumber } from "../../services/shipment.service";
+import { getConnectedShopIdSet } from "../../services/active-shops";
 import { desc, eq, inArray } from "drizzle-orm";
 
 // Order SN validation regex (alphanumeric, max 100 chars)
@@ -36,8 +37,12 @@ export const orderRoutes = new Elysia({ prefix: "/orders" })
   // Get order list from local DB with items
   // Optimized: 2 queries instead of N+1, items only for active orders
   .get("/", async () => {
-    // Query 1: Get all orders
-    const records = await db.select().from(shopeeOrders).orderBy(desc(shopeeOrders.createTime));
+    // Only show orders from connected shops (soft-disconnect hides the rest).
+    const connectedShopIds = await getConnectedShopIdSet();
+
+    // Query 1: Get all orders, then drop any from disconnected shops.
+    const allRecords = await db.select().from(shopeeOrders).orderBy(desc(shopeeOrders.createTime));
+    const records = allRecords.filter(o => connectedShopIds.has(o.shopId));
 
     // Query 2: Get items for active/visible orders (READY_TO_SHIP, PROCESSED, SHIPPED, TO_CONFIRM_RECEIVE)
     // COMPLETED orders don't need items in the order list (too many, and already finished)
@@ -86,7 +91,8 @@ export const orderRoutes = new Elysia({ prefix: "/orders" })
     if (shop_id) {
       shopsToSync = [{ shopId: shop_id }];
     } else {
-      shopsToSync = await db.select({ shopId: shopeeCredentials.shopId }).from(shopeeCredentials);
+      shopsToSync = await db.select({ shopId: shopeeCredentials.shopId }).from(shopeeCredentials)
+        .where(eq(shopeeCredentials.status, "connected"));
     }
 
     if (shopsToSync.length === 0) {

@@ -64,6 +64,11 @@ export const shopeeCredentials = mysqlTable("shopee_credentials", {
   accessToken: text("access_token").notNull(),
   refreshToken: text("refresh_token").notNull(),
   expiresAt: timestamp("expires_at").notNull(),
+  // Connection lifecycle. 'connected' = active (synced + data shown).
+  // 'disconnected' = soft-disconnected: row & shop_name retained, tokens cleared,
+  // all data hidden across the app and sync skipped until the shop is reconnected
+  // (OAuth re-auth flips this back to 'connected').
+  status: varchar("status", { length: 20 }).notNull().default("connected"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => ({
   uniqShopId: uniqueIndex("uniq_shop_id").on(t.shopId),

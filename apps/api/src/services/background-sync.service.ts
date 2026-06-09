@@ -211,7 +211,8 @@ class BackgroundSyncService {
     }
 
     // Get all connected shops
-    const shops = await db.select({ shopId: shopeeCredentials.shopId }).from(shopeeCredentials);
+    const shops = await db.select({ shopId: shopeeCredentials.shopId }).from(shopeeCredentials)
+      .where(eq(shopeeCredentials.status, "connected"));
     
     if (shops.length === 0) {
       console.warn('[background-sync] No shops connected, skipping background sync');
@@ -983,7 +984,8 @@ class BackgroundSyncService {
         const startDate = fmt.format(new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000));
         const endDate = fmt.format(new Date(Date.now() - 1 * 24 * 60 * 60 * 1000));
 
-        const shops = await db.select({ shopId: shopeeCredentials.shopId }).from(shopeeCredentials);
+        const shops = await db.select({ shopId: shopeeCredentials.shopId }).from(shopeeCredentials)
+          .where(eq(shopeeCredentials.status, "connected"));
         if (shops.length === 0) {
           console.log(`[background-sync] Job "${jobName}" skipped — no shops connected`);
           return;
@@ -1096,7 +1098,8 @@ class BackgroundSyncService {
   async forceSyncOrders(orderStatus?: string, daysBack: number = 15) {
     console.log(`[background-sync] Force sync triggered for status: ${orderStatus || 'ALL'}, days: ${daysBack}`);
     
-    const shops = await db.select({ shopId: shopeeCredentials.shopId }).from(shopeeCredentials);
+    const shops = await db.select({ shopId: shopeeCredentials.shopId }).from(shopeeCredentials)
+      .where(eq(shopeeCredentials.status, "connected"));
     let totalSynced = 0;
 
     for (const shop of shops) {
