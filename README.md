@@ -1,14 +1,17 @@
-# WMS-Sync
+# Sentralio
+
+> Repository name: `wms-sync` (the product is branded **Sentralio**).
 
 Warehouse Management & Shopee integration system. A monorepo that syncs Shopee orders, manages product master data, prints shipping labels, and reports per-order profit & loss for a multi-store seller operation.
 
 ## Features
 
 - **Shopee integration** — OAuth authorization, order sync, escrow/settlement sync, automatic token refresh
-- **Order management** — order list with shop filtering, batch shipment (dropoff/pickup), batch label printing
+- **Soft connect/disconnect** — disconnecting a shop hides all of its data (orders, channel products, reports) and pauses sync without deleting anything; reconnecting via OAuth restores the data and resumes sync automatically
+- **Order management** — order list with shop filtering, batch shipment (dropoff/pickup), batch label printing, detection of Shopee "tertunda" (held) orders that can't be processed yet
 - **Shipping labels** — generate, cache, and batch-print Shopee shipping labels with custom sender info
 - **Product master** — master products, channel listings, SKU/model mapping, stock propagation across listings in a group
-- **Profit & loss reporting** — per-order, per-shop, and per-product profit analytics including HPP (cost of goods), packing cost, fees, and Shopee Ads expense
+- **Profit & loss reporting** — per-order and per-product profit analytics including HPP (cost of goods), packing cost, marketplace fees, and Shopee Ads expense (auto-refreshed so it tracks Shopee's retroactive adjustments)
 - **Authentication & roles** — session-based login (JWT in HttpOnly cookie), `admin` / `staff` role matrix, brute-force lockout, user management, change password
 - **Picking list** — aggregated pick quantities derived from synced order items
 
@@ -106,6 +109,7 @@ Operational helper scripts (in `apps/api/src/scripts`):
 
 - `reset-password.ts` — set a user's password (`--email`, `--password`)
 - `reactivate-user.ts` — reactivate a deactivated user
+- `backfill-ads-expense.ts` — backfill/refresh Shopee Ads daily expense cache (`[days]`, optional `--force` to overwrite cached values with fresh data from Shopee)
 
 ## Project Structure
 
