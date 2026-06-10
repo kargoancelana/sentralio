@@ -25,19 +25,25 @@ Warehouse Management & Shopee integration system. A monorepo that syncs Shopee o
 
 ## Requirements
 
-- [Bun](https://bun.sh) v1.3+
-- MySQL 8.0+
-- A Shopee Open Platform partner account (for live integration)
+- [Bun](https://bun.sh) v1.3+ (the whole project runs on Bun — Node.js is **not** required to run it)
+- MySQL 8.0+ (or MariaDB) with an empty database created for the app
+- A Shopee Open Platform partner account — only needed if you want the live Shopee integration (order sync, labels, profit reports). The app boots and you can log in without it; Shopee-backed screens will just be empty until credentials are configured.
 
 ## Setup
 
-1. Install dependencies (from repo root):
+1. **Install dependencies** (from repo root — this installs both `apps/web` and `apps/api` via Bun workspaces):
 
    ```bash
    bun install
    ```
 
-2. Create `.env` from the example and fill in your values:
+2. **Create the database.** In MySQL, create an empty schema matching `DB_NAME` (default `wms_sync`):
+
+   ```sql
+   CREATE DATABASE wms_sync;
+   ```
+
+3. **Create `.env`** from the example and fill in your values:
 
    ```bash
    # Windows (PowerShell)
@@ -47,22 +53,22 @@ Warehouse Management & Shopee integration system. A monorepo that syncs Shopee o
    cp .env.example .env
    ```
 
-   See [Environment Variables](#environment-variables) below for what each value means.
+   > **Where does `.env` live?** The backend loads it from the **repo root** first (`config/env.ts` resolves the root `.env`), then falls back to a local `.env` in `apps/api`. Keeping a single `.env` at the repo root is the recommended setup. See [Environment Variables](#environment-variables) below for what each value means.
 
-3. Apply database migrations:
+4. **Apply database migrations** (committed SQL lives in `apps/api/drizzle`):
 
    ```bash
    bun run --filter api db:migrate
    ```
 
-4. Create the first admin user:
+5. **Create the first admin user** (there is no default user; logins are checked against the DB):
 
    ```bash
    cd apps/api
    bun run src/scripts/reset-password.ts --email admin@example.com --password "YourStrongPass1!"
    ```
 
-5. Run both apps in development:
+6. **Run both apps in development:**
 
    ```bash
    # from repo root — runs api + web together
@@ -73,23 +79,28 @@ Warehouse Management & Shopee integration system. A monorepo that syncs Shopee o
 
    ```bash
    bun run dev:api   # backend on http://localhost:3000
-   bun run dev:web   # frontend on http://localhost:5173
+   bun run dev:web   # frontend on http://localhost:5175
    ```
+
+   The frontend talks to the API through the relative path `/api`. In development, Vite proxies `/api` to `http://localhost:3000` (see `apps/web/vite.config.ts`), so you don't need to configure an API base URL — just make sure both apps are running.
 
 ## Environment Variables
 
 All secrets live in `.env` (never committed). Key groups:
 
 - **Database** — `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
-- **Shopee API** — `PARTNER_ID`, `PARTNER_KEY`, `SHOP_ID`, `ACCESS_TOKEN`, `REFRESH_TOKEN`, `SHOPEE_REDIRECT_URL`
+- **Shopee API** — `PARTNER_ID`, `PARTNER_KEY`, `SHOP_ID`, `ACCESS_TOKEN`, `REFRESH_TOKEN`, `SHOPEE_REDIRECT_URL` (only required for live Shopee integration; obtained from your own Shopee Open Platform partner account)
 - **Encryption** — `TOKEN_SECRET_KEY` (exactly 32 bytes / 64 hex chars; encrypts Shopee credentials at rest)
-- **Authentication** — `AUTH_JWT_SECRET` (≥32 bytes), `AUTH_ALLOWED_ORIGINS` (comma-separated CORS/CSRF allowlist)
+- **Authentication** — `AUTH_JWT_SECRET` (≥32 UTF-8 bytes), `AUTH_ALLOWED_ORIGINS` (comma-separated CORS/CSRF allowlist — **must include the origin your frontend runs on**, e.g. `http://localhost:5175`, or login will be blocked)
 - **Label sender info** — `SHOP_NAME`, `SHOP_PHONE`, `SHOP_CITY`
+- **Production only** — `FRONTEND_URL` (used for CORS when `NODE_ENV=production`)
+
+> The server validates env on startup and **exits immediately** if `AUTH_JWT_SECRET` is missing/too short or `AUTH_ALLOWED_ORIGINS` has no valid origin. `DB_*`, the Shopee keys, and `TOKEN_SECRET_KEY` are also required for the API to boot.
 
 Generate strong secrets with:
 
 ```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"   # TOKEN_SECRET_KEY
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"   # TOKEN_SECRET_KEY (64 hex chars)
 node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"   # AUTH_JWT_SECRET
 ```
 
@@ -100,14 +111,14 @@ Run backend scripts from `apps/api`:
 - `bun run dev` — API in watch mode
 - `bun run start` — API once
 - `bun run test` — run API test suite
-- `bun run db:generate` — generate Drizzle migration files
+- `bun run db:generate` — generate Drizzle migration files from the schema
 - `bun run db:migrate` — apply migrations
 - `bun run db:studio` — open Drizzle Studio
-- `bun run db:seed` — insert dummy data (development only)
+- `bun run db:seed` — seed Shopee API credentials from your `.env` into the `shopee_credentials` table (optional; only useful for the live Shopee integration, and safe to re-run)
 
 Operational helper scripts (in `apps/api/src/scripts`):
 
-- `reset-password.ts` — set a user's password (`--email`, `--password`)
+- `reset-password.ts` — set a user's password (`--email`, `--password`); also used to create the first admin
 - `reactivate-user.ts` — reactivate a deactivated user
 - `backfill-ads-expense.ts` — backfill/refresh Shopee Ads daily expense cache (`[days]`, optional `--force` to overwrite cached values with fresh data from Shopee)
 
@@ -127,6 +138,14 @@ apps/
       auth/      role matrix, route guards
       context/   AuthContext
 ```
+
+## Troubleshooting
+
+- **Server exits on startup with `[FATAL] AUTH_JWT_SECRET ...` or `AUTH_ALLOWED_ORIGINS ...`** — your `.env` is missing those values or the JWT secret is shorter than 32 bytes. Fill them in (see [Environment Variables](#environment-variables)).
+- **`Missing required environment variable: ...`** — one of `DB_*`, the Shopee keys, or `TOKEN_SECRET_KEY` is unset. The API requires all of them to boot, even if you aren't using Shopee yet (use placeholder values to start locally).
+- **Login returns 401 / requests blocked by CORS** — make sure the exact origin of your frontend (e.g. `http://localhost:5175`) is listed in `AUTH_ALLOWED_ORIGINS`.
+- **Frontend loads but every API call fails** — confirm the API is running on port 3000; the Vite dev proxy forwards `/api` there.
+- **Wrong dates / off-by-hours timestamps** — the app assumes WIB (UTC+7). The DB pool sets the session time zone to `+07:00` automatically; make sure your MySQL server allows that.
 
 ## Security Notes
 
