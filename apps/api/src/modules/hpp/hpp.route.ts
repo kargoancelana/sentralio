@@ -8,6 +8,10 @@
  *   GET    /hpp/variants/:variantId/history      → getHppHistory
  *   GET    /hpp/variants/:variantId/resolve      → resolveHpp
  *
+ * Auth: the editor recorded in the audit log is derived from the authenticated
+ * session (ctx.user, populated by the global auth middleware) via
+ * resolveAuditActor(). The legacy x-user-id header is only a secondary fallback.
+ *
  * Requirements: 1.1, 2.1, 3.1, 4.1, 5.1
  */
 
@@ -19,8 +23,9 @@ import {
   resolveHpp,
   updateHppEntry,
 } from "./hpp.service";
+import { resolveAuditActor, type AuditActor } from "../../utils/audit-actor";
 
-// ─── Helper: map ServiceResult errors to HTTP status codes ────────────────────
+// ─── Helper: map ServiceResult errors to HTTP status codes ────────────────
 
 function mapErrorStatus(message: string): number {
   if (message.includes("not found")) return 404;
@@ -28,15 +33,19 @@ function mapErrorStatus(message: string): number {
   return 400;
 }
 
-// ─── Routes ───────────────────────────────────────────────────────────────────
+// ─── Routes ────────────────────────────────────────────────
 
 export const hppRoutes = new Elysia({ prefix: "/hpp" })
 
-  // ─── POST /hpp/entries ─────────────────────────────────────────────────────
+  // ─── POST /hpp/entries ───────────────────────────────────────
   .post(
     "/entries",
-    async ({ body, headers, set }) => {
-      const userId = (headers["x-user-id"] as string | undefined) ?? "system";
+    async (ctx) => {
+      const { body, headers, set } = ctx;
+      const userId = resolveAuditActor(
+        (ctx as { user?: AuditActor }).user,
+        headers as Record<string, string | undefined>,
+      );
 
       const result = await createHppEntry({
         variantId: body.variantId,
@@ -66,17 +75,21 @@ export const hppRoutes = new Elysia({ prefix: "/hpp" })
     },
   )
 
-  // ─── PUT /hpp/entries/:id ──────────────────────────────────────────────────
+  // ─── PUT /hpp/entries/:id ────────────────────────────────────
   .put(
     "/entries/:id",
-    async ({ params, body, headers, set }) => {
+    async (ctx) => {
+      const { params, body, headers, set } = ctx;
       const id = Number(params.id);
       if (!Number.isFinite(id) || id <= 0) {
         set.status = 400;
         return { success: false, message: "Invalid entry id" };
       }
 
-      const userId = (headers["x-user-id"] as string | undefined) ?? "system";
+      const userId = resolveAuditActor(
+        (ctx as { user?: AuditActor }).user,
+        headers as Record<string, string | undefined>,
+      );
 
       const result = await updateHppEntry({
         id,
@@ -105,17 +118,21 @@ export const hppRoutes = new Elysia({ prefix: "/hpp" })
     },
   )
 
-  // ─── DELETE /hpp/entries/:id ───────────────────────────────────────────────
+  // ─── DELETE /hpp/entries/:id ──────────────────────────────────
   .delete(
     "/entries/:id",
-    async ({ params, headers, set }) => {
+    async (ctx) => {
+      const { params, headers, set } = ctx;
       const id = Number(params.id);
       if (!Number.isFinite(id) || id <= 0) {
         set.status = 400;
         return { success: false, message: "Invalid entry id" };
       }
 
-      const userId = (headers["x-user-id"] as string | undefined) ?? "system";
+      const userId = resolveAuditActor(
+        (ctx as { user?: AuditActor }).user,
+        headers as Record<string, string | undefined>,
+      );
 
       const result = await deleteHppEntry(id, userId);
 
@@ -131,7 +148,7 @@ export const hppRoutes = new Elysia({ prefix: "/hpp" })
     },
   )
 
-  // ─── GET /hpp/variants/:variantId/history ──────────────────────────────────
+  // ─── GET /hpp/variants/:variantId/history ─────────────────────────
   .get(
     "/variants/:variantId/history",
     async ({ params, set }) => {
@@ -155,7 +172,7 @@ export const hppRoutes = new Elysia({ prefix: "/hpp" })
     },
   )
 
-  // ─── GET /hpp/variants/:variantId/resolve ──────────────────────────────────
+  // ─── GET /hpp/variants/:variantId/resolve ─────────────────────────
   .get(
     "/variants/:variantId/resolve",
     async ({ params, query, set }) => {

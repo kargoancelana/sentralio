@@ -8,11 +8,12 @@
  *   GET    /master-packing-cost/master-products/:masterProductId/history  → getMasterPackingCostHistory
  *   GET    /master-packing-cost/master-products/:masterProductId/resolve  → resolveMasterPackingCost
  *
- * Auth: userId is derived from the x-user-id header (same as /hpp/* routes).
- * If the header is missing or empty, the route falls back to "system" so the
- * audit log still records *something* and the request is not rejected.
- * Multi-user authentication will replace this fallback with a session-derived
- * identity in a follow-up. The userId field in the request body is ignored.
+ * Auth: the editor recorded in the audit log is derived from the authenticated
+ * session (ctx.user, populated by the global auth middleware) via
+ * resolveAuditActor(). We store a human-readable label (name -> email -> id) so
+ * the history answers "who edited". The legacy x-user-id header is kept only as
+ * a secondary fallback for non-browser callers, and "system" is the last
+ * resort. The userId field in the request body is ignored.
  *
  * Requirements: 14.1–14.12
  */
@@ -25,8 +26,9 @@ import {
   resolveMasterPackingCost,
   updateMasterPackingCost,
 } from "./master-packing-cost.service";
+import { resolveAuditActor, type AuditActor } from "../../../utils/audit-actor";
 
-// ─── Helper: map ServiceResult errors to HTTP status codes ────────────────────
+// ─── Helper: map ServiceResult errors to HTTP status codes ────────────────
 
 function mapErrorStatus(message: string): number {
   if (message.includes("not found")) return 404;
@@ -34,28 +36,19 @@ function mapErrorStatus(message: string): number {
   return 400;
 }
 
-// ─── Helper: extract userId from headers, with fallback ──────────────────────
-//
-// Mirrors the pattern used by /hpp/* routes: when the `x-user-id` header is
-// absent or empty (typical during the current pre-auth UI phase), we fall back
-// to "system" so the audit log still attributes the change. Once a real auth
-// layer is wired up at the frontend, this fallback will become a hard 401.
-
-function extractUserId(headers: Record<string, string | undefined>): string {
-  const userId = headers["x-user-id"];
-  if (!userId || userId.trim().length === 0) return "system";
-  return userId.trim();
-}
-
-// ─── Routes ───────────────────────────────────────────────────────────────────
+// ─── Routes ────────────────────────────────────────────────
 
 export const masterPackingCostRoutes = new Elysia({ prefix: "/master-packing-cost" })
 
   // ─── POST /master-packing-cost/master-products/:masterProductId/entries ───
   .post(
     "/master-products/:masterProductId/entries",
-    async ({ params, body, headers, set }) => {
-      const userId = extractUserId(headers as Record<string, string | undefined>);
+    async (ctx) => {
+      const { params, body, headers, set } = ctx;
+      const userId = resolveAuditActor(
+        (ctx as { user?: AuditActor }).user,
+        headers as Record<string, string | undefined>,
+      );
 
       const masterProductId = Number(params.masterProductId);
       if (!Number.isFinite(masterProductId) || masterProductId <= 0) {
@@ -63,7 +56,7 @@ export const masterPackingCostRoutes = new Elysia({ prefix: "/master-packing-cos
         return { success: false, message: "Invalid masterProductId" };
       }
 
-      // Req 14.11: userId derived from session/JWT (header), body.userId ignored
+      // Req 14.11: userId derived from the authenticated session, body.userId ignored
       const result = await createMasterPackingCost({
         masterProductId,
         packingCost: body.packingCost,
@@ -94,11 +87,15 @@ export const masterPackingCostRoutes = new Elysia({ prefix: "/master-packing-cos
     },
   )
 
-  // ─── PUT /master-packing-cost/entries/:id ─────────────────────────────────
+  // ─── PUT /master-packing-cost/entries/:id ─────────────────────────
   .put(
     "/entries/:id",
-    async ({ params, body, headers, set }) => {
-      const userId = extractUserId(headers as Record<string, string | undefined>);
+    async (ctx) => {
+      const { params, body, headers, set } = ctx;
+      const userId = resolveAuditActor(
+        (ctx as { user?: AuditActor }).user,
+        headers as Record<string, string | undefined>,
+      );
 
       const id = Number(params.id);
       if (!Number.isFinite(id) || id <= 0) {
@@ -106,7 +103,7 @@ export const masterPackingCostRoutes = new Elysia({ prefix: "/master-packing-cos
         return { success: false, message: "Invalid entry id" };
       }
 
-      // Req 14.11: userId derived from session/JWT (header), body.userId ignored
+      // Req 14.11: userId derived from the authenticated session, body.userId ignored
       const result = await updateMasterPackingCost({
         id,
         packingCost: body.packingCost,
@@ -136,11 +133,15 @@ export const masterPackingCostRoutes = new Elysia({ prefix: "/master-packing-cos
     },
   )
 
-  // ─── DELETE /master-packing-cost/entries/:id ──────────────────────────────
+  // ─── DELETE /master-packing-cost/entries/:id ───────────────────────
   .delete(
     "/entries/:id",
-    async ({ params, headers, set }) => {
-      const userId = extractUserId(headers as Record<string, string | undefined>);
+    async (ctx) => {
+      const { params, headers, set } = ctx;
+      const userId = resolveAuditActor(
+        (ctx as { user?: AuditActor }).user,
+        headers as Record<string, string | undefined>,
+      );
 
       const id = Number(params.id);
       if (!Number.isFinite(id) || id <= 0) {

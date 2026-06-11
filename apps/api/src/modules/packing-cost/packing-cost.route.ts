@@ -8,6 +8,10 @@
  *   GET    /packing-cost/product-groups/:groupId/history     → getPackingCostHistory
  *   GET    /packing-cost/product-groups/:groupId/resolve     → resolvePackingCost
  *
+ * Auth: the editor recorded in the audit log is derived from the authenticated
+ * session (ctx.user, populated by the global auth middleware) via
+ * resolveAuditActor(). The legacy x-user-id header is only a secondary fallback.
+ *
  * Requirements: 6.1, 7.1, 8.1, 9.1, 10.1
  */
 
@@ -19,8 +23,9 @@ import {
   resolvePackingCost,
   updatePackingCostEntry,
 } from "./packing-cost.service";
+import { resolveAuditActor, type AuditActor } from "../../utils/audit-actor";
 
-// ─── Helper: map ServiceResult errors to HTTP status codes ────────────────────
+// ─── Helper: map ServiceResult errors to HTTP status codes ────────────────
 
 function mapErrorStatus(message: string): number {
   if (message.includes("not found")) return 404;
@@ -28,15 +33,19 @@ function mapErrorStatus(message: string): number {
   return 400;
 }
 
-// ─── Routes ───────────────────────────────────────────────────────────────────
+// ─── Routes ────────────────────────────────────────────────
 
 export const packingCostRoutes = new Elysia({ prefix: "/packing-cost" })
 
-  // ─── POST /packing-cost/entries ───────────────────────────────────────────
+  // ─── POST /packing-cost/entries ────────────────────────────────
   .post(
     "/entries",
-    async ({ body, headers, set }) => {
-      const userId = (headers["x-user-id"] as string | undefined) ?? "system";
+    async (ctx) => {
+      const { body, headers, set } = ctx;
+      const userId = resolveAuditActor(
+        (ctx as { user?: AuditActor }).user,
+        headers as Record<string, string | undefined>,
+      );
 
       const result = await createPackingCostEntry({
         productGroupId: body.productGroupId,
@@ -66,17 +75,21 @@ export const packingCostRoutes = new Elysia({ prefix: "/packing-cost" })
     },
   )
 
-  // ─── PUT /packing-cost/entries/:id ────────────────────────────────────────
+  // ─── PUT /packing-cost/entries/:id ──────────────────────────────
   .put(
     "/entries/:id",
-    async ({ params, body, headers, set }) => {
+    async (ctx) => {
+      const { params, body, headers, set } = ctx;
       const id = Number(params.id);
       if (!Number.isFinite(id) || id <= 0) {
         set.status = 400;
         return { success: false, message: "Invalid entry id" };
       }
 
-      const userId = (headers["x-user-id"] as string | undefined) ?? "system";
+      const userId = resolveAuditActor(
+        (ctx as { user?: AuditActor }).user,
+        headers as Record<string, string | undefined>,
+      );
 
       const result = await updatePackingCostEntry({
         id,
@@ -105,17 +118,21 @@ export const packingCostRoutes = new Elysia({ prefix: "/packing-cost" })
     },
   )
 
-  // ─── DELETE /packing-cost/entries/:id ─────────────────────────────────────
+  // ─── DELETE /packing-cost/entries/:id ────────────────────────────
   .delete(
     "/entries/:id",
-    async ({ params, headers, set }) => {
+    async (ctx) => {
+      const { params, headers, set } = ctx;
       const id = Number(params.id);
       if (!Number.isFinite(id) || id <= 0) {
         set.status = 400;
         return { success: false, message: "Invalid entry id" };
       }
 
-      const userId = (headers["x-user-id"] as string | undefined) ?? "system";
+      const userId = resolveAuditActor(
+        (ctx as { user?: AuditActor }).user,
+        headers as Record<string, string | undefined>,
+      );
 
       const result = await deletePackingCostEntry(id, userId);
 
@@ -131,7 +148,7 @@ export const packingCostRoutes = new Elysia({ prefix: "/packing-cost" })
     },
   )
 
-  // ─── GET /packing-cost/product-groups/:groupId/history ────────────────────
+  // ─── GET /packing-cost/product-groups/:groupId/history ────────────────
   .get(
     "/product-groups/:groupId/history",
     async ({ params, set }) => {
@@ -155,7 +172,7 @@ export const packingCostRoutes = new Elysia({ prefix: "/packing-cost" })
     },
   )
 
-  // ─── GET /packing-cost/product-groups/:groupId/resolve ────────────────────
+  // ─── GET /packing-cost/product-groups/:groupId/resolve ────────────────
   .get(
     "/product-groups/:groupId/resolve",
     async ({ params, query, set }) => {
