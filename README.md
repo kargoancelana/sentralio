@@ -1,7 +1,5 @@
 # Sentralio
 
-> Repository name: `wms-sync` (the product is branded **Sentralio**).
-
 Warehouse Management & Shopee integration system. A monorepo that syncs Shopee orders, manages product master data, prints shipping labels, and reports per-order profit & loss for a multi-store seller operation.
 
 ## Features
@@ -89,10 +87,10 @@ On other distributions, install `git` and a MySQL/MariaDB server with your packa
    bun install
    ```
 
-3. **Create the database.** In MySQL, create an empty schema matching `DB_NAME` (default `wms_sync`):
+3. **Create the database.** In MySQL, create an empty schema matching `DB_NAME` (default `sentralio`):
 
    ```sql
-   CREATE DATABASE wms_sync;
+   CREATE DATABASE sentralio;
    ```
 
 4. **Create `.env`** from the example and fill in your values:

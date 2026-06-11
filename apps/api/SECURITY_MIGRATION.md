@@ -60,7 +60,7 @@ The code changes are already applied:
 
 ```bash
 # Backup database
-mysqldump -u root -p wms_sync > backup_before_migration.sql
+mysqldump -u root -p sentralio > backup_before_migration.sql
 
 # Run migration
 cd apps/api
@@ -113,7 +113,7 @@ If something goes wrong:
 
 ```bash
 # Restore database backup
-mysql -u root -p wms_sync < backup_before_migration.sql
+mysql -u root -p sentralio < backup_before_migration.sql
 
 # Revert code changes (git)
 git revert HEAD

@@ -65,7 +65,7 @@ const app = new Elysia()
     }
   })
   .get("/", () => ({
-    message: "wms-sync API is running",
+    message: "Sentralio API is running",
   }))
 
   // ─── Public routes: no auth required ─────────────────────────────────────
