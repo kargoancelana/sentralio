@@ -1,5 +1,5 @@
 {
-  "name": "wms-sync",
+  "name": "sentralio",
   "private": true,
   "workspaces": ["apps/*"],
   "scripts": {
