@@ -117,8 +117,10 @@ On other distributions, install `git` and a MySQL/MariaDB server with your packa
 
    ```bash
    cd apps/api
-   bun run src/scripts/reset-password.ts --email admin@example.com --password "YourStrongPass1!"
+   bun run src/scripts/create-admin.ts --email admin@example.com --name "Admin" --password "YourStrongPass1!"
    ```
+
+   The password must satisfy the policy: at least 8 characters, with one uppercase letter and one special character. This script connects using only your `DB_*` settings, so it works on a fresh install even before the Shopee/auth secrets are filled in. To create more users later, an existing admin can manage them in the app, or you can re-run this script (add `--role staff` for a staff account).
 
 7. **Run both apps in development:**
 
@@ -175,10 +177,12 @@ Run backend scripts from `apps/api`:
 - `bun run db:migrate` — apply migrations
 - `bun run db:studio` — open Drizzle Studio
 - `bun run db:seed` — seed Shopee API credentials from your `.env` into the `shopee_credentials` table (optional; only useful for the live Shopee integration, and safe to re-run)
+- `bun run create-admin` — create a user, default role `admin` (`--email`, `--name`, `--password`, optional `--role admin|staff`); use this to bootstrap the first admin on a fresh install
 
 Operational helper scripts (in `apps/api/src/scripts`):
 
-- `reset-password.ts` — set a user's password (`--email`, `--password`); also used to create the first admin
+- `create-admin.ts` — create a user, default role `admin` (`--email`, `--name`, `--password`, optional `--role admin|staff`); the way to bootstrap the first admin on a fresh install
+- `reset-password.ts` — reset an existing user's password (`--email`, `--password`)
 - `reactivate-user.ts` — reactivate a deactivated user
 - `backfill-ads-expense.ts` — backfill/refresh Shopee Ads daily expense cache (`[days]`, optional `--force` to overwrite cached values with fresh data from Shopee)
 
