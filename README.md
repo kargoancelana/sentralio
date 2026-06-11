@@ -27,23 +27,75 @@ Warehouse Management & Shopee integration system. A monorepo that syncs Shopee o
 
 - [Bun](https://bun.sh) v1.3+ (the whole project runs on Bun — Node.js is **not** required to run it)
 - MySQL 8.0+ (or MariaDB) with an empty database created for the app
+- [Git](https://git-scm.com) to clone the repository
 - A Shopee Open Platform partner account — only needed if you want the live Shopee integration (order sync, labels, profit reports). The app boots and you can log in without it; Shopee-backed screens will just be empty until credentials are configured.
+
+## Installing Prerequisites
+
+You need three things installed before setup: **Git**, **Bun**, and **MySQL**. Use the commands for your operating system, then verify with `git --version`, `bun --version`, and `mysql --version`.
+
+> After installing Bun, restart your terminal (or follow the printed instructions) so the `bun` command is on your `PATH`.
+
+### Windows 10/11
+
+Run these in **PowerShell** (not CMD):
+
+```powershell
+# Git
+winget install --id Git.Git -e
+
+# Bun (requires Windows 10 v1809 or newer)
+powershell -c "irm bun.sh/install.ps1 | iex"
+
+# MySQL 8.0+ (or use the MySQL Installer: https://dev.mysql.com/downloads/installer/)
+winget install --id Oracle.MySQL -e
+```
+
+Make sure the MySQL server service is started (Services app, or `net start MySQL80`) before continuing.
+
+### macOS
+
+Using [Homebrew](https://brew.sh):
+
+```bash
+brew install git mysql
+curl -fsSL https://bun.sh/install | bash   # or: brew install oven-sh/bun/bun
+brew services start mysql                   # start the MySQL server
+```
+
+### Linux (Debian/Ubuntu)
+
+```bash
+sudo apt update
+sudo apt install -y git mysql-server
+curl -fsSL https://bun.sh/install | bash
+sudo systemctl start mysql                  # start the MySQL server
+```
+
+On other distributions, install `git` and a MySQL/MariaDB server with your package manager (e.g. `dnf install mariadb-server`, `pacman -S mariadb`), then install Bun with the same `curl` command above.
 
 ## Setup
 
-1. **Install dependencies** (from repo root — this installs both `apps/web` and `apps/api` via Bun workspaces):
+1. **Clone the repository:**
+
+   ```bash
+   git clone https://github.com/kargoancelana/sentralio.git
+   cd sentralio
+   ```
+
+2. **Install dependencies** (from repo root — this installs both `apps/web` and `apps/api` via Bun workspaces):
 
    ```bash
    bun install
    ```
 
-2. **Create the database.** In MySQL, create an empty schema matching `DB_NAME` (default `wms_sync`):
+3. **Create the database.** In MySQL, create an empty schema matching `DB_NAME` (default `wms_sync`):
 
    ```sql
    CREATE DATABASE wms_sync;
    ```
 
-3. **Create `.env`** from the example and fill in your values:
+4. **Create `.env`** from the example and fill in your values:
 
    ```bash
    # Windows (PowerShell)
@@ -55,20 +107,20 @@ Warehouse Management & Shopee integration system. A monorepo that syncs Shopee o
 
    > **Where does `.env` live?** The backend loads it from the **repo root** first (`config/env.ts` resolves the root `.env`), then falls back to a local `.env` in `apps/api`. Keeping a single `.env` at the repo root is the recommended setup. See [Environment Variables](#environment-variables) below for what each value means.
 
-4. **Apply database migrations** (committed SQL lives in `apps/api/drizzle`):
+5. **Apply database migrations** (committed SQL lives in `apps/api/drizzle`):
 
    ```bash
    bun run --filter api db:migrate
    ```
 
-5. **Create the first admin user** (there is no default user; logins are checked against the DB):
+6. **Create the first admin user** (there is no default user; logins are checked against the DB):
 
    ```bash
    cd apps/api
    bun run src/scripts/reset-password.ts --email admin@example.com --password "YourStrongPass1!"
    ```
 
-6. **Run both apps in development:**
+7. **Run both apps in development:**
 
    ```bash
    # from repo root — runs api + web together
@@ -97,11 +149,18 @@ All secrets live in `.env` (never committed). Key groups:
 
 > The server validates env on startup and **exits immediately** if `AUTH_JWT_SECRET` is missing/too short or `AUTH_ALLOWED_ORIGINS` has no valid origin. `DB_*`, the Shopee keys, and `TOKEN_SECRET_KEY` are also required for the API to boot.
 
-Generate strong secrets with:
+Generate strong secrets with Bun (no Node.js required):
 
 ```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"   # TOKEN_SECRET_KEY (64 hex chars)
-node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"   # AUTH_JWT_SECRET
+bun -e "console.log(require('crypto').randomBytes(32).toString('hex'))"   # TOKEN_SECRET_KEY (64 hex chars)
+bun -e "console.log(require('crypto').randomBytes(48).toString('hex'))"   # AUTH_JWT_SECRET
+```
+
+Or with OpenSSL (preinstalled on macOS/Linux; on Windows it ships with Git in Git Bash):
+
+```bash
+openssl rand -hex 32   # TOKEN_SECRET_KEY (64 hex chars)
+openssl rand -hex 48   # AUTH_JWT_SECRET
 ```
 
 ## Scripts
@@ -145,6 +204,7 @@ apps/
 - **`Missing required environment variable: ...`** — one of `DB_*`, the Shopee keys, or `TOKEN_SECRET_KEY` is unset. The API requires all of them to boot, even if you aren't using Shopee yet (use placeholder values to start locally).
 - **Login returns 401 / requests blocked by CORS** — make sure the exact origin of your frontend (e.g. `http://localhost:5175`) is listed in `AUTH_ALLOWED_ORIGINS`.
 - **Frontend loads but every API call fails** — confirm the API is running on port 3000; the Vite dev proxy forwards `/api` there.
+- **`bun` is not recognized / command not found** — restart your terminal after installing Bun so it is added to your `PATH` (on Windows, open a fresh PowerShell window).
 - **Wrong dates / off-by-hours timestamps** — the app assumes WIB (UTC+7). The DB pool sets the session time zone to `+07:00` automatically; make sure your MySQL server allows that.
 
 ## Security Notes
