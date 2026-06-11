@@ -144,13 +144,14 @@ All secrets live in `.env` (never committed). Key groups:
 
 - **App** — `APP_PORT` (backend HTTP port, default `3000`), `NODE_ENV` (`development` or `production`)
 - **Database** — `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
-- **Shopee API** — `PARTNER_ID`, `PARTNER_KEY`, `SHOP_ID`, `ACCESS_TOKEN`, `REFRESH_TOKEN`, `SHOPEE_REDIRECT_URL` (only required for live Shopee integration; obtained from your own Shopee Open Platform partner account)
+- **Shopee partner app** — `PARTNER_ID`, `PARTNER_KEY`, `SHOPEE_REDIRECT_URL` (your Shopee Open Platform partner-app identity; needed to start the OAuth "connect shop" flow, obtained from your own Shopee Open Platform partner account)
+- **Shopee per-shop tokens** (optional) — `SHOP_ID`, `ACCESS_TOKEN`, `REFRESH_TOKEN`. Leave blank on a fresh install: you obtain them automatically by authorizing a shop in the web app (Settings → Integrasi Toko), and they are stored & auto-refreshed in the database. Only set them if you want `bun run db:seed` to preseed a shop manually.
 - **Encryption** — `TOKEN_SECRET_KEY` (exactly 32 bytes / 64 hex chars; encrypts Shopee credentials at rest)
 - **Authentication** — `AUTH_JWT_SECRET` (≥32 UTF-8 bytes), `AUTH_ALLOWED_ORIGINS` (comma-separated CORS/CSRF allowlist — **must include the origin your frontend runs on**, e.g. `http://localhost:5175`, or login will be blocked)
 - **Label sender info** — `SHOP_NAME`, `SHOP_PHONE`, `SHOP_CITY`
 - **Production only** — `FRONTEND_URL` (used for CORS when `NODE_ENV=production`)
 
-> The server validates env on startup and **exits immediately** if `AUTH_JWT_SECRET` is missing/too short or `AUTH_ALLOWED_ORIGINS` has no valid origin. `DB_*`, the Shopee keys, and `TOKEN_SECRET_KEY` are also required for the API to boot.
+> The server validates env on startup and **exits immediately** if `AUTH_JWT_SECRET` is missing/too short or `AUTH_ALLOWED_ORIGINS` has no valid origin. `DB_*`, `PARTNER_ID`, `PARTNER_KEY`, and `TOKEN_SECRET_KEY` are also required to boot. `SHOP_ID`, `ACCESS_TOKEN`, and `REFRESH_TOKEN` are **not** required — the app boots and you can log in without them; you fill those in automatically through the web OAuth flow.
 
 Generate strong secrets with Bun (no Node.js required):
 
@@ -176,7 +177,7 @@ Run backend scripts from `apps/api`:
 - `bun run db:generate` — generate Drizzle migration files from the schema
 - `bun run db:migrate` — apply migrations
 - `bun run db:studio` — open Drizzle Studio
-- `bun run db:seed` — seed Shopee API credentials from your `.env` into the `shopee_credentials` table (optional; only useful for the live Shopee integration, and safe to re-run)
+- `bun run db:seed` — seed Shopee API credentials from your `.env` into the `shopee_credentials` table (optional; only useful for the live Shopee integration, and safe to re-run — skipped automatically if `SHOP_ID`/`ACCESS_TOKEN`/`REFRESH_TOKEN` are blank)
 - `bun run create-admin` — create a user, default role `admin` (`--email`, `--name`, `--password`, optional `--role admin|staff`); use this to bootstrap the first admin on a fresh install
 
 Operational helper scripts (in `apps/api/src/scripts`):
@@ -206,7 +207,7 @@ apps/
 ## Troubleshooting
 
 - **Server exits on startup with `[FATAL] AUTH_JWT_SECRET ...` or `AUTH_ALLOWED_ORIGINS ...`** — your `.env` is missing those values or the JWT secret is shorter than 32 bytes. Fill them in (see [Environment Variables](#environment-variables)).
-- **`Missing required environment variable: ...`** — one of `DB_*`, the Shopee keys, or `TOKEN_SECRET_KEY` is unset. The API requires all of them to boot, even if you aren't using Shopee yet (use placeholder values to start locally).
+- **`Missing required environment variable: ...`** — one of `DB_*`, `PARTNER_ID`, `PARTNER_KEY`, or `TOKEN_SECRET_KEY` is unset. These are required to boot (use placeholder values for the Shopee partner keys if you aren't using Shopee yet). `SHOP_ID`, `ACCESS_TOKEN`, and `REFRESH_TOKEN` are optional and can be left blank — you obtain them via the web OAuth flow.
 - **Login returns 401 / requests blocked by CORS** — make sure the exact origin of your frontend (e.g. `http://localhost:5175`) is listed in `AUTH_ALLOWED_ORIGINS`.
 - **Frontend loads but every API call fails** — confirm the API is running on port 3000; the Vite dev proxy forwards `/api` there.
 - **`bun` is not recognized / command not found** — restart your terminal after installing Bun so it is added to your `PATH` (on Windows, open a fresh PowerShell window).
