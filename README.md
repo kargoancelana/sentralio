@@ -140,6 +140,7 @@ On other distributions, install `git` and a MySQL/MariaDB server with your packa
 
 All secrets live in `.env` (never committed). Key groups:
 
+- **App** — `APP_PORT` (backend HTTP port, default `3000`), `NODE_ENV` (`development` or `production`)
 - **Database** — `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
 - **Shopee API** — `PARTNER_ID`, `PARTNER_KEY`, `SHOP_ID`, `ACCESS_TOKEN`, `REFRESH_TOKEN`, `SHOPEE_REDIRECT_URL` (only required for live Shopee integration; obtained from your own Shopee Open Platform partner account)
 - **Encryption** — `TOKEN_SECRET_KEY` (exactly 32 bytes / 64 hex chars; encrypts Shopee credentials at rest)
