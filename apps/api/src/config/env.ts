@@ -6,6 +6,17 @@ config({ path: resolve(import.meta.dir, "../../../..", ".env") });
 // Fallback: also try local .env
 config();
 
+// Variables required just to BOOT the server (and to log in).
+//
+// Intentionally NOT required here: SHOP_ID, ACCESS_TOKEN, REFRESH_TOKEN.
+// Those are per-shop values obtained AFTER authorizing a shop via Shopee OAuth
+// in the web app (Settings → Integrasi Toko). At runtime they are read from and
+// refreshed in the `shopee_credentials` table — never from env — so the server
+// must start (and login must work) on a fresh install without them.
+//
+// PARTNER_ID / PARTNER_KEY are your Shopee partner-app identity (known up front)
+// and are needed to start the OAuth flow, so they stay required. TOKEN_SECRET_KEY
+// encrypts credentials at rest and is also required.
 const requiredEnv = [
   "DB_HOST",
   "DB_PORT",
@@ -14,9 +25,6 @@ const requiredEnv = [
   "DB_NAME",
   "PARTNER_ID",
   "PARTNER_KEY",
-  "SHOP_ID",
-  "ACCESS_TOKEN",
-  "REFRESH_TOKEN",
   "TOKEN_SECRET_KEY",
 ] as const;
 
@@ -75,12 +83,14 @@ export const env = {
   dbUser: process.env.DB_USER as string,
   dbPassword: process.env.DB_PASSWORD as string,
   dbName: process.env.DB_NAME as string,
-  // Shopee API
+  // Shopee API — partner-app identity (required)
   shopeePartnerId: Number(process.env.PARTNER_ID),
   shopeePartnerKey: process.env.PARTNER_KEY as string,
-  shopeeShopId: Number(process.env.SHOP_ID),
-  shopeeAccessToken: process.env.ACCESS_TOKEN as string,
-  shopeeRefreshToken: process.env.REFRESH_TOKEN as string,
+  // Per-shop Shopee values — optional; obtained via OAuth and stored in the DB.
+  // Defaulted here so the server boots without them on a fresh install.
+  shopeeShopId: Number(process.env.SHOP_ID ?? 0),
+  shopeeAccessToken: process.env.ACCESS_TOKEN ?? "",
+  shopeeRefreshToken: process.env.REFRESH_TOKEN ?? "",
   tokenSecretKey: process.env.TOKEN_SECRET_KEY as string,
   syncDelayMs: Number(process.env.SYNC_DELAY_MS ?? 300),
   syncTimeoutMs: Number(process.env.SYNC_TIMEOUT_MS ?? 10000),
