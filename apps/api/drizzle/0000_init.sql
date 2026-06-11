@@ -267,7 +267,7 @@ ALTER TABLE `products` ADD CONSTRAINT `products_group_id_product_groups_id_fk` F
 --> statement-breakpoint
 ALTER TABLE `hpp_entries` ADD CONSTRAINT `hpp_entries_variant_id_master_product_variants_id_fk` FOREIGN KEY (`variant_id`) REFERENCES `master_product_variants`(`id`) ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
-ALTER TABLE `master_packing_cost_entries` ADD CONSTRAINT `master_packing_cost_entries_master_product_id_master_products_id_fk` FOREIGN KEY (`master_product_id`) REFERENCES `master_products`(`id`) ON DELETE cascade ON UPDATE no action;
+ALTER TABLE `master_packing_cost_entries` ADD CONSTRAINT `fk_master_packing_master_product` FOREIGN KEY (`master_product_id`) REFERENCES `master_products`(`id`) ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
 ALTER TABLE `packing_cost_entries` ADD CONSTRAINT `packing_cost_entries_product_group_id_product_groups_id_fk` FOREIGN KEY (`product_group_id`) REFERENCES `product_groups`(`id`) ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
