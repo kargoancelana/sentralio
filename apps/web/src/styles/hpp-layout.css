@@ -1,18 +1,44 @@
-/* Fix ruang kosong di layout dua-kolom HPP.
+/* Fix ruang kosong + tampilan layout dua-kolom HPP (Opsi B).
    Kontainer dua-kolom (daftar variasi | detail) di dalam
    <section aria-label="HPP Variasi"> secara default membuat kedua kolom
    sama tinggi (align-items: stretch), sehingga kolom yang lebih pendek
    ikut diregangkan dan menyisakan area kosong. Ini paling kelihatan saat
-   variasi terpilih punya banyak riwayat log (kolom kanan jadi tinggi -> kolom
-   kiri kosong) atau sebaliknya (kolom kiri tinggi -> kolom kanan kosong). */
+   variasi terpilih punya banyak riwayat log (kolom kanan tinggi -> kolom
+   kiri kosong) atau sebaliknya (kolom kiri tinggi -> kolom kanan kosong).
+
+   Opsi B: selain tidak meregangkan kolom, tinggi tiap kolom dibatasi dan
+   bisa di-scroll sendiri. Tujuannya supaya tinggi modal tetap stabil walau
+   riwayat log / daftar variasi banyak, dan daftar variasi di kiri tetap
+   kelihatan. Header detail (nama variasi + tombol) tetap di atas; hanya
+   area konten (tabel + Riwayat HPP) yang ikut scroll. */
+
+/* Tinggi maksimum area dua-kolom. Ubah nilai di sini kalau mau lebih
+   tinggi/pendek. */
+section[aria-label="HPP Variasi"] {
+  --hpp-col-max-h: min(60vh, 480px);
+}
+
+/* Kontainer dua-kolom: jangan regangkan kolom jadi sama tinggi. */
 section[aria-label="HPP Variasi"] > div:nth-of-type(2) {
   align-items: flex-start !important;
 }
 
-/* Paksa tiap kolom langsung untuk tidak ikut diregangkan, walaupun elemennya
-   punya alignSelf: stretch atau height inline. Tiap kolom mengikuti tinggi
-   kontennya sendiri sehingga tidak ada lagi ruang kosong. */
+/* Tiap kolom langsung: ikut tinggi kontennya sendiri, jangan ikut diregangkan,
+   walaupun elemennya punya alignSelf: stretch atau height inline. */
 section[aria-label="HPP Variasi"] > div:nth-of-type(2) > div {
   align-self: flex-start !important;
   height: auto !important;
+}
+
+/* Kolom kiri (daftar variasi): batasi tinggi + scroll sendiri. */
+section[aria-label="HPP Variasi"] > div:nth-of-type(2) > div:nth-of-type(1) {
+  max-height: var(--hpp-col-max-h);
+  overflow-y: auto;
+}
+
+/* Kolom kanan (detail): area konten paling bawah (tabel + Riwayat HPP)
+   yang dibatasi tinggi + scroll, supaya header tetap terlihat. */
+section[aria-label="HPP Variasi"] > div:nth-of-type(2) > div:nth-of-type(2) > div:last-child {
+  max-height: var(--hpp-col-max-h);
+  overflow-y: auto;
 }
