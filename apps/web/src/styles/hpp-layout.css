@@ -9,7 +9,11 @@
    Pendekatan: (1) jangan regangkan kolom, (2) daftar "Riwayat HPP" di
    kolom kanan dibatasi tinggi & scroll sendiri, jadi kolom kanan tetap
    ringkas (seperti kasus log sedikit) dan tidak menyisakan ruang kosong
-   di kolom kiri. */
+   di kolom kiri.
+
+   Catatan: overflow-y pakai !important karena kartu/kolom kemungkinan
+   punya inline style overflow: hidden yang bikin isinya kepotong dan
+   nggak bisa di-scroll. */
 
 section[aria-label="HPP Variasi"] {
   /* Pengaman tinggi maksimum tiap kolom. Ubah di sini kalau perlu. */
@@ -36,14 +40,15 @@ section[aria-label="HPP Variasi"] > div:nth-of-type(2) > div {
    kebanyakan, biar nggak bikin modal kepanjangan. */
 section[aria-label="HPP Variasi"] > div:nth-of-type(2) > div:nth-of-type(1) {
   max-height: var(--hpp-col-max-h);
-  overflow-y: auto;
+  overflow-y: auto !important;
 }
 
 /* Inti fix: kartu daftar "Riwayat HPP" dibatasi tinggi & scroll sendiri,
    jadi kolom kanan tetap ringkas walau log banyak. Header detail (nama
    variasi + tombol) dan tabel entry di atasnya tetap kelihatan penuh;
-   yang scroll cuma daftar lognya. */
+   yang scroll cuma daftar lognya. !important dipakai supaya menang dari
+   inline overflow: hidden di kartunya. */
 section[aria-label="Log Perubahan HPP"] > div:nth-of-type(2) {
   max-height: var(--hpp-log-max-h, 260px);
-  overflow-y: auto;
+  overflow-y: auto !important;
 }
