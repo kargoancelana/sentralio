@@ -15,6 +15,7 @@ import { RoleGate } from './auth/RoleGate';
 import { FeatureGate } from './auth/FeatureGate';
 import { Pengaturan } from './pages/Pengaturan';
 import './styles/globals.css';
+import './styles/hpp-layout.css';
 
 function App() {
   return (
