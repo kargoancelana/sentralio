@@ -14,8 +14,9 @@
 
 import { api } from '../lib/api';
 import type { LabelData } from '../types/label';
+import type { PDFDocument as PDFDoc } from 'pdf-lib';
 
-// ─── Shared types ────────────────────────────────────────────────
+// ─── Shared types ──────────────────────────────────
 export interface PickingItem {
   sku: string;
   variantName: string;
@@ -29,7 +30,7 @@ export interface PickingItem {
  */
 export const UNMAPPED_SKU_SENTINEL = '__unmapped__';
 
-// ─── Common helpers ──────────────────────────────────────────────
+// ─── Common helpers ──────────────────────────────
 function esc(str: string): string {
   return str
     .replace(/&/g, '&amp;')
@@ -95,7 +96,7 @@ export function aggregatePickingItems(dataList: any[]): PickingItem[] {
   return pickingItems;
 }
 
-// ─── CUSTOM LABEL: HTML generation ───────────────────────────────
+// ─── CUSTOM LABEL: HTML generation ──────────────────────
 const LABEL_CSS = `
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family: Arial, Helvetica, sans-serif; background: white; }
@@ -331,7 +332,7 @@ export function buildPickingListHtml(dataList: any[]): string {
 }
 
 
-// ─── PUBLIC: Custom Label Print ─────────────────────────────────
+// ─── PUBLIC: Custom Label Print ──────────────────────────
 /**
  * Open a new tab with rendered custom labels + picking list.
  *
@@ -469,7 +470,7 @@ export async function printCustomLabels(
 }
 
 
-// ─── PUBLIC: Official Label Print ───────────────────────────────
+// ─── PUBLIC: Official Label Print ───────────────────────
 /**
  * Merge official PDF labels, append picking list pages, open in new tab and trigger print.
  *
@@ -498,7 +499,7 @@ export async function printOfficialLabels(
   }
 
   // Convert PDF data URL(s) to bytes and merge into single document
-  let mergedPdf: InstanceType<typeof PDFDocument>;
+  let mergedPdf: PDFDoc;
 
   if (pdfUrls.length === 1 && pdfUrls[0]) {
     const url = pdfUrls[0];
@@ -653,7 +654,7 @@ export async function printOfficialLabels(
   // Save final PDF and open directly — yield between heavy operations
   await new Promise(r => setTimeout(r, 0));
   const pdfBytes = await mergedPdf.save();
-  const pdfBlob = new Blob([pdfBytes], { type: 'application/pdf' });
+  const pdfBlob = new Blob([new Uint8Array(pdfBytes)], { type: 'application/pdf' });
   const pdfBlobUrl = URL.createObjectURL(pdfBlob);
 
   const printWindow = window.open(pdfBlobUrl, '_blank');
