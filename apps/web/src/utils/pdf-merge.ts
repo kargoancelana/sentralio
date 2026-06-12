@@ -16,7 +16,7 @@ import { PDFDocument } from 'pdf-lib';
  */
 export async function mergePDFsAndPrint(pdfDataUrls: string[], orderSns: string[]): Promise<void> {
   console.log('[pdf-merge] Starting PDF merge for', pdfDataUrls.length, 'labels');
-  
+
   try {
     // Create an HTML page with all PDFs embedded as iframes
     // This allows the browser to handle PDF rendering and printing
@@ -63,7 +63,7 @@ export async function mergePDFsAndPrint(pdfDataUrls: string[], orderSns: string[
           </style>
         </head>
         <body>
-          ${pdfDataUrls.map((url, index) => `
+          ${pdfDataUrls.map((url) => `
             <div class="label-container">
               <embed src="${url}" type="application/pdf" />
             </div>
@@ -79,26 +79,26 @@ export async function mergePDFsAndPrint(pdfDataUrls: string[], orderSns: string[
         </body>
       </html>
     `;
-    
+
     // Create a Blob from the HTML content
     const blob = new Blob([htmlContent], { type: 'text/html' });
     const blobUrl = URL.createObjectURL(blob);
-    
+
     // Open in new window
     const printWindow = window.open(blobUrl, '_blank');
-    
+
     if (!printWindow) {
       throw new Error('Failed to open print window. Please check your popup blocker settings.');
     }
-    
+
     // Clean up blob URL after a delay
     setTimeout(() => {
       URL.revokeObjectURL(blobUrl);
       console.log('[pdf-merge] Blob URL cleaned up');
     }, 60000); // Clean up after 1 minute
-    
+
     console.log('[pdf-merge] Successfully opened merged PDF in new tab');
-    
+
   } catch (error) {
     console.error('[pdf-merge] Error merging PDFs:', error);
     throw error;
@@ -115,18 +115,18 @@ export async function mergePDFsAndPrint(pdfDataUrls: string[], orderSns: string[
  */
 export async function openPDFsInSingleTab(pdfDataUrls: string[], orderSns: string[]): Promise<void> {
   console.log('[pdf-merge] Merging', pdfDataUrls.length, 'PDFs into single document');
-  
+
   try {
     // Create a new PDF document
     const mergedPdf = await PDFDocument.create();
-    
+
     // Process each PDF
     for (let i = 0; i < pdfDataUrls.length; i++) {
       const url = pdfDataUrls[i];
       const orderSn = orderSns[i];
-      
+
       console.log(`[pdf-merge] Processing PDF ${i + 1}/${pdfDataUrls.length} - Order ${orderSn}`);
-      
+
       try {
         // Extract base64 data from data URL
         const base64Data = url.split(',')[1];
@@ -134,42 +134,42 @@ export async function openPDFsInSingleTab(pdfDataUrls: string[], orderSns: strin
           console.error(`[pdf-merge] Invalid data URL for order ${orderSn}`);
           continue;
         }
-        
+
         // Convert base64 to Uint8Array
         const pdfBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-        
+
         // Load the PDF
         const pdf = await PDFDocument.load(pdfBytes);
-        
+
         // Copy all pages from this PDF to the merged PDF
         const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
         copiedPages.forEach(page => {
           mergedPdf.addPage(page);
         });
-        
+
         console.log(`[pdf-merge] Added ${copiedPages.length} page(s) from order ${orderSn}`);
-        
+
       } catch (pdfError: any) {
         console.error(`[pdf-merge] Error processing PDF for order ${orderSn}:`, pdfError);
         // Continue with other PDFs even if one fails
       }
     }
-    
+
     // Check if we have any pages
     const pageCount = mergedPdf.getPageCount();
     if (pageCount === 0) {
       throw new Error('Tidak ada halaman PDF yang berhasil di-merge. Semua PDF gagal diproses.');
     }
-    
+
     console.log(`[pdf-merge] Successfully merged ${pageCount} pages from ${pdfDataUrls.length} PDFs`);
-    
+
     // Save the merged PDF
     const mergedPdfBytes = await mergedPdf.save();
-    
+
     // Create blob for PDF (more efficient than data URL for large files)
-    const pdfBlob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
+    const pdfBlob = new Blob([new Uint8Array(mergedPdfBytes)], { type: 'application/pdf' });
     const pdfBlobUrl = URL.createObjectURL(pdfBlob);
-    
+
     // Create HTML viewer that loads PDF from blob URL
     // The HTML will store the blob URL and prevent premature cleanup
     const htmlContent = `
@@ -237,34 +237,34 @@ export async function openPDFsInSingleTab(pdfDataUrls: string[], orderSns: strin
         </body>
       </html>
     `;
-    
+
     // Create HTML blob
     const htmlBlob = new Blob([htmlContent], { type: 'text/html' });
     const htmlBlobUrl = URL.createObjectURL(htmlBlob);
-    
+
     // Open in new tab — do NOT use 'noopener,noreferrer' as it causes window.open
     // to return null in some browsers even when the window successfully opens
     const viewerWindow = window.open(htmlBlobUrl, '_blank');
-    
+
     if (!viewerWindow) {
       // Try fallback: open the PDF blob URL directly (no HTML viewer)
       console.warn('[pdf-merge] HTML viewer window.open returned null, trying direct PDF URL...');
       const directWindow = window.open(pdfBlobUrl, '_blank');
-      
+
       if (!directWindow) {
         URL.revokeObjectURL(htmlBlobUrl);
         URL.revokeObjectURL(pdfBlobUrl);
         throw new Error('Gagal membuka tab baru. Periksa pengaturan popup blocker browser Anda.');
       }
-      
+
       // Direct PDF opened — clean up HTML blob only
       URL.revokeObjectURL(htmlBlobUrl);
       console.log('[pdf-merge] Opened merged PDF directly (no viewer)');
       return;
     }
-    
+
     console.log('[pdf-merge] Successfully opened merged PDF viewer');
-    
+
   } catch (error: any) {
     console.error('[pdf-merge] Error merging PDFs:', error);
     throw new Error(`Gagal merge PDF: ${error.message}`);
