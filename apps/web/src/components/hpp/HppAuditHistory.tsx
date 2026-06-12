@@ -108,16 +108,20 @@ function formatValue(key: string, value: unknown): string {
 // (style={styles.x}); never inline a double-brace object literal in JSX.
 const styles: Record<string, CSSProperties> = {
   sectionWrap: { marginTop: '16px' },
+  sectionHeader: {
+    marginBottom: '12px',
+  },
   sectionTitle: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    fontSize: '11px',
+    fontSize: '15px',
     fontWeight: 600,
+    color: 'var(--text1)',
+    margin: 0,
+  },
+  sectionSubtitle: {
+    fontSize: '13px',
     color: 'var(--text3)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.04em',
-    marginBottom: '8px',
+    marginTop: '2px',
+    marginBottom: 0,
   },
   card: {
     border: '1px solid var(--border)',
@@ -560,7 +564,12 @@ export function HppAuditHistory({ entries }: HppAuditHistoryProps) {
 
   return (
     <section aria-label="Log Perubahan HPP" style={styles.sectionWrap}>
-      <div style={styles.sectionTitle}>Riwayat HPP</div>
+      <div style={styles.sectionHeader}>
+        <h3 style={styles.sectionTitle}>Riwayat HPP</h3>
+        <p style={styles.sectionSubtitle}>
+          Semua entry termasuk yang sudah dihapus, urutan terbaru ke terlama.
+        </p>
+      </div>
       <div style={styles.card}>
         {/* Aktif group - header always shown, mirroring MasterPackingCostHistory. */}
         {activeEntries.length === 0 ? (
