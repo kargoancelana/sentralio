@@ -517,6 +517,7 @@ export function HppSection({
     variants.length > 0 ? variants[0].id : null
   );
   const [entries, setEntries] = useState<HppEntry[]>([]);
+  const [historyEntries, setHistoryEntries] = useState<HppEntry[]>([]);
   const [entriesLoading, setEntriesLoading] = useState(false);
   const [entriesError, setEntriesError] = useState<string | null>(null);
 
@@ -564,12 +565,14 @@ export function HppSection({
       const res = await fetchApi<HppHistoryResponse>(
         `/hpp/variants/${variantId}/history`
       );
-      // API returns sorted by start date desc; filter out deleted entries for the active list
-      const active = (res.data || []).filter((e) => !e.deletedAt);
-      setEntries(active);
+      // API returns sorted by start date desc
+      const all = res.data || [];
+      setEntries(all.filter((e) => !e.deletedAt)); // tabel: hanya yang aktif
+      setHistoryEntries(all);                        // log: semua, termasuk yang dihapus
     } catch (err: any) {
       setEntriesError(err.message || 'Gagal memuat riwayat HPP');
       setEntries([]);
+      setHistoryEntries([]);
     } finally {
       setEntriesLoading(false);
     }
@@ -941,7 +944,7 @@ export function HppSection({
                 onDelete={handleDeleteRequest}
                 deletingId={deletingId}
               />
-              <HppAuditHistory entries={entries} />
+              <HppAuditHistory entries={historyEntries} />
               </>
             )}
           </div>
