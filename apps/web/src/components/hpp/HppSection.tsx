@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, Edit3, Trash2, ChevronRight, AlertCircle, Loader2, Copy } from 'lucide-react';
 import { fetchApi } from '../../lib/api';
+import { HppAuditHistory } from './HppAuditHistory';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -933,12 +934,15 @@ export function HppSection({
                 onRetry={selectedVariantId !== null ? () => loadEntries(selectedVariantId) : undefined}
               />
             ) : (
+              <>
               <EntryTable
                 entries={entries}
                 onEdit={handleEdit}
                 onDelete={handleDeleteRequest}
                 deletingId={deletingId}
               />
+              <HppAuditHistory entries={entries} />
+              </>
             )}
           </div>
         </div>
