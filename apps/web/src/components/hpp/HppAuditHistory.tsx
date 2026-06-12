@@ -244,17 +244,18 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: 500,
   },
   dash: { color: 'var(--text4)', fontStyle: 'italic' },
-  deletedBadge: {
+  currentBadge: {
     display: 'inline-block',
     padding: '1px 8px',
     borderRadius: '10px',
     fontSize: '11px',
     fontWeight: 600,
-    background: 'var(--error-bg, #fff0f0)',
-    color: 'var(--error, #dc2626)',
-    border: '1px solid var(--error, #dc2626)',
+    background: 'var(--success-bg, #f0fdf4)',
+    color: 'var(--success, #16a34a)',
+    border: '1px solid var(--success, #16a34a)',
     flexShrink: 0,
   },
+  deletedText: { color: 'var(--error, #dc2626)', fontWeight: 500 },
 };
 
 interface ChangedValuesProps {
@@ -405,14 +406,30 @@ function AuditRow({ log, isLast }: AuditRowProps) {
   );
 }
 
+function GroupHeader({ label }: { label: 'Aktif' | 'Dihapus' }) {
+  const isActive = label === 'Aktif';
+  const headerStyle: CSSProperties = {
+    padding: '6px 14px',
+    background: 'var(--bg2)',
+    borderBottom: '1px solid var(--border)',
+    fontSize: '11px',
+    fontWeight: 600,
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    color: isActive ? 'var(--success, #16a34a)' : 'var(--text3)',
+  };
+  return <div style={headerStyle}>{label}</div>;
+}
+
 interface EntryRowProps {
   entry: HppAuditEntry;
   expanded: boolean;
   isLast: boolean;
+  isCurrent: boolean;
   onToggle: () => void;
 }
 
-function EntryRow({ entry, expanded, isLast, onToggle }: EntryRowProps) {
+function EntryRow({ entry, expanded, isLast, isCurrent, onToggle }: EntryRowProps) {
   const logs = entry.auditLogs ?? [];
   const outerStyle: CSSProperties = {
     borderBottom: isLast ? 'none' : '1px solid var(--border)',
@@ -445,11 +462,15 @@ function EntryRow({ entry, expanded, isLast, onToggle }: EntryRowProps) {
 
         <div style={styles.details}>
           <span style={styles.entryValue}>{formatRp(entry.hppValue)}</span>
-          {entry.deletedAt && <span style={styles.deletedBadge}>Dihapus</span>}
+          {isCurrent && <span style={styles.currentBadge}>Berlaku Saat Ini</span>}
           <span style={styles.period}>
             {formatDate(entry.startDate)}
             {' \u2192 '}
-            {entry.endDate ? (
+            {entry.deletedAt ? (
+              <span style={styles.deletedText}>
+                Dihapus {formatDate(entry.deletedAt.slice(0, 10))}
+              </span>
+            ) : entry.endDate ? (
               formatDate(entry.endDate)
             ) : (
               <span style={styles.periodNow}>Sekarang</span>
@@ -504,6 +525,18 @@ export function HppAuditHistory({ entries }: HppAuditHistoryProps) {
   const withLogs = entries.filter((e) => (e.auditLogs?.length ?? 0) > 0);
   if (withLogs.length === 0) return null;
 
+  const activeEntries = withLogs.filter((e) => !e.deletedAt);
+  const deletedEntries = withLogs.filter((e) => e.deletedAt);
+  const grouped = deletedEntries.length > 0;
+
+  // Which active entry is in effect today -> gets the green "Berlaku Saat Ini" pill.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const currentEntryId = activeEntries.find((e) => {
+    const startsByToday = e.startDate <= todayIso;
+    const notYetEnded = e.endDate === null || e.endDate >= todayIso;
+    return startsByToday && notYetEnded;
+  })?.id;
+
   return (
     <section aria-label="Log Perubahan HPP" style={styles.sectionWrap}>
       <div style={styles.sectionTitle}>
@@ -511,15 +544,47 @@ export function HppAuditHistory({ entries }: HppAuditHistoryProps) {
         Log Perubahan
       </div>
       <div style={styles.card}>
-        {withLogs.map((entry, idx) => (
-          <EntryRow
-            key={entry.id}
-            entry={entry}
-            expanded={expandedIds.has(entry.id)}
-            isLast={idx === withLogs.length - 1}
-            onToggle={() => toggle(entry.id)}
-          />
-        ))}
+        {grouped ? (
+          <>
+            {activeEntries.length > 0 && (
+              <>
+                <GroupHeader label="Aktif" />
+                {activeEntries.map((entry) => (
+                  <EntryRow
+                    key={entry.id}
+                    entry={entry}
+                    expanded={expandedIds.has(entry.id)}
+                    isCurrent={entry.id === currentEntryId}
+                    isLast={false}
+                    onToggle={() => toggle(entry.id)}
+                  />
+                ))}
+              </>
+            )}
+            <GroupHeader label="Dihapus" />
+            {deletedEntries.map((entry, idx) => (
+              <EntryRow
+                key={entry.id}
+                entry={entry}
+                expanded={expandedIds.has(entry.id)}
+                isCurrent={false}
+                isLast={idx === deletedEntries.length - 1}
+                onToggle={() => toggle(entry.id)}
+              />
+            ))}
+          </>
+        ) : (
+          activeEntries.map((entry, idx) => (
+            <EntryRow
+              key={entry.id}
+              entry={entry}
+              expanded={expandedIds.has(entry.id)}
+              isCurrent={entry.id === currentEntryId}
+              isLast={idx === activeEntries.length - 1}
+              onToggle={() => toggle(entry.id)}
+            />
+          ))
+        )}
       </div>
     </section>
   );
