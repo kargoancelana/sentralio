@@ -102,7 +102,9 @@ function formatValue(key: string, value: unknown): string {
   return String(value);
 }
 
-// All static styles live here so the JSX never needs a double-brace literal.
+// Static styles mirror MasterPackingCostHistory so the two histories look identical.
+// NOTE: keep every style as a named entry/variable referenced with single braces
+// (style={styles.x}); never inline a double-brace object literal in JSX.
 const styles: Record<string, CSSProperties> = {
   sectionWrap: { marginTop: '16px' },
   sectionTitle: {
@@ -118,76 +120,129 @@ const styles: Record<string, CSSProperties> = {
   },
   card: {
     border: '1px solid var(--border)',
-    borderRadius: '10px',
+    borderRadius: '8px',
     overflow: 'hidden',
-    background: 'var(--bg2)',
+    background: 'var(--bg)',
   },
-  entryBtn: {
-    width: '100%',
-    display: 'flex',
+  summaryRow: {
+    display: 'grid',
+    gridTemplateColumns: 'auto 1fr auto',
     alignItems: 'center',
-    gap: '10px',
-    background: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
-    padding: '10px 12px',
-    textAlign: 'left',
-    color: 'var(--text1)',
-    transition: 'background 0.15s ease',
+    gap: '12px',
+    padding: '12px 14px',
+    background: 'var(--bg)',
   },
-  entryValue: { fontWeight: 600, fontSize: '13px', color: 'var(--text1)' },
-  entryPeriod: {
-    fontSize: '12px',
-    color: 'var(--text3)',
-  },
-  logCount: {
-    marginLeft: 'auto',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '4px',
-    fontSize: '12px',
-    color: 'var(--text3)',
-    flexShrink: 0,
-  },
-  expandWrap: {
-    padding: '4px 14px 12px 34px',
-    background: 'var(--bg1, transparent)',
-  },
-  emptyLog: { fontSize: '12px', color: 'var(--text3)', padding: '6px 0' },
-  auditRowMeta: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' },
-  timestamp: { fontSize: '12px', color: 'var(--text1)' },
-  byUser: { fontSize: '12px', color: 'var(--text3)' },
+  toggleWrap: { display: 'flex', alignItems: 'center', gap: '8px' },
   toggleBtn: {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: '3px',
+    justifyContent: 'center',
+    width: 22,
+    height: 22,
+    border: '1px solid var(--border)',
+    borderRadius: '4px',
     background: 'transparent',
-    border: 'none',
     cursor: 'pointer',
-    color: 'var(--accent, #2563eb)',
-    fontSize: '11px',
-    padding: '2px 4px',
-    borderRadius: '6px',
+    color: 'var(--text3)',
+    flexShrink: 0,
+    transition: 'background .1s, color .1s',
+    fontFamily: 'inherit',
   },
-  changedGrid: {
-    marginTop: '8px',
-    display: 'grid',
-    gap: '4px',
+  details: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: '6px 16px',
+    minWidth: 0,
+  },
+  entryValue: {
+    fontSize: '13px',
+    fontWeight: 600,
+    color: 'var(--text1)',
+    flexShrink: 0,
+  },
+  period: { fontSize: '12px', color: 'var(--text3)', flexShrink: 0 },
+  periodNow: { fontStyle: 'italic', color: 'var(--text4)' },
+  note: {
     fontSize: '12px',
-    background: 'var(--bg3)',
-    borderRadius: '8px',
-    padding: '8px 10px',
+    color: 'var(--text3)',
+    maxWidth: '200px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
   },
-  changedRow: {
-    display: 'grid',
-    gridTemplateColumns: '120px 1fr',
-    gap: '8px',
-    alignItems: 'baseline',
+  rightWrap: { display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 },
+  logCount: { display: 'flex', alignItems: 'center', gap: '4px' },
+  logCountIcon: { color: 'var(--text4)' },
+  logCountText: { fontSize: '11px', color: 'var(--text4)' },
+  auditSection: { background: 'var(--bg2)', borderTop: '1px solid var(--border)' },
+  auditHeader: {
+    padding: '8px 14px 6px 48px',
+    fontSize: '11px',
+    fontWeight: 600,
+    color: 'var(--text3)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    borderBottom: '1px solid var(--border)',
   },
-  fieldLabel: { color: 'var(--text3)' },
-  fieldValue: { color: 'var(--text1)' },
-  strikethrough: { textDecoration: 'line-through', color: 'var(--text3)' },
-  newValueBold: { fontWeight: 600 },
+  auditEmpty: {
+    padding: '12px 14px 12px 48px',
+    background: 'var(--bg2)',
+    borderTop: '1px solid var(--border)',
+    fontSize: '12px',
+    color: 'var(--text4)',
+    fontStyle: 'italic',
+  },
+  auditMeta: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' },
+  timestamp: { fontSize: '12px', color: 'var(--text3)', flexShrink: 0 },
+  byUser: {
+    fontSize: '11px',
+    color: 'var(--text4)',
+    fontFamily: 'monospace',
+    flexShrink: 0,
+  },
+  changesToggle: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '3px',
+    padding: '1px 8px',
+    background: 'transparent',
+    border: '1px solid var(--border)',
+    borderRadius: '4px',
+    fontSize: '11px',
+    color: 'var(--text3)',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    transition: 'background .1s',
+    marginLeft: 'auto',
+  },
+  cvWrap: {
+    background: 'var(--bg)',
+    border: '1px solid var(--border)',
+    borderRadius: '6px',
+    overflow: 'hidden',
+    fontSize: '12px',
+  },
+  cvHeadCell: {
+    padding: '4px 10px',
+    fontWeight: 600,
+    color: 'var(--text3)',
+    fontSize: '11px',
+  },
+  cvHeadCellBorder: {
+    padding: '4px 10px',
+    fontWeight: 600,
+    color: 'var(--text3)',
+    fontSize: '11px',
+    borderLeft: '1px solid var(--border)',
+  },
+  cvFieldCell: {
+    padding: '4px 10px',
+    color: 'var(--text2)',
+    fontSize: '12px',
+    fontWeight: 500,
+  },
+  dash: { color: 'var(--text4)', fontStyle: 'italic' },
 };
 
 interface ChangedValuesProps {
@@ -203,24 +258,71 @@ function ChangedValues({ previousValues, newValues, action }: ChangedValuesProps
 
   if (allKeys.length === 0) return null;
 
+  const isUpdate = action === 'update';
+  const gridCols = isUpdate ? '1fr 1fr 1fr' : '1fr 1fr';
+  const headerGridStyle: CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: gridCols,
+    background: 'var(--bg2)',
+    borderBottom: '1px solid var(--border)',
+  };
+
   return (
-    <div style={styles.changedGrid}>
-      {allKeys.map((key) => {
+    <div style={styles.cvWrap}>
+      <div style={headerGridStyle}>
+        <span style={styles.cvHeadCell}>Field</span>
+        {isUpdate && <span style={styles.cvHeadCellBorder}>Sebelum</span>}
+        <span style={styles.cvHeadCellBorder}>
+          {action === 'delete' ? 'Nilai' : action === 'insert' ? 'Nilai' : 'Sesudah'}
+        </span>
+      </div>
+
+      {allKeys.map((key, idx) => {
         const prev = previousValues?.[key];
         const next = newValues?.[key];
+        const changed = isUpdate && JSON.stringify(prev) !== JSON.stringify(next);
+
+        const rowGridStyle: CSSProperties = {
+          display: 'grid',
+          gridTemplateColumns: gridCols,
+          borderBottom: idx < allKeys.length - 1 ? '1px solid var(--border)' : 'none',
+          background: changed ? 'var(--accent-subtle, rgba(37,99,235,0.04))' : 'transparent',
+        };
+        const prevCellStyle: CSSProperties = {
+          padding: '4px 10px',
+          color: changed ? 'var(--error, #dc2626)' : 'var(--text2)',
+          fontSize: '12px',
+          borderLeft: '1px solid var(--border)',
+          wordBreak: 'break-all',
+        };
+        const nextCellStyle: CSSProperties = {
+          padding: '4px 10px',
+          color: changed ? 'var(--success, #16a34a)' : 'var(--text2)',
+          fontSize: '12px',
+          borderLeft: '1px solid var(--border)',
+          wordBreak: 'break-all',
+        };
+
         return (
-          <div key={key} style={styles.changedRow}>
-            <span style={styles.fieldLabel}>{FIELD_LABELS[key] ?? key}</span>
-            <span style={styles.fieldValue}>
-              {action === 'update' ? (
-                <>
-                  <span style={styles.strikethrough}>{formatValue(key, prev)}</span>
-                  {' \u2192 '}
-                  <span style={styles.newValueBold}>{formatValue(key, next)}</span>
-                </>
-              ) : (
-                formatValue(key, action === 'delete' ? prev : next)
-              )}
+          <div key={key} style={rowGridStyle}>
+            <span style={styles.cvFieldCell}>{FIELD_LABELS[key] ?? key}</span>
+            {isUpdate && (
+              <span style={prevCellStyle}>
+                {prev === null || prev === undefined ? (
+                  <span style={styles.dash}>{'\u2014'}</span>
+                ) : (
+                  formatValue(key, prev)
+                )}
+              </span>
+            )}
+            <span style={nextCellStyle}>
+              {(() => {
+                const value = action === 'delete' ? prev : next;
+                if (value === null || value === undefined) {
+                  return <span style={styles.dash}>{'\u2014'}</span>;
+                }
+                return formatValue(key, value);
+              })()}
             </span>
           </div>
         );
@@ -239,8 +341,11 @@ function AuditRow({ log, isLast }: AuditRowProps) {
   const hasValues = log.previousValues !== null || log.newValues !== null;
 
   const rowStyle: CSSProperties = {
-    padding: '8px 0',
-    borderBottom: isLast ? 'none' : '1px dashed var(--border)',
+    padding: '10px 14px 10px 48px',
+    borderBottom: isLast ? 'none' : '1px solid var(--border)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
   };
   const badgeStyle: CSSProperties = {
     display: 'inline-block',
@@ -256,12 +361,22 @@ function AuditRow({ log, isLast }: AuditRowProps) {
 
   return (
     <div style={rowStyle}>
-      <div style={styles.auditRowMeta}>
+      <div style={styles.auditMeta}>
         <span style={badgeStyle}>{actionLabel(log.action)}</span>
         <span style={styles.timestamp}>{formatDateTime(log.createdAt)}</span>
         <span style={styles.byUser}>oleh: {log.userId}</span>
         {hasValues && (
-          <button type="button" onClick={() => setShowValues((v) => !v)} style={styles.toggleBtn}>
+          <button
+            type="button"
+            onClick={() => setShowValues((v) => !v)}
+            style={styles.changesToggle}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'var(--bg3)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+            }}
+          >
             {showValues ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
             {showValues ? 'Sembunyikan' : 'Lihat perubahan'}
           </button>
@@ -278,62 +393,89 @@ function AuditRow({ log, isLast }: AuditRowProps) {
   );
 }
 
-interface EntryCardProps {
+interface EntryRowProps {
   entry: HppAuditEntry;
   expanded: boolean;
   isLast: boolean;
   onToggle: () => void;
 }
 
-function EntryCard({ entry, expanded, isLast, onToggle }: EntryCardProps) {
+function EntryRow({ entry, expanded, isLast, onToggle }: EntryRowProps) {
   const logs = entry.auditLogs ?? [];
-  const cardStyle: CSSProperties = {
+  const outerStyle: CSSProperties = {
     borderBottom: isLast ? 'none' : '1px solid var(--border)',
   };
+  const toggleTitle = expanded ? 'Sembunyikan log perubahan' : 'Tampilkan log perubahan';
+
   return (
-    <div style={cardStyle}>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        style={styles.entryBtn}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = 'var(--bg3)';
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = 'transparent';
-        }}
-      >
-        {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        <span style={styles.entryValue}>{formatRp(entry.hppValue)}</span>
-        <span style={styles.entryPeriod}>
-          {formatDate(entry.startDate)} {'\u2192'}{' '}
-          {entry.endDate ? formatDate(entry.endDate) : 'Berlaku'}
-        </span>
-        <span style={styles.logCount}>
-          <Clock size={12} />
-          {logs.length} log
-        </span>
-      </button>
-      {expanded && (
-        <div style={styles.expandWrap}>
-          {logs.length === 0 ? (
-            <div style={styles.emptyLog}>Belum ada log perubahan.</div>
-          ) : (
-            logs.map((log, idx) => (
-              <AuditRow key={log.id} log={log} isLast={idx === logs.length - 1} />
-            ))
+    <div style={outerStyle}>
+      <div style={styles.summaryRow}>
+        <div style={styles.toggleWrap}>
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={expanded}
+            aria-label={toggleTitle}
+            title={toggleTitle}
+            style={styles.toggleBtn}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'var(--bg3)';
+              e.currentTarget.style.color = 'var(--text1)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+              e.currentTarget.style.color = 'var(--text3)';
+            }}
+          >
+            {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          </button>
+        </div>
+
+        <div style={styles.details}>
+          <span style={styles.entryValue}>{formatRp(entry.hppValue)}</span>
+          <span style={styles.period}>
+            {formatDate(entry.startDate)}
+            {' \u2192 '}
+            {entry.endDate ? (
+              formatDate(entry.endDate)
+            ) : (
+              <span style={styles.periodNow}>Sekarang</span>
+            )}
+          </span>
+          {entry.note && (
+            <span title={entry.note} style={styles.note}>
+              {entry.note}
+            </span>
           )}
         </div>
-      )}
+
+        <div style={styles.rightWrap}>
+          <div style={styles.logCount}>
+            <Clock size={12} style={styles.logCountIcon} />
+            <span style={styles.logCountText}>{logs.length} log</span>
+          </div>
+        </div>
+      </div>
+
+      {expanded &&
+        (logs.length === 0 ? (
+          <div style={styles.auditEmpty}>Belum ada log perubahan.</div>
+        ) : (
+          <div style={styles.auditSection}>
+            <div style={styles.auditHeader}>Audit Log</div>
+            {logs.map((log, idx) => (
+              <AuditRow key={log.id} log={log} isLast={idx === logs.length - 1} />
+            ))}
+          </div>
+        ))}
     </div>
   );
 }
 
 /**
  * HppAuditHistory - shows when and who edited each HPP entry for the selected
- * variant, mirroring the packing-cost history UI. Renders nothing when no entry
- * has any audit log.
+ * variant, styled identically to the packing-cost history. Renders nothing when
+ * no entry has any audit log.
  */
 export function HppAuditHistory({ entries }: HppAuditHistoryProps) {
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
@@ -357,7 +499,7 @@ export function HppAuditHistory({ entries }: HppAuditHistoryProps) {
       </div>
       <div style={styles.card}>
         {withLogs.map((entry, idx) => (
-          <EntryCard
+          <EntryRow
             key={entry.id}
             entry={entry}
             expanded={expandedIds.has(entry.id)}
