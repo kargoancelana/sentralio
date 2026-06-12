@@ -406,9 +406,19 @@ function AuditRow({ log, isLast }: AuditRowProps) {
   );
 }
 
-function GroupHeader({ label }: { label: 'Aktif' | 'Dihapus' }) {
+function GroupHeader({
+  label,
+  emptyHint,
+}: {
+  label: 'Aktif' | 'Dihapus';
+  emptyHint?: string;
+}) {
   const isActive = label === 'Aktif';
   const headerStyle: CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '8px',
     padding: '6px 14px',
     background: 'var(--bg2)',
     borderBottom: '1px solid var(--border)',
@@ -418,7 +428,19 @@ function GroupHeader({ label }: { label: 'Aktif' | 'Dihapus' }) {
     letterSpacing: '0.04em',
     color: isActive ? 'var(--success, #16a34a)' : 'var(--text3)',
   };
-  return <div style={headerStyle}>{label}</div>;
+  const hintStyle: CSSProperties = {
+    fontWeight: 400,
+    textTransform: 'none',
+    letterSpacing: 'normal',
+    color: 'var(--text4)',
+    fontStyle: 'italic',
+  };
+  return (
+    <div style={headerStyle}>
+      <span>{label}</span>
+      {emptyHint && <span style={hintStyle}>{emptyHint}</span>}
+    </div>
+  );
 }
 
 interface EntryRowProps {
@@ -527,7 +549,6 @@ export function HppAuditHistory({ entries }: HppAuditHistoryProps) {
 
   const activeEntries = withLogs.filter((e) => !e.deletedAt);
   const deletedEntries = withLogs.filter((e) => e.deletedAt);
-  const grouped = deletedEntries.length > 0;
 
   // Which active entry is in effect today -> gets the green "Berlaku Saat Ini" pill.
   const todayIso = new Date().toISOString().slice(0, 10);
@@ -544,23 +565,28 @@ export function HppAuditHistory({ entries }: HppAuditHistoryProps) {
         Log Perubahan
       </div>
       <div style={styles.card}>
-        {grouped ? (
+        {/* Aktif group - header always shown, mirroring MasterPackingCostHistory. */}
+        {activeEntries.length === 0 ? (
+          <GroupHeader label="Aktif" emptyHint="Belum ada entry aktif" />
+        ) : (
           <>
-            {activeEntries.length > 0 && (
-              <>
-                <GroupHeader label="Aktif" />
-                {activeEntries.map((entry) => (
-                  <EntryRow
-                    key={entry.id}
-                    entry={entry}
-                    expanded={expandedIds.has(entry.id)}
-                    isCurrent={entry.id === currentEntryId}
-                    isLast={false}
-                    onToggle={() => toggle(entry.id)}
-                  />
-                ))}
-              </>
-            )}
+            <GroupHeader label="Aktif" />
+            {activeEntries.map((entry, idx) => (
+              <EntryRow
+                key={entry.id}
+                entry={entry}
+                expanded={expandedIds.has(entry.id)}
+                isCurrent={entry.id === currentEntryId}
+                isLast={idx === activeEntries.length - 1 && deletedEntries.length === 0}
+                onToggle={() => toggle(entry.id)}
+              />
+            ))}
+          </>
+        )}
+
+        {/* Dihapus group - only shown when there is deleted history. */}
+        {deletedEntries.length > 0 && (
+          <>
             <GroupHeader label="Dihapus" />
             {deletedEntries.map((entry, idx) => (
               <EntryRow
@@ -573,17 +599,6 @@ export function HppAuditHistory({ entries }: HppAuditHistoryProps) {
               />
             ))}
           </>
-        ) : (
-          activeEntries.map((entry, idx) => (
-            <EntryRow
-              key={entry.id}
-              entry={entry}
-              expanded={expandedIds.has(entry.id)}
-              isCurrent={entry.id === currentEntryId}
-              isLast={idx === activeEntries.length - 1}
-              onToggle={() => toggle(entry.id)}
-            />
-          ))
         )}
       </div>
     </section>
