@@ -30,7 +30,7 @@ function formatRp(value: number): string {
 }
 
 function formatDate(dateStr: string | null): string {
-  if (!dateStr) return '-';
+  if (!dateStr) return '\u2014';
   const [y, m, d] = dateStr.split('-');
   return `${d}/${m}/${y}`;
 }
@@ -97,14 +97,87 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 function formatValue(key: string, value: unknown): string {
-  if (value === null || value === undefined) return '-';
+  if (value === null || value === undefined) return '\u2014';
   if (key === 'hppValue' && typeof value === 'number') return formatRp(value);
   return String(value);
 }
 
 // All static styles live here so the JSX never needs a double-brace literal.
 const styles: Record<string, CSSProperties> = {
-  changedGrid: { marginTop: '6px', display: 'grid', gap: '3px', fontSize: '12px' },
+  sectionWrap: { marginTop: '16px' },
+  sectionTitle: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    fontSize: '11px',
+    fontWeight: 600,
+    color: 'var(--text3)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    marginBottom: '8px',
+  },
+  card: {
+    border: '1px solid var(--border)',
+    borderRadius: '10px',
+    overflow: 'hidden',
+    background: 'var(--bg2)',
+  },
+  entryBtn: {
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    background: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    padding: '10px 12px',
+    textAlign: 'left',
+    color: 'var(--text1)',
+    transition: 'background 0.15s ease',
+  },
+  entryValue: { fontWeight: 600, fontSize: '13px', color: 'var(--text1)' },
+  entryPeriod: {
+    fontSize: '12px',
+    color: 'var(--text3)',
+  },
+  logCount: {
+    marginLeft: 'auto',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    fontSize: '12px',
+    color: 'var(--text3)',
+    flexShrink: 0,
+  },
+  expandWrap: {
+    padding: '4px 14px 12px 34px',
+    background: 'var(--bg1, transparent)',
+  },
+  emptyLog: { fontSize: '12px', color: 'var(--text3)', padding: '6px 0' },
+  auditRowMeta: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' },
+  timestamp: { fontSize: '12px', color: 'var(--text1)' },
+  byUser: { fontSize: '12px', color: 'var(--text3)' },
+  toggleBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '3px',
+    background: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    color: 'var(--accent, #2563eb)',
+    fontSize: '11px',
+    padding: '2px 4px',
+    borderRadius: '6px',
+  },
+  changedGrid: {
+    marginTop: '8px',
+    display: 'grid',
+    gap: '4px',
+    fontSize: '12px',
+    background: 'var(--bg3)',
+    borderRadius: '8px',
+    padding: '8px 10px',
+  },
   changedRow: {
     display: 'grid',
     gridTemplateColumns: '120px 1fr',
@@ -115,61 +188,6 @@ const styles: Record<string, CSSProperties> = {
   fieldValue: { color: 'var(--text1)' },
   strikethrough: { textDecoration: 'line-through', color: 'var(--text3)' },
   newValueBold: { fontWeight: 600 },
-  auditRowMeta: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' },
-  timestamp: { fontSize: '12px', color: 'var(--text1)' },
-  byUser: { fontSize: '12px', color: 'var(--text3)' },
-  toggleBtn: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '2px',
-    background: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
-    color: 'var(--accent, #2563eb)',
-    fontSize: '11px',
-    padding: '2px 4px',
-  },
-  entryCard: { borderBottom: '1px solid var(--border)' },
-  entryBtn: {
-    width: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    background: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
-    padding: '8px 4px',
-    textAlign: 'left',
-    color: 'var(--text1)',
-  },
-  entryValue: { fontWeight: 600, fontSize: '13px' },
-  entryPeriod: { fontSize: '12px', color: 'var(--text3)' },
-  logCount: {
-    marginLeft: 'auto',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '4px',
-    fontSize: '12px',
-    color: 'var(--text3)',
-  },
-  expandWrap: { padding: '0 4px 10px 24px' },
-  emptyLog: { fontSize: '12px', color: 'var(--text3)', padding: '4px 0' },
-  sectionWrap: {
-    marginTop: '14px',
-    borderTop: '1px solid var(--border)',
-    paddingTop: '10px',
-  },
-  sectionTitle: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    fontSize: '11px',
-    fontWeight: 600,
-    color: 'var(--text3)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.03em',
-    marginBottom: '4px',
-  },
 };
 
 interface ChangedValuesProps {
@@ -197,7 +215,7 @@ function ChangedValues({ previousValues, newValues, action }: ChangedValuesProps
               {action === 'update' ? (
                 <>
                   <span style={styles.strikethrough}>{formatValue(key, prev)}</span>
-                  {' -> '}
+                  {' \u2192 '}
                   <span style={styles.newValueBold}>{formatValue(key, next)}</span>
                 </>
               ) : (
@@ -221,7 +239,7 @@ function AuditRow({ log, isLast }: AuditRowProps) {
   const hasValues = log.previousValues !== null || log.newValues !== null;
 
   const rowStyle: CSSProperties = {
-    padding: '6px 0',
+    padding: '8px 0',
     borderBottom: isLast ? 'none' : '1px dashed var(--border)',
   };
   const badgeStyle: CSSProperties = {
@@ -263,18 +281,34 @@ function AuditRow({ log, isLast }: AuditRowProps) {
 interface EntryCardProps {
   entry: HppAuditEntry;
   expanded: boolean;
+  isLast: boolean;
   onToggle: () => void;
 }
 
-function EntryCard({ entry, expanded, onToggle }: EntryCardProps) {
+function EntryCard({ entry, expanded, isLast, onToggle }: EntryCardProps) {
   const logs = entry.auditLogs ?? [];
+  const cardStyle: CSSProperties = {
+    borderBottom: isLast ? 'none' : '1px solid var(--border)',
+  };
   return (
-    <div style={styles.entryCard}>
-      <button type="button" onClick={onToggle} aria-expanded={expanded} style={styles.entryBtn}>
+    <div style={cardStyle}>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        style={styles.entryBtn}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = 'var(--bg3)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = 'transparent';
+        }}
+      >
         {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         <span style={styles.entryValue}>{formatRp(entry.hppValue)}</span>
         <span style={styles.entryPeriod}>
-          {formatDate(entry.startDate)} {'->'} {entry.endDate ? formatDate(entry.endDate) : 'Berlaku'}
+          {formatDate(entry.startDate)} {'\u2192'}{' '}
+          {entry.endDate ? formatDate(entry.endDate) : 'Berlaku'}
         </span>
         <span style={styles.logCount}>
           <Clock size={12} />
@@ -321,14 +355,17 @@ export function HppAuditHistory({ entries }: HppAuditHistoryProps) {
         <Clock size={12} />
         Log Perubahan
       </div>
-      {withLogs.map((entry) => (
-        <EntryCard
-          key={entry.id}
-          entry={entry}
-          expanded={expandedIds.has(entry.id)}
-          onToggle={() => toggle(entry.id)}
-        />
-      ))}
+      <div style={styles.card}>
+        {withLogs.map((entry, idx) => (
+          <EntryCard
+            key={entry.id}
+            entry={entry}
+            expanded={expandedIds.has(entry.id)}
+            isLast={idx === withLogs.length - 1}
+            onToggle={() => toggle(entry.id)}
+          />
+        ))}
+      </div>
     </section>
   );
 }
