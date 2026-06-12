@@ -1,15 +1,18 @@
-/* ──────────────────────────────────────────────────────────────────────────
-   HPP — layout dua kolom (daftar variasi vs detail HPP)
-
-   Fix ruang kosong: secara default grid/flex membuat kedua kolom jadi sama
-   tinggi (align-items: stretch), sehingga kolom yang lebih pendek ikut
-   "diregangkan" dan menyisakan area kosong di bawahnya. Dengan flex-start,
-   tiap kolom hanya setinggi kontennya sendiri -> tidak ada ruang kosong, baik
-   ketika daftar variasi lebih panjang maupun ketika detail HPP lebih panjang.
-
-   Target: kontainer dua-kolom, yaitu <div> ke-2 yang langsung berada di dalam
-   <section aria-label="HPP Variasi"> (<div> pertama adalah header section).
-   ────────────────────────────────────────────────────────────────────────── */
+/* Fix ruang kosong di layout dua-kolom HPP.
+   Kontainer dua-kolom (daftar variasi | detail) di dalam
+   <section aria-label="HPP Variasi"> secara default membuat kedua kolom
+   sama tinggi (align-items: stretch), sehingga kolom yang lebih pendek
+   ikut diregangkan dan menyisakan area kosong. Ini paling kelihatan saat
+   variasi terpilih punya banyak riwayat log (kolom kanan jadi tinggi -> kolom
+   kiri kosong) atau sebaliknya (kolom kiri tinggi -> kolom kanan kosong). */
 section[aria-label="HPP Variasi"] > div:nth-of-type(2) {
   align-items: flex-start !important;
+}
+
+/* Paksa tiap kolom langsung untuk tidak ikut diregangkan, walaupun elemennya
+   punya alignSelf: stretch atau height inline. Tiap kolom mengikuti tinggi
+   kontennya sendiri sehingga tidak ada lagi ruang kosong. */
+section[aria-label="HPP Variasi"] > div:nth-of-type(2) > div {
+  align-self: flex-start !important;
+  height: auto !important;
 }
