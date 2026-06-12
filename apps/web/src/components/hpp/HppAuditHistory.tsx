@@ -17,6 +17,7 @@ interface HppAuditEntry {
   startDate: string;
   endDate: string | null;
   note: string | null;
+  deletedAt?: string | null;
   auditLogs?: HppAuditLogEntry[];
 }
 
@@ -243,6 +244,17 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: 500,
   },
   dash: { color: 'var(--text4)', fontStyle: 'italic' },
+  deletedBadge: {
+    display: 'inline-block',
+    padding: '1px 8px',
+    borderRadius: '10px',
+    fontSize: '11px',
+    fontWeight: 600,
+    background: 'var(--error-bg, #fff0f0)',
+    color: 'var(--error, #dc2626)',
+    border: '1px solid var(--error, #dc2626)',
+    flexShrink: 0,
+  },
 };
 
 interface ChangedValuesProps {
@@ -433,6 +445,7 @@ function EntryRow({ entry, expanded, isLast, onToggle }: EntryRowProps) {
 
         <div style={styles.details}>
           <span style={styles.entryValue}>{formatRp(entry.hppValue)}</span>
+          {entry.deletedAt && <span style={styles.deletedBadge}>Dihapus</span>}
           <span style={styles.period}>
             {formatDate(entry.startDate)}
             {' \u2192 '}
