@@ -560,10 +560,7 @@ export function HppAuditHistory({ entries }: HppAuditHistoryProps) {
 
   return (
     <section aria-label="Log Perubahan HPP" style={styles.sectionWrap}>
-      <div style={styles.sectionTitle}>
-        <Clock size={12} />
-        Log Perubahan
-      </div>
+      <div style={styles.sectionTitle}>Riwayat HPP</div>
       <div style={styles.card}>
         {/* Aktif group - header always shown, mirroring MasterPackingCostHistory. */}
         {activeEntries.length === 0 ? (
