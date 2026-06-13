@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Plus, Edit3, Trash2, ChevronRight, AlertCircle, Loader2, Copy } from 'lucide-react';
 import { fetchApi } from '../../lib/api';
 import { HppAuditHistory } from './HppAuditHistory';
@@ -526,6 +526,20 @@ export function HppSection({
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  // Sinkronin tinggi kolom kanan dgn kolom kiri (daftar variasi)
+  const leftColRef = useRef<HTMLDivElement>(null);
+  const [rightMaxHeight, setRightMaxHeight] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    const el = leftColRef.current;
+    if (!el) return;
+    const update = () => setRightMaxHeight(el.offsetHeight);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [variants, selectedVariantId, historyEntries]);
+
   // ── Resolve HPP for all variants on mount / when variants change ──
   useEffect(() => {
     if (variants.length === 0) return;
@@ -753,6 +767,7 @@ export function HppSection({
       >
         {/* ── Left: Variant list ── */}
         <div
+          ref={leftColRef}
           style={{
             borderRight: '1px solid var(--border)',
             overflowY: 'auto',
@@ -772,7 +787,7 @@ export function HppSection({
         </div>
 
         {/* ── Right: Entry list for selected variant ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '200px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, maxHeight: rightMaxHeight }}>
           {/* Header row with Add button */}
           <div
             style={{
@@ -928,7 +943,7 @@ export function HppSection({
           )}
 
           {/* Content */}
-          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
             {entriesLoading ? (
               <SectionLoading />
             ) : entriesError ? (

@@ -115,7 +115,7 @@ function EditModal({ product, onClose, onSave, saving }: any) {
 
   // Build HppVariant list from variants that have a real DB id
   const hppVariants: HppVariant[] = variants
-    .filter((v) => v.dbId !== null && v.dbId !== undefined)
+    .filter((v) => v.dbId !== null && v.dbId !== undefined && String(v.varName).trim() !== '')
     .map((v) => ({ id: v.dbId as number, name: v.varName }));
 
   const handleHppAddEntry = useCallback((variantId: number) => {
