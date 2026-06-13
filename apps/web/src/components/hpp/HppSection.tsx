@@ -772,6 +772,7 @@ export function HppSection({
             borderRight: '1px solid var(--border)',
             overflowY: 'auto',
             maxHeight: '400px',
+            alignSelf: 'flex-start',
           }}
         >
           {variants.map((variant) => (
