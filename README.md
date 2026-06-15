@@ -4,6 +4,8 @@ Warehouse Management & Shopee integration system. A monorepo that syncs Shopee o
 
 ## Features
 
+Want to contribute or understand the codebase? See [CONTRIBUTING.md](./CONTRIBUTING.md) and [docs/architecture.md](./docs/architecture.md).
+
 - **Shopee integration** — OAuth authorization, order sync, escrow/settlement sync, automatic token refresh
 - **Soft connect/disconnect** — disconnecting a shop hides all of its data (orders, channel products, reports) and pauses sync without deleting anything; reconnecting via OAuth restores the data and resumes sync automatically
 - **Order management** — order list with shop filtering, batch shipment (dropoff/pickup), batch label printing, detection of Shopee "tertunda" (held) orders that can't be processed yet
