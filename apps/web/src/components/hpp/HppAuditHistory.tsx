@@ -107,7 +107,7 @@ function formatValue(key: string, value: unknown): string {
 // NOTE: keep every style as a named entry/variable referenced with single braces
 // (style={styles.x}); never inline a double-brace object literal in JSX.
 const styles: Record<string, CSSProperties> = {
-  sectionWrap: { marginTop: '16px' },
+  sectionWrap: { marginTop: '24px' },
   sectionHeader: {
     marginBottom: '12px',
   },
@@ -260,6 +260,33 @@ const styles: Record<string, CSSProperties> = {
     flexShrink: 0,
   },
   deletedText: { color: 'var(--error, #dc2626)', fontWeight: 500 },
+  deletedGroupToggle: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: '8px',
+    padding: '6px 14px',
+    background: 'var(--bg2)',
+    borderTop: '1px solid var(--border)',
+    borderBottom: '1px solid var(--border)',
+    fontSize: '11px',
+    fontWeight: 600,
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    color: 'var(--text3)',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    transition: 'background .1s',
+  },
+  deletedHint: {
+    fontWeight: 400,
+    textTransform: 'none',
+    letterSpacing: 'normal',
+    color: 'var(--text4)',
+    fontStyle: 'italic',
+  },
+  deletedScroll: {},
 };
 
 interface ChangedValuesProps {
@@ -539,6 +566,7 @@ function EntryRow({ entry, expanded, isLast, isCurrent, onToggle }: EntryRowProp
  */
 export function HppAuditHistory({ entries }: HppAuditHistoryProps) {
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+  const [showDeleted, setShowDeleted] = useState(false);
 
   const toggle = (id: number) =>
     setExpandedIds((prev) => {
@@ -590,20 +618,39 @@ export function HppAuditHistory({ entries }: HppAuditHistoryProps) {
           </>
         )}
 
-        {/* Dihapus group - only shown when there is deleted history. */}
+        {/* Dihapus group — collapsible, tertutup default, ada scroll agar tidak kepanjangan. */}
         {deletedEntries.length > 0 && (
           <>
-            <GroupHeader label="Dihapus" />
-            {deletedEntries.map((entry, idx) => (
-              <EntryRow
-                key={entry.id}
-                entry={entry}
-                expanded={expandedIds.has(entry.id)}
-                isCurrent={false}
-                isLast={idx === deletedEntries.length - 1}
-                onToggle={() => toggle(entry.id)}
-              />
-            ))}
+            <button
+              type="button"
+              onClick={() => setShowDeleted((v) => !v)}
+              aria-expanded={showDeleted}
+              style={styles.deletedGroupToggle}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg3)'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg2)'; }}
+            >
+              <span style={styles.toggleWrap}>
+                {showDeleted ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                Dihapus ({deletedEntries.length})
+              </span>
+              <span style={styles.deletedHint}>
+                {showDeleted ? 'Sembunyikan' : 'Lihat'}
+              </span>
+            </button>
+            {showDeleted && (
+              <div style={styles.deletedScroll}>
+                {deletedEntries.map((entry, idx) => (
+                  <EntryRow
+                    key={entry.id}
+                    entry={entry}
+                    expanded={expandedIds.has(entry.id)}
+                    isCurrent={false}
+                    isLast={idx === deletedEntries.length - 1}
+                    onToggle={() => toggle(entry.id)}
+                  />
+                ))}
+              </div>
+            )}
           </>
         )}
       </div>
