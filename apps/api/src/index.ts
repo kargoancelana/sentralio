@@ -28,11 +28,21 @@ import { ensureStaffPermissionsLoaded } from "./modules/auth/permissions.service
 import { originMiddleware } from "./modules/auth/origin.middleware";
 import { usersRoutes } from "./modules/users/users.route";
 
+// Fail-fast: di production FRONTEND_URL wajib diset (dipakai untuk CORS allowlist).
+if (env.nodeEnv === 'production' && !env.frontendUrl) {
+  throw new Error(
+    "[CONFIG] FRONTEND_URL wajib diset di production untuk CORS allowlist. " +
+    "Set FRONTEND_URL ke origin frontend, contoh: https://sentralio.my.id"
+  );
+}
+
+const corsOrigins = env.nodeEnv === 'production'
+  ? [env.frontendUrl as string]
+  : ["http://localhost:5173", "http://localhost:3000", "http://localhost:5175"];
+
 const app = new Elysia()
   .use(cors({
-    origin: env.nodeEnv === 'production' 
-      ? (env.frontendUrl ? [env.frontendUrl] : ["https://yourdomain.com"]) // Production: Use FRONTEND_URL from .env
-      : ["http://localhost:5173", "http://localhost:3000", "http://localhost:5175"], // Development: Allow localhost
+    origin: corsOrigins,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     credentials: true,
   }))
@@ -49,9 +59,15 @@ const app = new Elysia()
       return server?.requestIP(req)?.address || 'unknown';
     },
     skip: (req) => {
-      // Skip rate limiting for health check and HPP/packing-cost resolve endpoints
-      const url = req.url;
-      return url.endsWith('/health') || url.includes('/resolve');
+      // Skip rate limit hanya untuk health check & endpoint resolve (HPP/packing-cost).
+      // Cocokkan pada pathname (tanpa query) supaya tidak bisa di-bypass via substring.
+      let pathname: string;
+      try {
+        pathname = new URL(req.url).pathname;
+      } catch {
+        pathname = req.url;
+      }
+      return pathname.endsWith('/health') || pathname.endsWith('/resolve');
     }
   }))
   .onError(({ code, error, set }) => {
@@ -72,6 +88,28 @@ const app = new Elysia()
   // Must be mounted BEFORE originMiddleware + authMiddleware so they are
   // accessible without a session (Req 4.3, 5.4).
   .use(healthRoutes)
+
+  // Dedicated rate-limiter for login — tighter than the global limit to defend
+  // against password spraying across multiple accounts from one IP.
+  // Skips all non-login paths so the global limiter handles the rest.
+  .use(rateLimit({
+    duration: 60000,
+    max: 10, // maksimal 10 percobaan login per menit per IP
+    scoping: 'global',
+    errorResponse: {
+      success: false,
+      message: "Terlalu banyak percobaan login. Coba lagi sebentar lagi.",
+      error: "LOGIN_RATE_LIMIT_EXCEEDED",
+    },
+    generator: (req, server) => server?.requestIP(req)?.address || 'unknown',
+    skip: (req) => {
+      let pathname: string;
+      try { pathname = new URL(req.url).pathname; } catch { pathname = req.url; }
+      // Limiter ini HANYA berlaku untuk login; selain itu di-skip.
+      return !(pathname.endsWith('/auth/login') && req.method === 'POST');
+    },
+  }))
+
   .use(authPublicRoutes)   // POST /auth/login
 
   // ─── Protected routes: require valid session ──────────────────────────────

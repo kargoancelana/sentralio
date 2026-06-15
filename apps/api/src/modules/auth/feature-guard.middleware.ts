@@ -24,6 +24,8 @@ const RULES: Array<{ prefix: string; feature: Feature }> = [
   { prefix: '/products', feature: 'produk_channel' },
   { prefix: '/profit', feature: 'laporan_keuangan' },
   { prefix: '/shopee', feature: 'integrasi_toko' },
+  // Manual Shopee sync triggers (force/escrow/status) — sensitif, admin-only.
+  { prefix: '/sync', feature: 'integrasi_toko' },
   // Orders + labels are the staff baseline; still gated so an admin could
   // disable them for staff if desired.
   { prefix: '/orders', feature: 'orders' },

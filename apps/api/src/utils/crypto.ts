@@ -1,7 +1,8 @@
 import crypto from "crypto";
 import { env } from "../config/env";
 
-const algorithm = "aes-256-cbc";
+const GCM_ALGORITHM = "aes-256-gcm";
+const LEGACY_CBC_ALGORITHM = "aes-256-cbc";
 
 // Validate and convert TOKEN_SECRET_KEY
 // Key should be 64 hex characters (representing 32 bytes)
@@ -14,7 +15,7 @@ try {
     // Fallback: treat as UTF-8 string (legacy support)
     key = Buffer.from(env.tokenSecretKey, "utf-8");
   }
-  
+
   if (key.length !== 32) {
     throw new Error(
       `TOKEN_SECRET_KEY must be exactly 32 bytes (256 bits). Current length: ${key.length} bytes.\n` +
@@ -26,30 +27,50 @@ try {
   throw new Error(`Invalid TOKEN_SECRET_KEY: ${err.message}`);
 }
 
+// Encrypt with AES-256-GCM. Output format: iv:authTag:ciphertext (hex).
 export function encrypt(text: string): string {
-  const iv = crypto.randomBytes(16);
-  // Definisikan parameter sesuai standar bawaan
-  const cipher = crypto.createCipheriv(algorithm, key, iv);
+  const iv = crypto.randomBytes(12); // 96-bit nonce, standar untuk GCM
+  const cipher = crypto.createCipheriv(GCM_ALGORITHM, key, iv);
 
   let encrypted = cipher.update(text, "utf8", "hex");
   encrypted += cipher.final("hex");
+  const authTag = cipher.getAuthTag().toString("hex");
 
-  return iv.toString("hex") + ":" + encrypted;
+  return `${iv.toString("hex")}:${authTag}:${encrypted}`;
 }
 
+// Decrypt. Supports new GCM (3 parts) and legacy CBC (2 parts) formats.
 export function decrypt(text: string): string {
-  // Jika format string mentah (legacy) yang digunakan, 
-  // gracefully fall back or throw error
   if (!text.includes(":")) {
-    throw new Error("Invalid encrypted format. Expected iv:encrypted_hex");
+    throw new Error("Invalid encrypted format. Expected iv:authTag:ciphertext or legacy iv:ciphertext");
   }
 
-  const [ivHex, encrypted] = text.split(":");
-  const iv = Buffer.from(ivHex, "hex");
-  const decipher = crypto.createDecipheriv(algorithm, key, iv);
+  const parts = text.split(":");
 
-  let decrypted = decipher.update(encrypted, "hex", "utf8");
-  decrypted += decipher.final("utf8");
+  // New format: aes-256-gcm -> iv:authTag:ciphertext
+  if (parts.length === 3) {
+    const ivHex      = parts[0] as string;
+    const authTagHex = parts[1] as string;
+    const encrypted  = parts[2] as string;
+    const iv = Buffer.from(ivHex, "hex");
+    const authTag = Buffer.from(authTagHex, "hex");
+    const decipher = crypto.createDecipheriv(GCM_ALGORITHM, key, iv);
+    decipher.setAuthTag(authTag);
+    let decrypted = decipher.update(encrypted, "hex", "utf8");
+    decrypted += decipher.final("utf8"); // throw kalau authTag tidak cocok (tampered)
+    return decrypted;
+  }
 
-  return decrypted;
+  // Legacy format: aes-256-cbc -> iv:ciphertext (backward-compat token lama)
+  if (parts.length === 2) {
+    const ivHex     = parts[0] as string;
+    const encrypted = parts[1] as string;
+    const iv = Buffer.from(ivHex, "hex");
+    const decipher = crypto.createDecipheriv(LEGACY_CBC_ALGORITHM, key, iv);
+    let decrypted = decipher.update(encrypted, "hex", "utf8");
+    decrypted += decipher.final("utf8");
+    return decrypted;
+  }
+
+  throw new Error("Invalid encrypted format. Unexpected number of segments.");
 }
