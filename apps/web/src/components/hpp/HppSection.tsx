@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Plus, Edit3, Trash2, ChevronRight, AlertCircle, Loader2, Copy } from 'lucide-react';
 import { fetchApi } from '../../lib/api';
 import { HppAuditHistory } from './HppAuditHistory';
@@ -280,10 +280,10 @@ function EntryTable({ entries, onEdit, onDelete, deletingId }: EntryTableProps) 
                   borderBottom: '1px solid var(--border)',
                 }}
               >
-                <td style={{ padding: '9px 12px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                <td style={{ padding: '9px 12px', color: 'var(--text2)', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>
                   {formatDate(entry.startDate)}
                 </td>
-                <td style={{ padding: '9px 12px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                <td style={{ padding: '9px 12px', color: 'var(--text2)', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>
                   {entry.endDate ? formatDate(entry.endDate) : (
                     <span
                       style={{
@@ -305,6 +305,7 @@ function EntryTable({ entries, onEdit, onDelete, deletingId }: EntryTableProps) 
                     fontWeight: 600,
                     color: 'var(--text1)',
                     whiteSpace: 'nowrap',
+                    verticalAlign: 'middle',
                   }}
                 >
                   {formatRp(entry.hppValue)}
@@ -317,12 +318,13 @@ function EntryTable({ entries, onEdit, onDelete, deletingId }: EntryTableProps) 
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
+                    verticalAlign: 'middle',
                   }}
                   title={entry.note ?? undefined}
                 >
                   {entry.note || '—'}
                 </td>
-                <td style={{ padding: '9px 12px', whiteSpace: 'nowrap' }}>
+                <td style={{ padding: '9px 12px', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
                     <button
                       onClick={() => onEdit(entry)}
@@ -526,19 +528,7 @@ export function HppSection({
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // Sinkronin tinggi kolom kanan dgn kolom kiri (daftar variasi)
-  const leftColRef = useRef<HTMLDivElement>(null);
-  const [rightMaxHeight, setRightMaxHeight] = useState<number | undefined>(undefined);
-
-  useEffect(() => {
-    const el = leftColRef.current;
-    if (!el) return;
-    const update = () => setRightMaxHeight(el.offsetHeight);
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [variants, selectedVariantId, historyEntries]);
+  // (height-sync dihapus — kolom kanan mengalir bebas sesuai konten)
 
   // ── Resolve HPP for all variants on mount / when variants change ──
   useEffect(() => {
@@ -759,20 +749,20 @@ export function HppSection({
         style={{
           display: 'grid',
           gridTemplateColumns: '220px 1fr',
+          alignItems: 'stretch',
           border: '1px solid var(--border)',
           borderRadius: '8px',
           overflow: 'hidden',
           background: 'var(--bg)',
         }}
       >
-        {/* ── Left: Variant list ── */}
+        {/* ── Left: Variant list — scroll mandiri, maks 60vh ── */}
         <div
-          ref={leftColRef}
           style={{
             borderRight: '1px solid var(--border)',
+            maxHeight: '60vh',
             overflowY: 'auto',
-            maxHeight: '400px',
-            alignSelf: 'flex-start',
+            minHeight: 0,
           }}
         >
           {variants.map((variant) => (
@@ -787,8 +777,8 @@ export function HppSection({
           ))}
         </div>
 
-        {/* ── Right: Entry list for selected variant ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, maxHeight: rightMaxHeight }}>
+        {/* ── Right: Entry list for selected variant — scroll mandiri, maks 60vh ── */}
+        <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '60vh', overflowY: 'auto', minHeight: 0 }}>
           {/* Header row with Add button */}
           <div
             style={{
@@ -799,6 +789,9 @@ export function HppSection({
               borderBottom: '1px solid var(--border)',
               background: 'var(--bg2)',
               flexShrink: 0,
+              position: 'sticky',
+              top: 0,
+              zIndex: 1,
             }}
           >
             <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text3)' }}>
@@ -944,7 +937,7 @@ export function HppSection({
           )}
 
           {/* Content */}
-          <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+          <div>
             {entriesLoading ? (
               <SectionLoading />
             ) : entriesError ? (
@@ -953,7 +946,7 @@ export function HppSection({
                 onRetry={selectedVariantId !== null ? () => loadEntries(selectedVariantId) : undefined}
               />
             ) : (
-              <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
               <EntryTable
                 entries={entries}
                 onEdit={handleEdit}
@@ -961,7 +954,7 @@ export function HppSection({
                 deletingId={deletingId}
               />
               <HppAuditHistory entries={historyEntries} />
-              </>
+              </div>
             )}
           </div>
         </div>
