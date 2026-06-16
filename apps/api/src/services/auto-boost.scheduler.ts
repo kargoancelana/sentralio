@@ -68,7 +68,7 @@ class AutoBoostScheduler {
             eq(autoBoostQueue.shopId, shopId),
             eq(autoBoostQueue.enabled, 1)
           )
-        );
+        ).$dynamic();
 
       if (config.mode === 'fixed') {
         queueQuery = queueQuery.orderBy(asc(autoBoostQueue.position));

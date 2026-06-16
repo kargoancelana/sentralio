@@ -37,10 +37,10 @@ export function AutoBoost() {
     [shopId]
   );
 
-  const config = configData as unknown as { success: boolean, data: AutoBoostConfig };
-  const queue = (queueData as unknown as { success: boolean, data: AutoBoostQueueItem[] })?.data || [];
-  const history = (historyData as unknown as { success: boolean, data: AutoBoostLog[] })?.data || [];
-  const status = (statusData as unknown as { success: boolean, data: AutoBoostStatusItem[] })?.data || [];
+  const config = configData?.data as AutoBoostConfig | undefined;
+  const queue = (queueData?.data || []) as AutoBoostQueueItem[];
+  const history = (historyData?.data || []) as AutoBoostLog[];
+  const status = (statusData?.data || []) as AutoBoostStatusItem[];
 
   const [activeTab, setActiveTab] = useState<'status'|'queue'|'history'|'config'>('status');
 
@@ -52,12 +52,27 @@ export function AutoBoost() {
   });
 
   const handleToggle = async () => {
-    const isEnabled = config?.data?.enabled === 1;
+    const isEnabled = config?.enabled === 1;
     try {
       await toggleMut.execute(!isEnabled);
       toast(`Auto Boost ${!isEnabled ? 'diaktifkan' : 'dinonaktifkan'}`, 'success');
     } catch (err: any) {
       toast(err.message || 'Gagal mengubah status', 'error');
+    }
+  };
+
+  const configMut = useApiMutation(async (data: Partial<AutoBoostConfig>) => {
+    if (!shopId) return;
+    await api.autoBoostConfigUpdate({ shopId, ...data });
+    await refetchConfig();
+  });
+
+  const handleConfigChange = async (data: Partial<AutoBoostConfig>) => {
+    try {
+      await configMut.execute(data);
+      toast('Pengaturan berhasil disimpan', 'success');
+    } catch (err: any) {
+      toast(err.message || 'Gagal menyimpan pengaturan', 'error');
     }
   };
 
@@ -88,10 +103,20 @@ export function AutoBoost() {
     await refetchQueue();
   });
 
-  const handleRemove = async (id: number) => {
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<number | null>(null);
+
+  const confirmDelete = (id: number) => {
+    setItemToDelete(id);
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleRemove = async () => {
+    if (itemToDelete === null) return;
     try {
-      await removeMut.execute(id);
+      await removeMut.execute(itemToDelete);
       toast('Produk dihapus dari antrian', 'success');
+      setDeleteConfirmOpen(false);
     } catch (err: any) {
       toast(err.message || 'Gagal menghapus produk', 'error');
     }
@@ -129,7 +154,7 @@ export function AutoBoost() {
       <div className="page-header">
         <div>
           <div className="page-title">Auto Boost</div>
-          <div className="page-subtitle">Tingkatkan visibilitas produk secara otomatis setiap 4 jam</div>
+          <div className="page-subtitle">Rotasi produk otomatis tiap ~5 menit, dengan cooldown 4 jam per produk (maks. 5 slot).</div>
         </div>
         <div className="page-actions" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           <select 
@@ -142,19 +167,19 @@ export function AutoBoost() {
             ))}
           </select>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text2)' }}>Status:</span>
+            <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text2)' }}>Status: <strong style={{ color: config?.enabled === 1 ? 'var(--accent)' : 'var(--text3)' }}>{config?.enabled === 1 ? 'Aktif' : 'Nonaktif'}</strong></span>
             <button
               onClick={handleToggle}
-              disabled={toggleMut.loading || !config?.data}
+              disabled={toggleMut.loading || !config}
               style={{
                 position: 'relative', width: 44, height: 24, borderRadius: 999, border: 'none',
-                cursor: 'pointer', background: config?.data?.enabled === 1 ? 'var(--accent)' : 'var(--border)',
+                cursor: 'pointer', background: config?.enabled === 1 ? 'var(--accent)' : 'var(--border)',
                 transition: 'background 0.2s',
               }}
             >
               <span
                 style={{
-                  position: 'absolute', top: 2, left: config?.data?.enabled === 1 ? 22 : 2, width: 20, height: 20,
+                  position: 'absolute', top: 2, left: config?.enabled === 1 ? 22 : 2, width: 20, height: 20,
                   borderRadius: '50%', background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.25)', transition: 'left 0.2s',
                 }}
               />
@@ -162,6 +187,12 @@ export function AutoBoost() {
           </div>
         </div>
       </div>
+
+      {config && config.enabled !== 1 && (
+        <div style={{ padding: '12px 16px', background: '#FEF2F2', border: '1px solid #FCA5A5', color: '#991B1B', borderRadius: 8, marginBottom: 24, fontSize: 14 }}>
+          Auto Boost nonaktif — rotasi tidak berjalan. Aktifkan toggle di kanan atas.
+        </div>
+      )}
 
       <div className="stats-grid" style={{ marginBottom: 24 }}>
         <div className="stat-card">
@@ -190,12 +221,20 @@ export function AutoBoost() {
             <button className={`filter-tab ${activeTab === 'config' ? 'active' : ''}`} onClick={() => setActiveTab('config')}><Settings size={14} style={{ marginRight: 6 }}/> Pengaturan</button>
           </div>
         </div>
+        <div className="toolbar-right">
+          {history.length > 0 && (
+            <span style={{ fontSize: 12, color: 'var(--text3)' }}>Terakhir dijalankan: {new Date(history[0].boostedAt).toLocaleString()}</span>
+          )}
+        </div>
       </div>
 
       <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: '0 0 8px 8px', borderTop: 'none', padding: 20, minHeight: 400 }}>
         {activeTab === 'status' && (
           <div>
-            <h3 style={{ fontSize: 16, marginBottom: 16, color: 'var(--text1)' }}>Produk Sedang Di-Boost</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ fontSize: 16, color: 'var(--text1)' }}>Produk Sedang Di-Boost</h3>
+              <span style={{ fontSize: 13, color: 'var(--text3)' }}>{slotsUsed}/5 slot terpakai</span>
+            </div>
             {status.length === 0 ? (
               <div className="empty-state">Belum ada produk yang sedang di-boost. Pastikan toggle diaktifkan dan ada produk di antrian.</div>
             ) : (
@@ -243,7 +282,7 @@ export function AutoBoost() {
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button className="btn btn-ghost btn-xs" disabled={idx === 0 || reorderMut.loading} onClick={() => moveItem(idx, 'up')}><ArrowUp size={14}/></button>
                       <button className="btn btn-ghost btn-xs" disabled={idx === queue.length - 1 || reorderMut.loading} onClick={() => moveItem(idx, 'down')}><ArrowDown size={14}/></button>
-                      <button className="btn btn-ghost btn-xs" style={{ color: 'var(--danger)' }} onClick={() => handleRemove(item.id)} disabled={removeMut.loading}><Trash2 size={14}/></button>
+                      <button className="btn btn-ghost btn-xs" style={{ color: 'var(--danger)' }} onClick={() => confirmDelete(item.id)} disabled={removeMut.loading}><Trash2 size={14}/></button>
                     </div>
                   </div>
                 ))}
@@ -288,37 +327,43 @@ export function AutoBoost() {
           </div>
         )}
 
-        {activeTab === 'config' && config?.data && (
+        {activeTab === 'config' && (
           <div style={{ maxWidth: 500 }}>
             <h3 style={{ fontSize: 16, marginBottom: 16, color: 'var(--text1)' }}>Pengaturan Rotasi</h3>
             
-            <div className="form-group">
-              <label className="form-label">Mode Rotasi</label>
-              <select className="form-input" value={config.data.mode} onChange={e => {
-                api.autoBoostConfigUpdate({ shopId: shopId!, mode: e.target.value as any }).then(refetchConfig);
-              }}>
-                <option value="rotation">Rotasi Berurutan (Rekomendasi)</option>
-                <option value="fixed">Tetap (5 Produk Teratas Saja)</option>
-              </select>
-            </div>
+            {!config ? (
+              <div className="empty-state">Gagal memuat pengaturan, coba refresh.</div>
+            ) : (
+              <div style={{ opacity: configMut.loading ? 0.7 : 1, pointerEvents: configMut.loading ? 'none' : 'auto' }}>
+                <div className="form-group">
+                  <label className="form-label">Mode Rotasi</label>
+                  <select className="form-input" value={config.mode} onChange={e => {
+                    handleConfigChange({ mode: e.target.value as any });
+                  }}>
+                    <option value="rotation">Rotasi Berurutan (Rekomendasi)</option>
+                    <option value="fixed">Tetap (5 Produk Teratas Saja)</option>
+                  </select>
+                </div>
 
-            <div className="form-row">
-              <div className="form-group">
-                <label className="form-label">Jam Aktif Mulai</label>
-                <input className="form-input" type="number" min="0" max="23" value={config.data.activeHourStart} onChange={e => {
-                  api.autoBoostConfigUpdate({ shopId: shopId!, activeHourStart: Number(e.target.value) }).then(refetchConfig);
-                }} />
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Jam Aktif Mulai</label>
+                    <input className="form-input" type="number" min="0" max="23" value={config.activeHourStart} onChange={e => {
+                      handleConfigChange({ activeHourStart: Number(e.target.value) });
+                    }} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Jam Aktif Selesai</label>
+                    <input className="form-input" type="number" min="0" max="23" value={config.activeHourEnd} onChange={e => {
+                      handleConfigChange({ activeHourEnd: Number(e.target.value) });
+                    }} />
+                  </div>
+                </div>
+                
+                <p className="form-hint">Auto Boost hanya akan memicu produk selama jam aktif (WIB).</p>
+                <p className="form-hint" style={{ marginTop: 8, color: 'var(--accent)' }}>Info: Shopee menerapkan cooldown 4 jam setelah setiap produk di-boost.</p>
               </div>
-              <div className="form-group">
-                <label className="form-label">Jam Aktif Selesai</label>
-                <input className="form-input" type="number" min="0" max="23" value={config.data.activeHourEnd} onChange={e => {
-                  api.autoBoostConfigUpdate({ shopId: shopId!, activeHourEnd: Number(e.target.value) }).then(refetchConfig);
-                }} />
-              </div>
-            </div>
-            
-            <p className="form-hint">Auto Boost hanya akan memicu produk selama jam aktif (WIB).</p>
-            <p className="form-hint" style={{ marginTop: 8, color: 'var(--accent)' }}>Info: Shopee menerapkan cooldown 4 jam setelah setiap produk di-boost.</p>
+            )}
           </div>
         )}
       </div>
@@ -349,6 +394,13 @@ export function AutoBoost() {
           {catalog.filter((p: any) => p.shopId === shopId).length === 0 && (
             <div style={{ padding: 20, textAlign: 'center', color: 'var(--text3)' }}>Tidak ada produk di toko ini.</div>
           )}
+        </div>
+      </Modal>
+      <Modal open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)} title="Hapus dari Antrian">
+        <div style={{ marginBottom: 20 }}>Apakah Anda yakin ingin menghapus produk ini dari antrian rotasi?</div>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+          <button className="btn btn-ghost" onClick={() => setDeleteConfirmOpen(false)}>Batal</button>
+          <button className="btn btn-primary" style={{ background: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={() => handleRemove()} disabled={removeMut.loading}>Hapus</button>
         </div>
       </Modal>
     </div>
