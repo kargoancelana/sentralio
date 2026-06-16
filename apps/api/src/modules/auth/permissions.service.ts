@@ -36,6 +36,7 @@ const DEFAULT_ENABLED: Record<string, boolean> = {
   master_produk: false,
   produk_channel: false,
   laporan_keuangan: false,
+  auto_boost: false,
 };
 
 // ─── In-memory cache ────────────────────────────────────────────────────────

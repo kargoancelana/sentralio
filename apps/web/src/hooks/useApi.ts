@@ -84,7 +84,7 @@ export function useApiMutation<TArgs extends any[], TResult>(
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const execute = async (...args: TArgs): Promise<TResult | null> => {
+  const execute = async (...args: TArgs): Promise<TResult> => {
     setLoading(true);
     setError(null);
     try {
@@ -94,7 +94,7 @@ export function useApiMutation<TArgs extends any[], TResult>(
     } catch (err: any) {
       setError(err.message || 'Unknown error');
       setLoading(false);
-      return null;
+      throw err;
     }
   };
 

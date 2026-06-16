@@ -27,7 +27,7 @@ import { permissionsRoutes } from "./modules/auth/permissions.route";
 import { ensureStaffPermissionsLoaded } from "./modules/auth/permissions.service";
 import { originMiddleware } from "./modules/auth/origin.middleware";
 import { usersRoutes } from "./modules/users/users.route";
-
+import { autoBoostRoutes } from "./modules/auto-boost/auto-boost.route";
 // Fail-fast: di production FRONTEND_URL wajib diset (dipakai untuk CORS allowlist).
 if (env.nodeEnv === 'production' && !env.frontendUrl) {
   throw new Error(
@@ -150,6 +150,7 @@ const app = new Elysia()
   // Shopee integration — integrasi_toko feature (admin only)
   .use(shopeeRoutes)
   .use(shopeeAuthRoutes)
+  .use(autoBoostRoutes)
 
   // ─── Background Sync Status & Control ────────────────────────
   .get("/sync/status", () => {
@@ -309,6 +310,10 @@ setTimeout(async () => {
     console.log("[STARTUP] Initializing background sync service...");
     await backgroundSyncService.startBackgroundSync();
     console.log("[STARTUP] Background sync service started successfully");
+    
+    // Auto Boost Scheduler
+    const { autoBoostScheduler } = await import('./services/auto-boost.scheduler');
+    autoBoostScheduler.start();
   } catch (err: any) {
     console.error(`[STARTUP] Failed to start background sync: ${err.message}`);
   }
@@ -318,6 +323,7 @@ setTimeout(async () => {
 process.on('SIGINT', async () => {
   console.log("\n[SHUTDOWN] Received SIGINT, shutting down gracefully...");
   backgroundSyncService.stopBackgroundSync();
+  import('./services/auto-boost.scheduler').then(m => m.autoBoostScheduler.stop());
   try {
     const { closeBrowser } = await import('./services/pdf-generator.service');
     await closeBrowser();
@@ -328,6 +334,7 @@ process.on('SIGINT', async () => {
 process.on('SIGTERM', async () => {
   console.log("\n[SHUTDOWN] Received SIGTERM, shutting down gracefully...");
   backgroundSyncService.stopBackgroundSync();
+  import('./services/auto-boost.scheduler').then(m => m.autoBoostScheduler.stop());
   try {
     const { closeBrowser } = await import('./services/pdf-generator.service');
     await closeBrowser();

@@ -11,6 +11,7 @@ export const FEATURES = [
   'laporan_keuangan',
   'user_management',
   'me_logout',
+  'auto_boost',
 ] as const;
 
 export type Feature = typeof FEATURES[number];
@@ -27,6 +28,7 @@ const MATRIX: Record<Role, Record<Feature, boolean>> = {
     laporan_keuangan: true,
     user_management: true,
     me_logout: true,
+    auto_boost: true,
   },
   staff: {
     orders: true,
@@ -38,6 +40,7 @@ const MATRIX: Record<Role, Record<Feature, boolean>> = {
     laporan_keuangan: false,
     user_management: false,
     me_logout: true,
+    auto_boost: false,
   },
 };
 
