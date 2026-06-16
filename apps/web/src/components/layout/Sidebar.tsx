@@ -24,6 +24,7 @@ import { Icon } from '../ui/Icon';
 import { Avatar } from '../ui/Avatar';
 import { useAuth } from '../../context/AuthContext';
 import { effectiveFeatures, type Feature } from '../../auth/matrix';
+import { Rocket } from 'lucide-react';
 
 // ─── Nav item definitions ──────────────────────────────────────────────────
 // Each nav item carries a `feature` field (or `isHeader`) so we can filter
@@ -39,7 +40,7 @@ interface NavItem {
   id: string;
   isHeader?: false;
   label: string;
-  icon: string;
+  icon: any;
   path: string;
   badge?: string | null;
   /** The matrix Feature that gates this nav item. */
@@ -55,6 +56,8 @@ const ALL_NAV: NavEntry[] = [
   { id: 'header-produk',    label: 'PRODUK',          isHeader: true },
   { id: 'master',           label: 'Master Produk',    icon: 'master',       path: '/produk/master',    feature: 'master_produk' },
   { id: 'channel',          label: 'Produk Channel',   icon: 'products',     path: '/produk/channel',   feature: 'produk_channel' },
+  { id: 'header-promosi',   label: 'PROMOSI',          isHeader: true },
+  { id: 'auto-boost',       label: 'Auto Boost',       icon: Rocket,         path: '/promosi/auto-boost', feature: 'auto_boost' },
   { id: 'header-pesanan',   label: 'PESANAN',          isHeader: true },
   { id: 'orders',           label: 'Pesanan Saya',     icon: 'orders',       path: '/pesanan/saya',     feature: 'orders' },
   { id: 'header-keuangan',  label: 'KEUANGAN',         isHeader: true },
@@ -178,7 +181,7 @@ export function Sidebar({ active, collapsed, setCollapsed }: SidebarProps) {
               title={collapsed ? item.label : undefined}
               style={{ textDecoration: 'none' }}
             >
-              <Icon name={item.icon} size={16} />
+              {typeof item.icon === 'string' ? <Icon name={item.icon as any} size={16} /> : <item.icon size={16} />}
               {!collapsed && <span className="nav-label">{item.label}</span>}
               {!collapsed && item.badge ? <span className="nav-badge">{item.badge}</span> : null}
             </Link>

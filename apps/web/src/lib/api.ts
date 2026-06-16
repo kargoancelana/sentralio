@@ -9,6 +9,13 @@ export class ApiError extends Error {
   }
 }
 
+// ─── Auto Boost Types ────────────────────────────────────────────────────────
+
+export interface AutoBoostConfig { shopId: number; enabled: number; mode: "rotation"|"fixed"; activeHourStart: number; activeHourEnd: number; }
+export interface AutoBoostQueueItem { id: number; shopId: number; shopeeItemId: number; position: number; enabled: number; lastBoostedAt: string|null; }
+export interface AutoBoostStatusItem { shopeeItemId: number; boosted: boolean; cooldownSecond: number; }
+export interface AutoBoostLog { id: number; shopeeItemId: number; status: string; message: string|null; boostedAt: string; }
+
 // ─── Profit Analytics Types ───────────────────────────────────────────────────
 
 /** Single item in an order's profit breakdown */
@@ -385,4 +392,14 @@ export const api = {
       '/auth/permissions',
       { method: 'PUT', body: JSON.stringify({ permissions }) },
     ),
+
+  // Auto Boost
+  autoBoostConfigGet: (shopId: number) => fetchApi(`/auto-boost/config?shopId=${shopId}`),
+  autoBoostConfigUpdate: (body: Partial<AutoBoostConfig> & { shopId: number }) => fetchApi(`/auto-boost/config`, { method: 'PUT', body: JSON.stringify(body) }),
+  autoBoostQueueList: (shopId: number) => fetchApi(`/auto-boost/queue?shopId=${shopId}`),
+  autoBoostQueueAdd: (shopId: number, shopeeItemId: number) => fetchApi(`/auto-boost/queue`, { method: 'POST', body: JSON.stringify({ shopId, shopeeItemId }) }),
+  autoBoostQueueRemove: (id: number) => fetchApi(`/auto-boost/queue/${id}`, { method: 'DELETE' }),
+  autoBoostQueueReorder: (shopId: number, orderedIds: number[]) => fetchApi(`/auto-boost/queue/reorder`, { method: 'PUT', body: JSON.stringify({ shopId, orderedIds }) }),
+  autoBoostStatus: (shopId: number) => fetchApi(`/auto-boost/status?shopId=${shopId}`),
+  autoBoostHistory: (shopId: number) => fetchApi(`/auto-boost/history?shopId=${shopId}`),
 };

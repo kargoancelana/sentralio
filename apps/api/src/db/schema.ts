@@ -307,3 +307,33 @@ export const staffPermissions = mysqlTable("staff_permissions", {
   enabled: int("enabled").notNull().default(0), // 1=true, 0=false
   updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
 });
+
+export const autoBoostConfig = mysqlTable("auto_boost_config", {
+  shopId: bigint("shop_id", { mode: "number" }).primaryKey(),
+  enabled: int("enabled").notNull().default(0), // 0/1
+  mode: varchar("mode", { length: 16 }).notNull().default("rotation"), // rotation | fixed
+  activeHourStart: int("active_hour_start").notNull().default(0),  // 0-23 WIB
+  activeHourEnd: int("active_hour_end").notNull().default(23),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+});
+
+export const autoBoostQueue = mysqlTable("auto_boost_queue", {
+  id: int("id").autoincrement().primaryKey(),
+  shopId: bigint("shop_id", { mode: "number" }).notNull(),
+  shopeeItemId: bigint("shopee_item_id", { mode: "number" }).notNull(),
+  position: int("position").notNull().default(0), // urutan rotasi
+  enabled: int("enabled").notNull().default(1),
+  lastBoostedAt: timestamp("last_boosted_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const autoBoostLog = mysqlTable("auto_boost_log", {
+  id: int("id").autoincrement().primaryKey(),
+  shopId: bigint("shop_id", { mode: "number" }).notNull(),
+  shopeeItemId: bigint("shopee_item_id", { mode: "number" }).notNull(),
+  status: varchar("status", { length: 16 }).notNull(), // success | failed
+  message: varchar("message", { length: 512 }),
+  boostedAt: timestamp("boosted_at").notNull().defaultNow(),
+});
+

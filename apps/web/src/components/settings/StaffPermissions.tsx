@@ -11,14 +11,16 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { Icon } from '../ui/Icon';
+import { Rocket } from 'lucide-react';
 
 /** Friendly labels + descriptions for configurable features. */
-const FEATURE_META: Record<string, { label: string; desc: string; icon: string }> = {
+const FEATURE_META: Record<string, { label: string; desc: string; icon: any }> = {
   orders: { label: 'Pesanan Saya', desc: 'Lihat, proses pesanan & cetak label', icon: 'orders' },
   cetak_label: { label: 'Cetak Label', desc: 'Cetak label pengiriman', icon: 'orders' },
   master_produk: { label: 'Master Produk', desc: 'Kelola data master produk & HPP', icon: 'master' },
   produk_channel: { label: 'Produk Channel', desc: 'Kelola listing produk channel', icon: 'products' },
   laporan_keuangan: { label: 'Laporan Keuangan', desc: 'Lihat laporan laba rugi', icon: 'reports' },
+  auto_boost: { label: 'Auto Boost', desc: 'Akses menaikkan produk otomatis', icon: Rocket },
 };
 
 /**
@@ -148,7 +150,7 @@ export function StaffPermissions() {
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <span style={{ color: 'var(--text3)', display: 'flex' }}>
-                  <Icon name={meta.icon} size={18} />
+                  {typeof meta.icon === 'string' ? <Icon name={meta.icon as any} size={18} /> : <meta.icon size={18} />}
                 </span>
                 <div>
                   <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text1)' }}>

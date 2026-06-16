@@ -14,6 +14,7 @@ import { ProtectedRoute } from './auth/ProtectedRoute';
 import { RoleGate } from './auth/RoleGate';
 import { FeatureGate } from './auth/FeatureGate';
 import { Pengaturan } from './pages/Pengaturan';
+import { AutoBoost } from './pages/AutoBoost';
 import './styles/globals.css';
 import './styles/hpp-layout.css';
 
@@ -42,6 +43,9 @@ function App() {
                 </Route>
                 <Route element={<FeatureGate feature="produk_channel" />}>
                   <Route path="/produk/channel" element={<ProdukChannel />} />
+                </Route>
+                <Route element={<FeatureGate feature="auto_boost" />}>
+                  <Route path="/promosi/auto-boost" element={<AutoBoost />} />
                 </Route>
                 <Route element={<FeatureGate feature="laporan_keuangan" />}>
                   <Route path="/keuangan/laporan" element={<LaporanKeuangan />} />

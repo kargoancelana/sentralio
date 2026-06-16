@@ -29,6 +29,7 @@ const RULES: Array<{ prefix: string; feature: Feature }> = [
   // Orders + labels are the staff baseline; still gated so an admin could
   // disable them for staff if desired.
   { prefix: '/orders', feature: 'orders' },
+  { prefix: '/auto-boost', feature: 'auto_boost' },
 ];
 
 /** Resolve the pathname from a full request URL, ignoring query string. */
