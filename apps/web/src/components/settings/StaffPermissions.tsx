@@ -48,7 +48,7 @@ export function StaffPermissions() {
     api
       .permissionsList()
       .then((res) => {
-        if (alive) setRows(res.permissions);
+        if (alive) setRows(res.data.permissions);
       })
       .catch(() => {
         if (alive) setError('Gagal memuat pengaturan izin.');
@@ -82,7 +82,7 @@ export function StaffPermissions() {
     try {
       const payload = rows.map((r) => (affected.has(r.feature) ? { ...r, enabled: nextEnabled } : r));
       const res = await api.permissionsUpdate(payload);
-      setRows(res.permissions);
+      setRows(res.data.permissions);
     } catch {
       // Revert on error.
       setRows((prev) => prev.map((r) => (affected.has(r.feature) ? { ...r, enabled: current.enabled } : r)));

@@ -30,10 +30,12 @@ Sentralio — Bun monorepo. `apps/api` (Bun + ElysiaJS + Drizzle + MySQL),
 | Concern | Location |
 |---------|----------|
 | HTTP routes | `apps/api/src/modules/<domain>/<domain>.route.ts` |
-| Business logic | `apps/api/src/modules/<domain>/<domain>.service.ts` |
+| Business logic | `apps/api/src/services/` — terpusat di folder flat (mis. `order.service.ts`, `label.service.ts`). Beberapa domain kecil mungkin punya `<domain>.service.ts` langsung di `modules/<domain>/`. |
 | DB schema | `apps/api/src/db/schema.ts` (single source of truth) |
 | Migrations | `apps/api/src/drizzle/` (generated via `bun run db:generate`) |
 | CLI scripts | `apps/api/src/scripts/` |
+| Helpers / utils | `apps/api/src/services/*.util.ts` — helper murni tanpa state |
+| External API wrappers | `apps/api/src/services/shopee-*.ts` — wrapper Shopee API |
 
 ---
 

@@ -131,7 +131,7 @@ describe("Property 13: Log Format Validity", () => {
        * - Execute 100 various logging operations
        * - Verify all logs can be parsed as JSON
        */
-      const { logLabelOperation, logBatchSummary, logPerformance, logInfo, logWarn, logError } = await import("../label-logger");
+      const { logLabelOperation, logBatchSummary, logPerformance, logInfo, logWarn, logError } = await import("../label-logger.util");
       
       const testCases = 100;
 
@@ -190,7 +190,7 @@ describe("Property 13: Log Format Validity", () => {
        * - Execute 50 various logging operations
        * - Verify all logs have timestamp field
        */
-      const { logLabelOperation, logBatchSummary, logPerformance, logInfo, logWarn, logError } = await import("../label-logger");
+      const { logLabelOperation, logBatchSummary, logPerformance, logInfo, logWarn, logError } = await import("../label-logger.util");
       
       const testCases = 50;
 
@@ -237,7 +237,7 @@ describe("Property 13: Log Format Validity", () => {
        * - Execute various logging operations
        * - Verify all logs have either message or operation/operationType/event field
        */
-      const { logLabelOperation, logBatchSummary, logPerformance, logInfo, logWarn, logError } = await import("../label-logger");
+      const { logLabelOperation, logBatchSummary, logPerformance, logInfo, logWarn, logError } = await import("../label-logger.util");
       
       logs = [];
 
@@ -285,7 +285,7 @@ describe("Property 13: Log Format Validity", () => {
        * - Verify all timestamps match ISO 8601 pattern
        * - Verify all timestamps can be parsed as valid dates
        */
-      const { logLabelOperation, logBatchSummary, logPerformance } = await import("../label-logger");
+      const { logLabelOperation, logBatchSummary, logPerformance } = await import("../label-logger.util");
       
       const testCases = 100;
 
@@ -341,7 +341,7 @@ describe("Property 13: Log Format Validity", () => {
        * - Execute logging operations
        * - Verify timestamps are within 1 second of current time
        */
-      const { logInfo } = await import("../label-logger");
+      const { logInfo } = await import("../label-logger.util");
       
       const testCases = 20;
 
@@ -373,7 +373,7 @@ describe("Property 13: Log Format Validity", () => {
        * - Execute various logging operations
        * - Verify timestamp is always a string
        */
-      const { logLabelOperation, logBatchSummary, logPerformance, logInfo } = await import("../label-logger");
+      const { logLabelOperation, logBatchSummary, logPerformance, logInfo } = await import("../label-logger.util");
       
       logs = [];
 
@@ -411,7 +411,7 @@ describe("Property 13: Log Format Validity", () => {
        * - Execute logging operations with messages
        * - Verify message is always a string
        */
-      const { logLabelOperation, logInfo, logWarn, logError } = await import("../label-logger");
+      const { logLabelOperation, logInfo, logWarn, logError } = await import("../label-logger.util");
       
       logs = [];
 
@@ -444,7 +444,7 @@ describe("Property 13: Log Format Validity", () => {
        * - Execute 100 various logging operations
        * - Verify all logs pass validateLogFormat
        */
-      const { logLabelOperation, logBatchSummary, logPerformance, logInfo, logWarn, logError } = await import("../label-logger");
+      const { logLabelOperation, logBatchSummary, logPerformance, logInfo, logWarn, logError } = await import("../label-logger.util");
       
       const testCases = 100;
 
@@ -634,7 +634,7 @@ describe("Property 13: Log Format Validity", () => {
        * - Test both success and failure results
        * - Verify all pass validation
        */
-      const { logLabelOperation } = await import("../label-logger");
+      const { logLabelOperation } = await import("../label-logger.util");
       
       const operationTypes: Array<'single' | 'batch' | 'validation' | 'cache'> = ['single', 'batch', 'validation', 'cache'];
       const results: Array<'success' | 'failure'> = ['success', 'failure'];
@@ -667,7 +667,7 @@ describe("Property 13: Log Format Validity", () => {
        * - Test various batch sizes and success/failure distributions
        * - Verify all pass validation
        */
-      const { logBatchSummary } = await import("../label-logger");
+      const { logBatchSummary } = await import("../label-logger.util");
       
       const testCases = [
         { total: 0, successful: 0, failed: 0 },
@@ -699,7 +699,7 @@ describe("Property 13: Log Format Validity", () => {
        * - Test various operations and durations
        * - Verify all pass validation
        */
-      const { logPerformance } = await import("../label-logger");
+      const { logPerformance } = await import("../label-logger.util");
       
       const operations = ['getSingleLabel', 'getBatchLabels', 'cache_hit', 'cache_miss', 'api_call'];
       const durations = [0, 1, 100, 1000, 5000, 10000];
@@ -732,7 +732,7 @@ describe("Property 13: Log Format Validity", () => {
        * - Test with and without context
        * - Verify all pass validation
        */
-      const { logInfo, logWarn, logError } = await import("../label-logger");
+      const { logInfo, logWarn, logError } = await import("../label-logger.util");
       
       const messages = [
         'Simple message',
@@ -765,7 +765,7 @@ describe("Property 13: Log Format Validity", () => {
        * - Execute 1000 rapid logging operations
        * - Verify all logs remain valid
        */
-      const { logInfo } = await import("../label-logger");
+      const { logInfo } = await import("../label-logger.util");
       
       logs = [];
 
@@ -788,7 +788,7 @@ describe("Property 13: Log Format Validity", () => {
        * - Execute 100 concurrent logging operations
        * - Verify all logs are valid
        */
-      const { logInfo, logWarn, logError } = await import("../label-logger");
+      const { logInfo, logWarn, logError } = await import("../label-logger.util");
       
       logs = [];
 
@@ -821,7 +821,7 @@ describe("Property 13: Log Format Validity", () => {
        * - Test with empty strings, null, undefined, special characters
        * - Verify logs remain valid JSON
        */
-      const { logInfo } = await import("../label-logger");
+      const { logInfo } = await import("../label-logger.util");
       
       const edgeCases = [
         '',

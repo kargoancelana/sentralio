@@ -3,7 +3,7 @@ import { db } from "../../db/client";
 import { shopeeOrders, shopeeOrderItems, shopeeCredentials } from "../../db/schema";
 import { syncShopeeOrdersService } from "../../services/order.service";
 import { shipSingleOrder, shipBatchOrders, fetchAndUpdateTrackingNumber } from "../../services/shipment.service";
-import { getConnectedShopIdSet } from "../../services/active-shops";
+import { getConnectedShopIdSet } from "../../services/active-shops.util";
 import { desc, eq, inArray } from "drizzle-orm";
 
 // Order SN validation regex (alphanumeric, max 100 chars)

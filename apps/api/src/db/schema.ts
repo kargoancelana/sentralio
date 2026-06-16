@@ -1,5 +1,8 @@
 import { int, mysqlTable, timestamp, varchar, text, uniqueIndex, index, bigint, date, primaryKey, mysqlEnum } from "drizzle-orm/mysql-core";
 
+/** Helper: MySQL integer column that stores a boolean as 0/1. */
+const boolInt = (name: string) => int(name).notNull().default(0);
+
 export const masterProducts = mysqlTable("master_products", {
   id: int("id").primaryKey().autoincrement(),
   sku: varchar("sku", { length: 100 }).notNull().unique(),
@@ -47,7 +50,6 @@ export const products = mysqlTable("products", {
   modelSku: varchar("model_sku", { length: 100 }),
   price: int("price").default(0),
   shopeeStock: int("shopee_stock").default(0),
-  stock: int("stock").notNull().default(0), // Deprecated. Master stock is in productGroups
   syncStatus: varchar("sync_status", { length: 20 }).notNull().default("pending"),
   lastError: text("last_error"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -87,7 +89,7 @@ export const shopeeOrders = mysqlTable("shopee_orders", {
   // ("tertunda"/Menunggu) — it cannot be processed yet even though order_status
   // is READY_TO_SHIP. A non-zero value means the order is genuinely shippable.
   shipByDate: int("ship_by_date").notNull().default(0),
-  labelPrinted: int("label_printed").notNull().default(0), // 0 = belum dicetak, 1 = sudah dicetak
+  labelPrinted: boolInt("label_printed"),  // 0 = belum dicetak, 1 = sudah dicetak
   labelPrintedAt: timestamp("label_printed_at"), // Waktu label terakhir dicetak
   payTime: timestamp("pay_time"),
   createTime: timestamp("create_time").notNull(),
@@ -125,7 +127,7 @@ export const syncState = mysqlTable("sync_state", {
   shopId: int("shop_id").notNull(),
   lastSyncTime: timestamp("last_sync_time").notNull(),
   lastSyncEndTime: timestamp("last_sync_end_time").notNull(),
-  syncInProgress: int("sync_in_progress").notNull().default(0), // 0 = false, 1 = true (MySQL doesn't have boolean)
+  syncInProgress: boolInt("sync_in_progress"), // 0 = false, 1 = true (MySQL doesn't have boolean)
   totalSynced: int("total_synced").notNull().default(0),
   errors: int("errors").notNull().default(0),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -267,7 +269,7 @@ export const users = mysqlTable("users", {
   name:         varchar("name", { length: 100 }).notNull(),
   role:         userRoleEnum.notNull(),
   passwordHash: varchar("password_hash", { length: 100 }).notNull(), // bcrypt = 60 chars; widened for safety
-  isActive:     int("is_active").notNull().default(1),               // 1=true, 0=false (MySQL booleanish)
+  isActive:     int("is_active").notNull().default(1),  // 1=true, 0=false (MySQL booleanish)
   tokensValidFrom: bigint("tokens_valid_from", { mode: "number" }).notNull().default(0), // unix seconds; sessions with iat < this are invalid (password change revokes old sessions)
   createdAt:    timestamp("created_at").notNull().defaultNow(),
   updatedAt:    timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
@@ -304,6 +306,6 @@ export const revokedSessions = mysqlTable("revoked_sessions", {
 // enabled: 1 = staff may access this feature, 0 = denied (403 on backend, hidden on frontend).
 export const staffPermissions = mysqlTable("staff_permissions", {
   feature: varchar("feature", { length: 64 }).primaryKey(),
-  enabled: int("enabled").notNull().default(0), // 1=true, 0=false
+  enabled: boolInt("enabled"), // 1=true, 0=false
   updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
 });

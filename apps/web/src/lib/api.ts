@@ -1,3 +1,5 @@
+import type { MasterProduct, UnlinkedModel, OrderRow, ShopeeItem, ShopeeCredential } from '../types/api';
+
 const API_BASE = '/api';
 
 export class ApiError extends Error {
@@ -208,7 +210,7 @@ export const api = {
   health: () => fetchApi('/health'),
 
   // Master Produk
-  masterList: () => fetchApi<{ success: boolean; data: any[] }>('/master/list'),
+  masterList: () => fetchApi<{ success: boolean; data: MasterProduct[] }>('/master/list'),
   masterUpdate: (id: number, body: { sku?: string; name?: string }) =>
     fetchApi(`/master/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   masterUpdateStock: (masterProductId: number, stock: number) =>
@@ -219,7 +221,7 @@ export const api = {
     fetchApi('/master/map', { method: 'POST', body: JSON.stringify({ master_product_id: masterProductId, shopee_model_ids: shopeeModelIds }) }),
   masterImport: (shopeeItemId: string) =>
     fetchApi('/master/import-from-listing', { method: 'POST', body: JSON.stringify({ shopee_item_id: shopeeItemId }) }),
-  masterUnlinked: () => fetchApi<{ success: boolean; data: any[] }>('/master/unlinked-models'),
+  masterUnlinked: () => fetchApi<{ success: boolean; data: UnlinkedModel[] }>('/master/unlinked-models'),
   masterDelete: (id: number) =>
     fetchApi(`/master/${id}`, { method: 'DELETE' }),
   masterUnlink: (shopeeItemId: string) =>
@@ -233,7 +235,7 @@ export const api = {
     fetchApi('/products/stock/update', { method: 'POST', body: JSON.stringify({ group_id: groupId, stock, source }) }),
 
   // Pesanan / Orders
-  orderList: () => fetchApi<{ success: boolean; data: any[] }>('/orders'),
+  orderList: () => fetchApi<{ success: boolean; data: OrderRow[] }>('/orders'),
   orderSync: (shopId?: number, daysBack: number = 60, cursor?: string, shopIndex?: number, orderStatus?: string) => 
     fetchApi('/orders/sync', { 
       method: 'POST', 
@@ -317,7 +319,7 @@ export const api = {
     fetchApi('/shopee/auth/exchange', { method: 'POST', body: JSON.stringify({ code, shop_id: shopId }) }),
 
   // Shopee — Kredensial (Multi-seller)
-  shopeeCredentialsList: () => fetchApi<{ success: boolean; data: any[] }>('/shopee/credentials/list'),
+  shopeeCredentialsList: () => fetchApi<{ success: boolean; data: ShopeeCredential[] }>('/shopee/credentials/list'),
   shopeeCredentialsStatus: (shopId?: number) => {
     const qs = shopId ? `?shop_id=${shopId}` : '';
     return fetchApi(`/shopee/credentials/status${qs}`);
@@ -330,7 +332,7 @@ export const api = {
   shopeeSyncProducts: () => fetchApi('/shopee/sync-products'),
   shopeeRealItems: (offset = 0, pageSize = 20) =>
     fetchApi(`/shopee/real-items?offset=${offset}&page_size=${pageSize}`),
-  shopeeCatalog: () => fetchApi<{ success: boolean; data: any[] }>('/shopee/catalog'),
+  shopeeCatalog: () => fetchApi<{ success: boolean; data: ShopeeItem[] }>('/shopee/catalog'),
   shopeeUpdateItem: (itemId: string, data: { name?: string; description?: string }) =>
     fetchApi('/shopee/update-item', { method: 'POST', body: JSON.stringify({ item_id: itemId, ...data }) }),
   shopeeUpdatePrice: (itemId: string, modelId: string, price: number) =>
@@ -377,11 +379,11 @@ export const api = {
 
   // Staff permissions (admin only)
   permissionsList: () =>
-    fetchApi<{ ok: boolean; permissions: Array<{ feature: string; enabled: boolean }> }>(
+    fetchApi<{ success: boolean; data: { permissions: Array<{ feature: string; enabled: boolean }> } }>(
       '/auth/permissions',
     ),
   permissionsUpdate: (permissions: Array<{ feature: string; enabled: boolean }>) =>
-    fetchApi<{ ok: boolean; permissions: Array<{ feature: string; enabled: boolean }> }>(
+    fetchApi<{ success: boolean; data: { permissions: Array<{ feature: string; enabled: boolean }> } }>(
       '/auth/permissions',
       { method: 'PUT', body: JSON.stringify({ permissions }) },
     ),

@@ -7,7 +7,7 @@
  * **Validates: Requirements 6.7, 12.1, 12.2, 12.3, 12.4, 12.5, 12.6**
  */
 
-import type { LabelErrorType } from "./label-errors";
+import type { LabelErrorType } from "./label-errors.util";
 
 /**
  * Log level enumeration

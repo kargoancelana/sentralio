@@ -23,7 +23,7 @@ export const permissionsRoutes = new Elysia({ prefix: '/auth' })
     requireFeature('user_management');
     const permissions = await getStaffPermissions();
     set.status = 200;
-    return { ok: true, permissions };
+    return { success: true, data: { permissions } };
   })
 
   .put('/permissions', async ({ body, requireFeature, set }) => {
@@ -49,5 +49,5 @@ export const permissionsRoutes = new Elysia({ prefix: '/auth' })
     await setStaffPermissions(updates);
     const permissions = await getStaffPermissions();
     set.status = 200;
-    return { ok: true, permissions };
+    return { success: true, data: { permissions } };
   });

@@ -1,11 +1,12 @@
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
 import { rateLimit } from "elysia-rate-limit";
-import { eq, lt, sql } from "drizzle-orm";
+import { lt, sql } from "drizzle-orm";
 import { env } from "./config/env";
 import { productRoutes } from "./modules/product/product.route";
 import { shopeeRoutes } from "./modules/shopee/shopee.route";
 import { shopeeAuthRoutes } from "./modules/shopee/shopee-auth.route";
+import { syncRoutes } from "./modules/sync/sync.route";
 import { masterRoutes } from "./modules/master/master.route";
 import { orderRoutes } from "./modules/order/order.route";
 import { labelRoutes } from "./modules/order/label.route";
@@ -16,10 +17,9 @@ import { masterPackingCostRoutes } from "./modules/master/packing-cost/master-pa
 import { packingCostRoutes } from "./modules/packing-cost/packing-cost.route";
 import { profitRoutes } from "./modules/profit/profit.route";
 import { db } from "./db/client";
-import { shopeeCredentials, revokedSessions, failedLoginAttempts } from "./db/schema";
+import { revokedSessions, failedLoginAttempts } from "./db/schema";
 import { ensureAllTokensFresh } from "./services/shopee-auth";
 import { backgroundSyncService } from "./services/background-sync.service";
-import { EscrowSyncService } from "./services/escrow-sync.service";
 import { authPublicRoutes, authProtectedRoutes } from "./modules/auth/auth.route";
 import { authMiddleware } from "./modules/auth/auth.middleware";
 import { featureGuardMiddleware } from "./modules/auth/feature-guard.middleware";
@@ -151,150 +151,13 @@ const app = new Elysia()
   .use(shopeeRoutes)
   .use(shopeeAuthRoutes)
 
-  // ─── Background Sync Status & Control ────────────────────────
-  .get("/sync/status", () => {
-    const stats = backgroundSyncService.getSyncStats();
-    return {
-      success: true,
-      data: stats
-    };
-  })
-
-  .post("/sync/force", async ({ body }) => {
-    const { order_status, days_back } = body as { order_status?: string, days_back?: number };
-    try {
-      const result = await backgroundSyncService.forceSyncOrders(order_status, days_back || 15);
-      return {
-        success: true,
-        message: `Force sync completed, synced ${result.totalSynced} orders`,
-        data: result
-      };
-    } catch (err: any) {
-      return {
-        success: false,
-        message: err.message
-      };
-    }
-  })
-
-  // ─── Escrow Sync: Manual trigger ─────────────────────────────
-  .post("/sync/escrow", async ({ body, set }) => {
-    const { days_back } = (body ?? {}) as { days_back?: number };
-    const daysBack = days_back ?? 30;
-
-    try {
-      const service = new EscrowSyncService();
-      const result = await service.startEscrowSync(daysBack);
-      return result;
-    } catch (err: any) {
-      if (err.message === "SYNC_IN_PROGRESS") {
-        set.status = 409;
-        return {
-          success: false,
-          message: "Sinkronisasi escrow sedang berjalan",
-        };
-      }
-      set.status = 500;
-      return {
-        success: false,
-        message: err.message,
-      };
-    }
-  })
-
-  // ─── Multi-Seller: List all connected shops ─────────────────
-  .get("/shopee/credentials/list", async () => {
-    try {
-      // Smart-refresh: proactively refresh any expired/near-expired tokens
-      await ensureAllTokensFresh();
-
-      // Only list connected shops — disconnected shops are hidden everywhere.
-      const rows = await db.select().from(shopeeCredentials)
-        .where(eq(shopeeCredentials.status, "connected"));
-      return {
-        success: true,
-        data: rows.map(r => ({
-          id: r.id,
-          shop_id: r.shopId,
-          shop_name: r.shopName || `Shop #${r.shopId}`,
-          connected: new Date(r.expiresAt) > new Date(),
-          is_expired: new Date(r.expiresAt) < new Date(),
-          expires_at: r.expiresAt.toISOString(),
-          updated_at: r.updatedAt.toISOString(),
-        })),
-      };
-    } catch {
-      return { success: false, data: [] };
-    }
-  })
-
-  // ─── Multi-Seller: Status of specific shop ──────────────────
-  .get("/shopee/credentials/status", async ({ query }) => {
-    try {
-      const shopId = query.shop_id ? parseInt(query.shop_id as string) : undefined;
-      let rows;
-      if (shopId) {
-        rows = await db.select().from(shopeeCredentials)
-          .where(eq(shopeeCredentials.shopId, shopId)).limit(1);
-      } else {
-        rows = await db.select().from(shopeeCredentials).limit(1);
-      }
-      if (rows.length === 0) {
-        return { connected: false, message: "No credentials found" };
-      }
-      const cred = rows[0];
-      const isExpired = new Date(cred.expiresAt) < new Date();
-      return {
-        connected: !isExpired,
-        shop_id: cred.shopId,
-        shop_name: cred.shopName || `Shop #${cred.shopId}`,
-        expires_at: cred.expiresAt.toISOString(),
-        is_expired: isExpired,
-        updated_at: cred.updatedAt.toISOString(),
-      };
-    } catch {
-      return { connected: false, message: "Failed to check credentials" };
-    }
-  })
-
-  // ─── Multi-Seller: Disconnect a shop (soft) ─────────────────
-  // Soft-disconnect: keep the credentials row (so shop name + historical data
-  // survive) but mark it disconnected and clear tokens. All of the shop's data
-  // is then hidden across the app and sync skips it, until it's reconnected via
-  // OAuth re-auth (which flips status back to 'connected').
-  .delete("/shopee/credentials/:shopId", async ({ params, set }) => {
-    const shopId = parseInt(params.shopId);
-    if (!Number.isFinite(shopId)) {
-      set.status = 400;
-      return { success: false, message: "Invalid shop ID" };
-    }
-    try {
-      const existing = await db.select().from(shopeeCredentials)
-        .where(eq(shopeeCredentials.shopId, shopId)).limit(1);
-      if (existing.length === 0) {
-        set.status = 404;
-        return { success: false, message: `Shop ${shopId} not found` };
-      }
-      await db.update(shopeeCredentials)
-        .set({
-          status: "disconnected",
-          // Clear tokens — we never keep credentials for a disconnected shop.
-          accessToken: "",
-          refreshToken: "",
-          updatedAt: new Date(),
-        })
-        .where(eq(shopeeCredentials.shopId, shopId));
-      console.log(`[shopee-cred] Soft-disconnected shop_id=${shopId} (data hidden, sync skipped)`);
-      return { success: true, message: `Shop ${shopId} disconnected` };
-    } catch (err: any) {
-      set.status = 500;
-      return { success: false, message: err.message };
-    }
-  })
+  // Sync control (background-sync status & escrow) — no feature guard, internal only
+  .use(syncRoutes)
 
   .listen(env.appPort);
 
 console.log(`Server running at http://${app.server?.hostname}:${app.server?.port}`);
+
 
 // Warm the staff-permissions cache so decide('staff', ...) is accurate from the
 // first request (otherwise the first reads fall back to compiled defaults).

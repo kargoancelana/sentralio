@@ -133,7 +133,7 @@ import {
 import type { GroupByLevel, OrderCostInput } from "./profit-calculator";
 import { getTotalAdsExpense } from "../../services/ads-expense.service";
 import type { AdsExpenseTotal } from "../../services/ads-expense.service";
-import { getConnectedShopIds } from "../../services/active-shops";
+import { getConnectedShopIds } from "../../services/active-shops.util";
 
 // ─── Exported Query Params Interface ──────────────────────────────────────────
 

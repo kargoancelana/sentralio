@@ -22,8 +22,17 @@ import {
   getShippingDocumentResult, 
   downloadShippingDocument 
 } from "./shopee-label";
-import { logLabelOperation, logPerformance, logBatchSummary, logInfo } from "./label-logger";
-import { LabelError, LabelErrorType, mapErrorToUserMessage, determineErrorType } from "./label-errors";
+import { logLabelOperation, logPerformance, logBatchSummary, logInfo } from "./label-logger.util";
+import { LabelError, LabelErrorType, mapErrorToUserMessage, determineErrorType } from "./label-errors.util";
+import {
+  validateLabelEligibility as _validateLabelEligibility,
+  batchValidateLabelEligibility as _batchValidateLabelEligibility,
+  type OrderRecord,
+} from "./label-validation.service";
+
+// Re-export from label-validation.service for backward compatibility
+export { validateLabelEligibility, batchValidateLabelEligibility } from "./label-validation.service";
+export type { OrderRecord } from "./label-validation.service";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Module-level constants (Requirement 7.1, 7.7, 7.8)
@@ -217,157 +226,13 @@ export interface LabelResult {
   error?: string;
 }
 
-/**
- * Order record interface for validation
- */
-export interface OrderRecord {
-  id: number;
-  shopId: number;
-  orderSn: string;
-  orderStatus: string;
-  totalAmount: number;
-  buyerUsername: string | null;
-  shippingCarrier: string | null;
-  trackingNumber: string | null;  // Explicit declaration (was accessed via cast before)
-  payTime: Date | null;
-  createTime: Date;
-  updatedAt: Date;
-}
+// OrderRecord, validateLabelEligibility, batchValidateLabelEligibility have been
+// moved to label-validation.service.ts and re-exported above.
 
-/**
- * Validate order eligibility for label printing
- * 
- * Checks:
- * 1. Order exists in database
- * 2. Order status is PROCESSED
- * 3. Order has tracking number (shipping_carrier field)
- * 
- * @param orderSn - Order serial number to validate
- * @returns Validation result with order data or error
- * 
- * **Validates: Requirements 2.2, 11.6**
- */
-export async function validateLabelEligibility(orderSn: string): Promise<{
-  valid: boolean;
-  order?: OrderRecord;
-  error?: string;
-}> {
-  try {
-    // Check if order exists in database
-    const orderRows = await db.select()
-      .from(shopeeOrders)
-      .where(eq(shopeeOrders.orderSn, orderSn))
-      .limit(1);
 
-    if (orderRows.length === 0) {
-      return {
-        valid: false,
-        error: `Order ${orderSn} tidak ditemukan dalam database`
-      };
-    }
 
-    const order = orderRows[0];
 
-    // Check if order status allows label printing
-    // PROCESSED: standard label printing after shipment
-    // SHIPPED / TO_CONFIRM_RECEIVE: re-print for orders already in transit
-    const LABEL_ELIGIBLE_STATUSES = ['PROCESSED', 'SHIPPED', 'TO_CONFIRM_RECEIVE'];
-    if (!LABEL_ELIGIBLE_STATUSES.includes(order.orderStatus)) {
-      return {
-        valid: false,
-        error: `Order ${orderSn} tidak dapat dicetak labelnya: status saat ini adalah ${order.orderStatus}`
-      };
-    }
 
-    // Note: We don't check for tracking number here because:
-    // 1. shippingCarrier contains courier name, not tracking number
-    // 2. Shopee API will generate tracking number when we create shipping document
-    // 3. We only need order to be PROCESSED status
-
-    return {
-      valid: true,
-      order: order as OrderRecord
-    };
-  } catch (error: any) {
-    console.error('[label-service] validateLabelEligibility error:', {
-      timestamp: new Date().toISOString(),
-      orderSn,
-      errorType: 'validation',
-      message: error.message,
-      stack: error.stack,
-    });
-
-    return {
-      valid: false,
-      error: `Gagal memvalidasi order: ${error.message}`
-    };
-  }
-}
-
-/**
- * Batch validate label eligibility for multiple orders using a single DB query.
- *
- * Equivalent to calling `validateLabelEligibility(orderSn)` for each order,
- * but replaces N sequential queries with one `WHERE order_sn IN (...)` query.
- *
- * - Empty input fast-path: returns `[]` without a DB query.
- * - On DB exception: falls back to per-order `validateLabelEligibility` calls.
- * - Output order mirrors input order (output[i] ↔ input[i], Requirement 5.10).
- *
- * @param orderSns - Array of order serial numbers to validate
- * @returns Array of validation results in the same order as input
- *
- * **Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9, 5.10, 7.1, 7.6**
- */
-async function batchValidateLabelEligibility(orderSns: string[]): Promise<Array<{
-  valid: boolean;
-  order?: OrderRecord;
-  error?: string;
-}>> {
-  // Requirement 5.9: empty list → return empty without DB query
-  if (orderSns.length === 0) return [];
-
-  try {
-    const uniqueSns = [...new Set(orderSns)];
-
-    // Requirement 5.1: exactly 1 batch query
-    const rows = await db.select()
-      .from(shopeeOrders)
-      .where(inArray(shopeeOrders.orderSn, uniqueSns));
-
-    const byOrderSn = new Map<string, OrderRecord>();
-    for (const r of rows) byOrderSn.set(r.orderSn, r as OrderRecord);
-
-    const LABEL_ELIGIBLE_STATUSES = ['PROCESSED', 'SHIPPED', 'TO_CONFIRM_RECEIVE'];
-
-    // Requirement 5.10: preserve input order
-    return orderSns.map((orderSn) => {
-      const order = byOrderSn.get(orderSn);
-
-      // Requirement 5.5: not found → exact same error string as validateLabelEligibility
-      if (!order) {
-        return {
-          valid: false,
-          error: `Order ${orderSn} tidak ditemukan dalam database`,
-        };
-      }
-
-      // Requirement 5.6: ineligible status → exact same error string as validateLabelEligibility
-      if (!LABEL_ELIGIBLE_STATUSES.includes(order.orderStatus)) {
-        return {
-          valid: false,
-          error: `Order ${orderSn} tidak dapat dicetak labelnya: status saat ini adalah ${order.orderStatus}`,
-        };
-      }
-
-      return { valid: true, order };
-    });
-  } catch (err: any) {
-    // Requirement 5.7: fallback to per-order validateLabelEligibility on DB exception
-    console.warn('[label-service] batchValidateLabelEligibility failed, falling back per-order:', err.message);
-    return Promise.all(orderSns.map(sn => validateLabelEligibility(sn)));
-  }
-}
 
 /**
  * @deprecated since v2 (label-print-v2) — the wait_5s strategy was removed because Shopee
@@ -631,7 +496,7 @@ export async function getSingleLabel(orderSn: string): Promise<LabelResult> {
     }
 
     // Step 2: Cache miss — validate order eligibility before calling Shopee API
-    const validationResult = await validateLabelEligibility(orderSn);
+    const validationResult = await _validateLabelEligibility(orderSn);
     
     if (!validationResult.valid) {
       const error = new LabelError(
@@ -1668,7 +1533,7 @@ export async function getBatchLabelsOptimized(orderSns: string[]): Promise<{
 
     // If ALL orders are cached, merge and return immediately (0 API calls)
     if (uncachedOrderSns.length === 0 && cachedPdfs.length > 0) {
-      const { mergePdfBuffers } = await import('./pdf-merge');
+      const { mergePdfBuffers } = await import('./pdf-merge.util');
       const mergedBase64 = await mergePdfBuffers(cachedPdfs);
       const pdfUrl = `data:application/pdf;base64,${mergedBase64}`;
       const duration = Date.now() - startTime;
@@ -1712,7 +1577,7 @@ export async function getBatchLabelsOptimized(orderSns: string[]): Promise<{
       
       // Merge all
       if (allPdfBuffers.length > 0) {
-        const { mergePdfBuffers } = await import('./pdf-merge');
+        const { mergePdfBuffers } = await import('./pdf-merge.util');
         const mergedBase64 = await mergePdfBuffers(allPdfBuffers);
         const pdfUrl = `data:application/pdf;base64,${mergedBase64}`;
         const duration = Date.now() - startTime;
@@ -1741,7 +1606,7 @@ export async function getBatchLabelsOptimized(orderSns: string[]): Promise<{
     // Task 9.1 / Requirement 5.1–5.6, 5.10: one batch DB query instead of N sequential queries
     const validOrders: Array<{ orderSn: string; shopId: number; trackingNumber?: string; shippingCarrier?: string }> = [];
 
-    const validationResults = await batchValidateLabelEligibility(uncachedOrderSns);
+    const validationResults = await _batchValidateLabelEligibility(uncachedOrderSns);
     for (let i = 0; i < uncachedOrderSns.length; i++) {
       const orderSn = uncachedOrderSns[i];
       const validation = validationResults[i];
@@ -1971,7 +1836,7 @@ export async function getBatchLabelsOptimized(orderSns: string[]): Promise<{
       }
 
       if (allPdfBuffers.length > 0) {
-        const { mergePdfBuffers } = await import('./pdf-merge');
+        const { mergePdfBuffers } = await import('./pdf-merge.util');
         const mergedBase64 = await mergePdfBuffers(allPdfBuffers);
         const pdfUrl = `data:application/pdf;base64,${mergedBase64}`;
         const successCount = batchOrders.length - failedOrders.filter(f => batchOrders.some(b => b.order_sn === f.orderSn)).length;

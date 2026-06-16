@@ -153,7 +153,7 @@ async function mockBatchOperation(
   successful: number,
   failed: number
 ): Promise<void> {
-  const { logBatchSummary } = await import("../label-logger");
+  const { logBatchSummary } = await import("../label-logger.util");
   
   logBatchSummary({
     total,
