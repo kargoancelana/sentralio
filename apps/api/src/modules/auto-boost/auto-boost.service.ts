@@ -73,8 +73,11 @@ export async function reorderQueue(shopId: number, orderedIds: number[]) {
 
 export async function getStatus(shopId: number) {
   const live = await getBoostedList(shopId);
-  const queue = await listQueue(shopId);
-  return { live, queue };
+  return live.map((b: any) => ({
+    shopeeItemId: b.item_id,
+    boosted: true,
+    cooldownSecond: b.cool_down_second,
+  }));
 }
 
 export async function listHistory(shopId: number, limit = 50) {

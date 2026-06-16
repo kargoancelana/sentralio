@@ -45,10 +45,10 @@ class AutoBoostScheduler {
     const hourWib = (now.getUTCHours() + 7) % 24;
     
     if (config.activeHourStart <= config.activeHourEnd) {
-      if (hourWib < config.activeHourStart || hourWib >= config.activeHourEnd) return;
+      if (hourWib < config.activeHourStart || hourWib > config.activeHourEnd) return;
     } else {
       // cross midnight (e.g. 22 to 06)
-      if (hourWib < config.activeHourStart && hourWib >= config.activeHourEnd) return;
+      if (hourWib < config.activeHourStart && hourWib > config.activeHourEnd) return;
     }
 
     try {
@@ -62,15 +62,22 @@ class AutoBoostScheduler {
       }
 
       // Ambil data queue
-      const queue = await db.select().from(autoBoostQueue)
+      let queueQuery = db.select().from(autoBoostQueue)
         .where(
           and(
             eq(autoBoostQueue.shopId, shopId),
             eq(autoBoostQueue.enabled, 1)
           )
-        )
+        );
+
+      if (config.mode === 'fixed') {
+        queueQuery = queueQuery.orderBy(asc(autoBoostQueue.position));
+      } else {
         // NULLs first in MySQL ASC means never boosted items get priority
-        .orderBy(asc(autoBoostQueue.position), asc(autoBoostQueue.lastBoostedAt));
+        queueQuery = queueQuery.orderBy(asc(autoBoostQueue.position), asc(autoBoostQueue.lastBoostedAt));
+      }
+      
+      const queue = await queueQuery;
 
       const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000);
 

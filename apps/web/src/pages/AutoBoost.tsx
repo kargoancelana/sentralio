@@ -317,7 +317,7 @@ export function AutoBoost() {
               </div>
             </div>
             
-            <p className="form-hint">Auto Boost hanya akan memicu produk selama jam aktif (zona waktu server lokal).</p>
+            <p className="form-hint">Auto Boost hanya akan memicu produk selama jam aktif (WIB).</p>
             <p className="form-hint" style={{ marginTop: 8, color: 'var(--accent)' }}>Info: Shopee menerapkan cooldown 4 jam setelah setiap produk di-boost.</p>
           </div>
         )}
