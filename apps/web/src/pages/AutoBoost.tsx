@@ -55,7 +55,7 @@ export function AutoBoost() {
     const isEnabled = config?.enabled === 1;
     try {
       await toggleMut.execute(!isEnabled);
-      toast(`Auto Boost ${!isEnabled ? 'diaktifkan' : 'dinonaktifkan'}`, 'success');
+      toast(`Naikkan Produk ${!isEnabled ? 'diaktifkan' : 'dinonaktifkan'}`, 'success');
     } catch (err: any) {
       toast(err.message || 'Gagal mengubah status', 'error');
     }
@@ -78,8 +78,13 @@ export function AutoBoost() {
 
   // Queue Management
   const [pickerOpen, setPickerOpen] = useState(false);
-  const { data: catalogData } = useApi(() => pickerOpen ? api.shopeeCatalog() : Promise.resolve({ success: true, data: [] }), [pickerOpen]);
+  const { data: catalogData } = useApi(() => shopId ? api.shopeeCatalog() : Promise.resolve({ success: true, data: [] }), [shopId]);
   const catalog = catalogData?.data || [];
+  
+  const catalogMap = new Map(
+    catalog.filter((p: any) => p.shopId === shopId)
+           .map((p: any) => [Number(p.shopeeItemId), p])
+  );
   const [search, setSearch] = useState('');
 
   const addMut = useApiMutation(async (shopeeItemId: number) => {
@@ -153,7 +158,7 @@ export function AutoBoost() {
     <div className="wms-page">
       <div className="page-header">
         <div>
-          <div className="page-title">Auto Boost</div>
+          <div className="page-title">Naikkan Produk</div>
           <div className="page-subtitle">Rotasi produk otomatis tiap ~5 menit, dengan cooldown 4 jam per produk (maks. 5 slot).</div>
         </div>
         <div className="page-actions" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
@@ -190,7 +195,7 @@ export function AutoBoost() {
 
       {config && config.enabled !== 1 && (
         <div style={{ padding: '12px 16px', background: '#FEF2F2', border: '1px solid #FCA5A5', color: '#991B1B', borderRadius: 8, marginBottom: 24, fontSize: 14 }}>
-          Auto Boost nonaktif — rotasi tidak berjalan. Aktifkan toggle di kanan atas.
+          Naikkan Produk nonaktif — rotasi tidak berjalan. Aktifkan toggle di kanan atas.
         </div>
       )}
 
@@ -275,8 +280,18 @@ export function AutoBoost() {
                         {idx + 1}
                       </div>
                       <div>
-                        <div style={{ fontWeight: 600, color: 'var(--text1)' }}>Item ID: {item.shopeeItemId}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text4)' }}>Terakhir di-boost: {item.lastBoostedAt ? new Date(item.lastBoostedAt).toLocaleString() : 'Belum pernah'}</div>
+                        {(() => {
+                          const prod = catalogMap.get(item.shopeeItemId);
+                          return (
+                            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                              {prod?.imageUrl ? <img src={prod.imageUrl} style={{ width: 40, height: 40, borderRadius: 4, objectFit: 'cover' }} alt="Product" /> : <div style={{ width: 40, height: 40, background: 'var(--bg3)', borderRadius: 4 }} />}
+                              <div>
+                                <div style={{ fontWeight: 600, color: 'var(--text1)' }}>{prod?.name || `Item ID: ${item.shopeeItemId}`}</div>
+                                <div style={{ fontSize: 12, color: 'var(--text4)' }}>ID: {item.shopeeItemId} • Terakhir di-boost: {item.lastBoostedAt ? new Date(item.lastBoostedAt).toLocaleString() : 'Belum pernah'}</div>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
@@ -348,19 +363,27 @@ export function AutoBoost() {
                 <div className="form-row">
                   <div className="form-group">
                     <label className="form-label">Jam Aktif Mulai</label>
-                    <input className="form-input" type="number" min="0" max="23" value={config.activeHourStart} onChange={e => {
+                    <select className="form-input" value={config.activeHourStart} onChange={e => {
                       handleConfigChange({ activeHourStart: Number(e.target.value) });
-                    }} />
+                    }}>
+                      {Array.from({ length: 24 }).map((_, h) => (
+                        <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="form-group">
                     <label className="form-label">Jam Aktif Selesai</label>
-                    <input className="form-input" type="number" min="0" max="23" value={config.activeHourEnd} onChange={e => {
+                    <select className="form-input" value={config.activeHourEnd} onChange={e => {
                       handleConfigChange({ activeHourEnd: Number(e.target.value) });
-                    }} />
+                    }}>
+                      {Array.from({ length: 24 }).map((_, h) => (
+                        <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
                 
-                <p className="form-hint">Auto Boost hanya akan memicu produk selama jam aktif (WIB).</p>
+                <p className="form-hint">Naikkan Produk hanya akan memicu rotasi produk selama jam aktif (WIB).</p>
                 <p className="form-hint" style={{ marginTop: 8, color: 'var(--accent)' }}>Info: Shopee menerapkan cooldown 4 jam setelah setiap produk di-boost.</p>
               </div>
             )}
@@ -400,7 +423,7 @@ export function AutoBoost() {
         <div style={{ marginBottom: 20 }}>Apakah Anda yakin ingin menghapus produk ini dari antrian rotasi?</div>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
           <button className="btn btn-ghost" onClick={() => setDeleteConfirmOpen(false)}>Batal</button>
-          <button className="btn btn-primary" style={{ background: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={() => handleRemove()} disabled={removeMut.loading}>Hapus</button>
+          <button className="btn btn-danger" onClick={() => handleRemove()} disabled={removeMut.loading}>Hapus</button>
         </div>
       </Modal>
     </div>

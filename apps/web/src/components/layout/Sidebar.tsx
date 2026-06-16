@@ -57,7 +57,7 @@ const ALL_NAV: NavEntry[] = [
   { id: 'master',           label: 'Master Produk',    icon: 'master',       path: '/produk/master',    feature: 'master_produk' },
   { id: 'channel',          label: 'Produk Channel',   icon: 'products',     path: '/produk/channel',   feature: 'produk_channel' },
   { id: 'header-promosi',   label: 'PROMOSI',          isHeader: true },
-  { id: 'auto-boost',       label: 'Auto Boost',       icon: Rocket,         path: '/promosi/auto-boost', feature: 'auto_boost' },
+  { id: 'auto-boost',       label: 'Naikkan Produk',   icon: Rocket,         path: '/promosi/auto-boost', feature: 'auto_boost' },
   { id: 'header-pesanan',   label: 'PESANAN',          isHeader: true },
   { id: 'orders',           label: 'Pesanan Saya',     icon: 'orders',       path: '/pesanan/saya',     feature: 'orders' },
   { id: 'header-keuangan',  label: 'KEUANGAN',         isHeader: true },
