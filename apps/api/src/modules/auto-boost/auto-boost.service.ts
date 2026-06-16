@@ -5,22 +5,27 @@ import { getBoostedList } from "../../services/shopee-boost.service";
 
 export async function getConfig(shopId: number) {
   const result = await db.select().from(autoBoostConfig).where(eq(autoBoostConfig.shopId, shopId)).limit(1);
-  return result.length > 0 ? result[0] : null;
+  if (result.length > 0) return result[0];
+  return { shopId, enabled: 0, mode: 'rotation', activeHourStart: 0, activeHourEnd: 23 };
 }
 
-export async function upsertConfig(shopId: number, data: { enabled: number, mode: string, activeHourStart: number, activeHourEnd: number }) {
+export async function upsertConfig(
+  shopId: number,
+  data: Partial<{ enabled: number; mode: string; activeHourStart: number; activeHourEnd: number }>
+) {
+  const current = await getConfig(shopId);
+  const merged = {
+    enabled: data.enabled ?? current.enabled,
+    mode: data.mode ?? current.mode,
+    activeHourStart: data.activeHourStart ?? current.activeHourStart,
+    activeHourEnd: data.activeHourEnd ?? current.activeHourEnd,
+  };
   await db.insert(autoBoostConfig).values({
     shopId,
-    enabled: data.enabled,
-    mode: data.mode,
-    activeHourStart: data.activeHourStart,
-    activeHourEnd: data.activeHourEnd,
+    ...merged
   }).onDuplicateKeyUpdate({
     set: {
-      enabled: data.enabled,
-      mode: data.mode,
-      activeHourStart: data.activeHourStart,
-      activeHourEnd: data.activeHourEnd,
+      ...merged,
       updatedAt: new Date(),
     }
   });

@@ -24,10 +24,10 @@ export const autoBoostRoutes = new Elysia({ prefix: "/auto-boost" })
   }, {
     body: t.Object({
       shopId: t.Number(),
-      enabled: t.Number(),
-      mode: t.String(),
-      activeHourStart: t.Number(),
-      activeHourEnd: t.Number(),
+      enabled: t.Optional(t.Number()),
+      mode: t.Optional(t.String()),
+      activeHourStart: t.Optional(t.Number()),
+      activeHourEnd: t.Optional(t.Number()),
     })
   })
   .get("/queue", async ({ query, set }) => {
