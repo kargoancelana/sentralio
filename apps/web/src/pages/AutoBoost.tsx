@@ -44,6 +44,42 @@ export function AutoBoost() {
 
   const [activeTab, setActiveTab] = useState<'status'|'queue'|'history'|'config'>('status');
 
+  const [now, setNow] = useState(Date.now());
+  const [fetchedAt, setFetchedAt] = useState(Date.now());
+
+  useEffect(() => {
+    setFetchedAt(Date.now());
+  }, [statusData]);
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    const r = setInterval(() => refetchStatus(), 30000);
+    return () => {
+      clearInterval(t);
+      clearInterval(r);
+    };
+  }, [refetchStatus]);
+
+  const renderProduct = (shopeeItemId: number, extraSub?: React.ReactNode) => {
+    const prod = catalogMap.get(shopeeItemId);
+    return (
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+        {prod?.imageUrl ? (
+          <img src={prod.imageUrl} style={{ width: 44, height: 44, borderRadius: 'var(--radius-sm)', objectFit: 'cover' }} alt="Product" />
+        ) : (
+          <div style={{ width: 44, height: 44, background: 'var(--bg3)', borderRadius: 'var(--radius-sm)' }} />
+        )}
+        <div>
+          <div style={{ fontWeight: 600, color: 'var(--text1)' }}>{prod?.name || `Item ID: ${shopeeItemId}`}</div>
+          <div style={{ fontSize: 12, color: 'var(--text3)' }}>
+            ID: {shopeeItemId}
+            {extraSub && <> • {extraSub}</>}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Master Toggle
   const toggleMut = useApiMutation(async (enabled: boolean) => {
     if (!shopId) return;
@@ -165,7 +201,8 @@ export function AutoBoost() {
           <select 
             value={shopId || ''} 
             onChange={(e) => setShopId(Number(e.target.value))}
-            style={{ padding: '7px 12px', borderRadius: 7, border: '1px solid var(--border)' }}
+            className="form-input"
+            style={{ width: 160 }}
           >
             {shops.map((s: any) => (
               <option key={s.shop_id} value={s.shop_id}>{s.shop_name}</option>
@@ -176,26 +213,17 @@ export function AutoBoost() {
             <button
               onClick={handleToggle}
               disabled={toggleMut.loading || !config}
-              style={{
-                position: 'relative', width: 44, height: 24, borderRadius: 999, border: 'none',
-                cursor: 'pointer', background: config?.enabled === 1 ? 'var(--accent)' : 'var(--border)',
-                transition: 'background 0.2s',
-              }}
+              className={`switch ${config?.enabled === 1 ? 'on' : ''}`}
             >
-              <span
-                style={{
-                  position: 'absolute', top: 2, left: config?.enabled === 1 ? 22 : 2, width: 20, height: 20,
-                  borderRadius: '50%', background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.25)', transition: 'left 0.2s',
-                }}
-              />
+              <span className="switch-knob" />
             </button>
           </div>
         </div>
       </div>
 
       {config && config.enabled !== 1 && (
-        <div style={{ padding: '12px 16px', background: '#FEF2F2', border: '1px solid #FCA5A5', color: '#991B1B', borderRadius: 8, marginBottom: 24, fontSize: 14 }}>
-          Naikkan Produk nonaktif — rotasi tidak berjalan. Aktifkan toggle di kanan atas.
+        <div style={{ padding: '12px 16px', background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, marginBottom: 24, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ color: 'var(--warning)', fontWeight: 'bold' }}>⚠️</span> Naikkan Produk nonaktif — rotasi tidak berjalan. Aktifkan toggle di kanan atas.
         </div>
       )}
 
@@ -244,20 +272,33 @@ export function AutoBoost() {
               <div className="empty-state">Belum ada produk yang sedang di-boost. Pastikan toggle diaktifkan dan ada produk di antrian.</div>
             ) : (
               <div style={{ display: 'grid', gap: 12 }}>
-                {status.map(item => (
-                  <div key={item.shopeeItemId} style={{ padding: 16, border: '1px solid var(--border)', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontWeight: 600, color: 'var(--text1)' }}>ID Produk Shopee: {item.shopeeItemId}</div>
-                      <div style={{ fontSize: 13, color: 'var(--text3)' }}>Status: {item.boosted ? 'Sedang Di-Boost' : 'Menunggu'}</div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--accent)' }}>
-                        {Math.floor(item.cooldownSecond / 3600)}j {Math.floor((item.cooldownSecond % 3600) / 60)}m
+                {status.map(item => {
+                  const elapsed = (now - fetchedAt) / 1000;
+                  const remaining = Math.max(0, item.cooldownSecond - elapsed);
+                  const j = Math.floor(remaining / 3600);
+                  const m = Math.floor((remaining % 3600) / 60);
+                  const d = Math.floor(remaining % 60);
+                  const formatted = `${j}j ${m}m ${String(d).padStart(2, '0')}d`;
+                  
+                  return (
+                    <div key={item.shopeeItemId} style={{ padding: 16, border: '1px solid var(--border)', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {renderProduct(item.shopeeItemId)}
+                        <div style={{ fontSize: 13, color: 'var(--text3)' }}>Status: <span style={{ color: item.boosted ? 'var(--success)' : 'var(--text3)' }}>{item.boosted ? 'Sedang Di-Boost' : 'Menunggu'}</span></div>
                       </div>
-                      <div style={{ fontSize: 12, color: 'var(--text4)' }}>Waktu Cooldown</div>
+                      <div style={{ textAlign: 'right' }}>
+                        {remaining > 0 ? (
+                          <div className="badge badge-blue" style={{ fontFamily: 'monospace', fontSize: 14, padding: '4px 10px' }}>
+                            {formatted}
+                          </div>
+                        ) : (
+                          <div className="badge badge-green" style={{ fontSize: 14, padding: '4px 10px' }}>Siap</div>
+                        )}
+                        <div style={{ fontSize: 11, color: 'var(--text4)', marginTop: 4 }}>Cooldown</div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -280,18 +321,7 @@ export function AutoBoost() {
                         {idx + 1}
                       </div>
                       <div>
-                        {(() => {
-                          const prod = catalogMap.get(item.shopeeItemId);
-                          return (
-                            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                              {prod?.imageUrl ? <img src={prod.imageUrl} style={{ width: 40, height: 40, borderRadius: 4, objectFit: 'cover' }} alt="Product" /> : <div style={{ width: 40, height: 40, background: 'var(--bg3)', borderRadius: 4 }} />}
-                              <div>
-                                <div style={{ fontWeight: 600, color: 'var(--text1)' }}>{prod?.name || `Item ID: ${item.shopeeItemId}`}</div>
-                                <div style={{ fontSize: 12, color: 'var(--text4)' }}>ID: {item.shopeeItemId} • Terakhir di-boost: {item.lastBoostedAt ? new Date(item.lastBoostedAt).toLocaleString() : 'Belum pernah'}</div>
-                              </div>
-                            </div>
-                          );
-                        })()}
+                        {renderProduct(item.shopeeItemId, `Terakhir di-boost: ${item.lastBoostedAt ? new Date(item.lastBoostedAt).toLocaleString() : 'Belum pernah'}`)}
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
@@ -420,7 +450,7 @@ export function AutoBoost() {
         </div>
       </Modal>
       <Modal open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)} title="Hapus dari Antrian">
-        <div style={{ marginBottom: 20 }}>Apakah Anda yakin ingin menghapus produk ini dari antrian rotasi?</div>
+        <div style={{ marginBottom: 20, color: 'var(--text2)' }}>Apakah Anda yakin ingin menghapus produk ini dari antrian rotasi?</div>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
           <button className="btn btn-ghost" onClick={() => setDeleteConfirmOpen(false)}>Batal</button>
           <button className="btn btn-danger" onClick={() => handleRemove()} disabled={removeMut.loading}>Hapus</button>
