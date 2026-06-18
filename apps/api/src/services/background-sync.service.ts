@@ -692,7 +692,11 @@ class BackgroundSyncService {
 
     try {
       for (const shopId of shopIds) {
-        totalUpdated += await refreshOrderStatusesForShop(shopId);
+        try {
+          totalUpdated += await refreshOrderStatusesForShop(shopId);
+        } catch (err: any) {
+          console.error(`[background-sync] Job "${jobName}": Failed to refresh shop ${shopId}:`, err.message);
+        }
       }
 
       stats.lastSyncTime = new Date();

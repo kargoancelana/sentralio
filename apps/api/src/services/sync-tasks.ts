@@ -6,7 +6,7 @@ import { EscrowSyncService } from "./escrow-sync.service";
 import { getTotalAdsExpense } from "./ads-expense.service";
 import { syncShopeeProducts } from "./shopee.service";
 import { autoMapProducts } from "./master.service";
-import { eq, or } from "drizzle-orm";
+import { eq, or, and } from "drizzle-orm";
 
 export const STATUS_PRIORITY: Record<string, number> = {
   'UNPAID': 0, 'READY_TO_SHIP': 1, 'PROCESSED': 2,
@@ -22,7 +22,7 @@ export async function syncEscrowForShop(daysBack: number, lockName: string) {
   return await new EscrowSyncService(lockName).startEscrowSync(daysBack);
 }
 
-export async function syncAdsForShop(shopId: number, startDate: Date, endDate: Date) {
+export async function syncAdsForShop(shopId: number, startDate: string, endDate: string) {
   return await getTotalAdsExpense([shopId], startDate, endDate, { forceRefresh: true });
 }
 
@@ -44,21 +44,22 @@ export async function refreshOrderStatusesForShop(shopId: number): Promise<numbe
     })
       .from(shopeeOrders)
       .where(
-        or(
-          eq(shopeeOrders.orderStatus, 'READY_TO_SHIP'),
-          eq(shopeeOrders.orderStatus, 'PROCESSED'),
-          eq(shopeeOrders.orderStatus, 'SHIPPED'),
-          eq(shopeeOrders.orderStatus, 'TO_CONFIRM_RECEIVE')
+        and(
+          eq(shopeeOrders.shopId, shopId),
+          or(
+            eq(shopeeOrders.orderStatus, 'READY_TO_SHIP'),
+            eq(shopeeOrders.orderStatus, 'PROCESSED'),
+            eq(shopeeOrders.orderStatus, 'SHIPPED'),
+            eq(shopeeOrders.orderStatus, 'TO_CONFIRM_RECEIVE')
+          )
         )
       );
 
-    const shopStuckOrders = stuckOrders.filter(o => o.shopId === shopId);
-
-    if (shopStuckOrders.length === 0) {
+    if (stuckOrders.length === 0) {
       return 0;
     }
 
-    const orderSns = shopStuckOrders.map(o => o.orderSn);
+    const orderSns = stuckOrders.map(o => o.orderSn);
     const BATCH = 50;
 
     for (let i = 0; i < orderSns.length; i += BATCH) {
@@ -80,6 +81,7 @@ export async function refreshOrderStatusesForShop(shopId: number): Promise<numbe
 
           if (existingRows.length === 0) continue;
           const existing = existingRows[0];
+          if (!existing) continue;
           const oldStatus = existing.orderStatus;
 
           let finalStatus = apiStatus;
