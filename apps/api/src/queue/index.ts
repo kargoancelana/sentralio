@@ -2,12 +2,13 @@ import { Worker } from "bullmq";
 import { connection } from "./connection";
 import { allQueues } from "./queues";
 import { startOnboardingWorker } from "./onboarding.worker";
+import { startGapSyncWorker } from "./gap-sync.worker";
 
 let workers: Worker[] = [];
 
 export async function startQueues() {
   console.log("[queue] Starting workers...");
-  workers = [startOnboardingWorker()];
+  workers = [startOnboardingWorker(), startGapSyncWorker()];
   console.log(`[queue] ${workers.length} worker(s) started`);
 }
 
@@ -19,4 +20,4 @@ export async function stopQueues() {
   console.log("[queue] Stopped");
 }
 
-export { onboardingQueue } from "./queues";
+export { onboardingQueue, gapSyncQueue } from "./queues";

@@ -283,6 +283,7 @@ const app = new Elysia()
           // Clear tokens — we never keep credentials for a disconnected shop.
           accessToken: "",
           refreshToken: "",
+          disconnectedAt: new Date(),
           updatedAt: new Date(),
         })
         .where(eq(shopeeCredentials.shopId, shopId));

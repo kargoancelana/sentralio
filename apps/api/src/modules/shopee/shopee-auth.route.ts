@@ -5,7 +5,7 @@ import { env } from "../../config/env";
 import { db } from "../../db/client";
 import { shopeeCredentials } from "../../db/schema";
 import { encrypt } from "../../utils/crypto";
-import { onboardingQueue } from "../../queue";
+import { onboardingQueue, gapSyncQueue } from "../../queue";
 
 const SHOPEE_BASE = "https://partner.shopeemobile.com";
 
@@ -152,6 +152,19 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
           );
         } catch (qErr: any) {
           console.error(`[shopee-oauth] Failed to enqueue onboarding job for shop_id=${shopIdNum}:`, qErr.message);
+        }
+      } else if (existing.length > 0 && existing[0].status === "disconnected" && prevSyncStatus === "done") {
+        console.log(`[shopee-oauth] Enqueueing gap-sync job for reconnecting shop_id=${shopIdNum}...`);
+        try {
+          const disconnectedAt = existing[0].disconnectedAt;
+          const fromMs = disconnectedAt ? new Date(disconnectedAt).getTime() : Date.now() - 7 * 24 * 3600 * 1000;
+          await gapSyncQueue.add(
+            `gap-${shopIdNum}`,
+            { shopId: shopIdNum, fromMs, toMs: Date.now() },
+            { attempts: 3, backoff: { type: "exponential", delay: 30000 }, removeOnComplete: 100, removeOnFail: 500 }
+          );
+        } catch (qErr: any) {
+          console.error(`[shopee-oauth] Failed to enqueue gap-sync job for shop_id=${shopIdNum}:`, qErr.message);
         }
       }
 
