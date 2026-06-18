@@ -1,12 +1,11 @@
 # Sentralio
 
-Warehouse Management & Shopee integration system. A monorepo that syncs Shopee orders, manages product master data, prints shipping labels, and reports per-order profit & loss for a multi-store seller operation.
+Warehouse Management & Shopee integration system. Sentralio is a Bun monorepo that syncs Shopee orders, manages product master data, prints shipping labels, and reports per-order profit & loss for a multi-store seller operation.
 
 ## Features
 
-Want to contribute or understand the codebase? See [CONTRIBUTING.md](./CONTRIBUTING.md) and [docs/architecture.md](./docs/architecture.md).
-
 - **Shopee integration** — OAuth authorization, order sync, escrow/settlement sync, automatic token refresh
+- **Automatic sync orchestration** — BullMQ + Redis power onboarding backfill for new shops, reconnect gap-sync, recurring product sync, and retryable sync jobs
 - **Soft connect/disconnect** — disconnecting a shop hides all of its data (orders, channel products, reports) and pauses sync without deleting anything; reconnecting via OAuth restores the data and resumes sync automatically
 - **Order management** — order list with shop filtering, batch shipment (dropoff/pickup), batch label printing, detection of Shopee "tertunda" (held) orders that can't be processed yet
 - **Shipping labels** — generate, cache, and batch-print Shopee shipping labels with custom sender info
@@ -15,24 +14,36 @@ Want to contribute or understand the codebase? See [CONTRIBUTING.md](./CONTRIBUT
 - **Authentication & roles** — session-based login (JWT in HttpOnly cookie), `admin` / `staff` role matrix, brute-force lockout, user management, change password
 - **Picking list** — aggregated pick quantities derived from synced order items
 
+## Repo guide
+
+Start here depending on what you need:
+
+- [CONTRIBUTING.md](./CONTRIBUTING.md) — contributor conventions and PR hygiene
+- [docs/architecture.md](./docs/architecture.md) — system architecture, sync model, deployment shape
+- [apps/api/README.md](./apps/api/README.md) — backend setup, queue behavior, operational notes
+- [apps/web/README.md](./apps/web/README.md) — frontend dev workflow and API proxy behavior
+- [AGENTS.md](./AGENTS.md) — working rules for AI agents and remote edits
+
 ## Tech Stack
 
 | Layer | Stack |
 |-------|-------|
-| Backend (`apps/api`) | Bun, ElysiaJS, Drizzle ORM, MySQL, jose (JWT), bcryptjs |
+| Backend (`apps/api`) | Bun, ElysiaJS, Drizzle ORM, MySQL, BullMQ, ioredis, jose (JWT), bcryptjs |
 | Frontend (`apps/web`) | React 19, Vite, React Router, TypeScript |
-| Testing | `bun test` (API), Vitest (web), fast-check (property-based testing) |
+| Infra | MySQL, Redis, Caddy, systemd |
+| Testing | `bun test` (API), Vitest tooling (web), fast-check |
 
 ## Requirements
 
-- [Bun](https://bun.sh) v1.3+ (the whole project runs on Bun — Node.js is **not** required to run it)
+- [Bun](https://bun.sh) v1.3+
 - MySQL 8.0+ (or MariaDB) with an empty database created for the app
+- Redis 7+ for queue-backed sync flows (`REDIS_URL`, default `redis://127.0.0.1:6379`)
 - [Git](https://git-scm.com) to clone the repository
 - A Shopee Open Platform partner account — only needed if you want the live Shopee integration (order sync, labels, profit reports). The app boots and you can log in without it; Shopee-backed screens will just be empty until credentials are configured.
 
-## Installing Prerequisites
+## Installing prerequisites
 
-You need three things installed before setup: **Git**, **Bun**, and **MySQL**. Use the commands for your operating system, then verify with `git --version`, `bun --version`, and `mysql --version`.
+You need four things installed before setup: **Git**, **Bun**, **MySQL**, and **Redis**. Verify with `git --version`, `bun --version`, `mysql --version`, and `redis-cli --version` (or confirm your Docker-based Redis container is running).
 
 > After installing Bun, restart your terminal (or follow the printed instructions) so the `bun` command is on your `PATH`.
 
@@ -51,28 +62,36 @@ powershell -c "irm bun.sh/install.ps1 | iex"
 winget install --id Oracle.MySQL -e
 ```
 
-Make sure the MySQL server service is started (Services app, or `net start MySQL80`) before continuing.
+For Redis on Windows, the easiest option is Docker Desktop:
+
+```powershell
+docker run -d --name sentralio-redis -p 6379:6379 redis:7-alpine
+```
+
+If you prefer a native service, use a Redis-compatible Windows service such as Memurai. Make sure MySQL and Redis are both running before continuing.
 
 ### macOS
 
 Using [Homebrew](https://brew.sh):
 
 ```bash
-brew install git mysql
-curl -fsSL https://bun.sh/install | bash   # or: brew install oven-sh/bun/bun
-brew services start mysql                   # start the MySQL server
+brew install git mysql redis
+curl -fsSL https://bun.sh/install | bash
+brew services start mysql
+brew services start redis
 ```
 
 ### Linux (Debian/Ubuntu)
 
 ```bash
 sudo apt update
-sudo apt install -y git mysql-server
+sudo apt install -y git mysql-server redis-server
 curl -fsSL https://bun.sh/install | bash
-sudo systemctl start mysql                  # start the MySQL server
+sudo systemctl start mysql
+sudo systemctl start redis-server
 ```
 
-On other distributions, install `git` and a MySQL/MariaDB server with your package manager (e.g. `dnf install mariadb-server`, `pacman -S mariadb`), then install Bun with the same `curl` command above.
+On other distributions, install `git`, a MySQL/MariaDB server, and Redis with your package manager, then install Bun with the same `curl` command above.
 
 ## Setup
 
@@ -105,24 +124,45 @@ On other distributions, install `git` and a MySQL/MariaDB server with your packa
    cp .env.example .env
    ```
 
-   > **Where does `.env` live?** The backend loads it from the **repo root** first (`config/env.ts` resolves the root `.env`), then falls back to a local `.env` in `apps/api`. Keeping a single `.env` at the repo root is the recommended setup. See [Environment Variables](#environment-variables) below for what each value means.
+   The backend loads `.env` from the **repo root** first, then falls back to `apps/api/.env`. Keeping a single root `.env` is the recommended setup.
 
-5. **Apply database migrations** (committed SQL lives in `apps/api/drizzle`):
+5. **Start Redis** before running the backend. The default local connection string is already configured in `.env.example`:
+
+   ```bash
+   REDIS_URL=redis://127.0.0.1:6379
+   ```
+
+   Quick Docker option:
+
+   ```bash
+   docker run -d --name sentralio-redis -p 6379:6379 redis:7-alpine
+   # next time:
+   docker start sentralio-redis
+   ```
+
+   Health check:
+
+   ```bash
+   redis-cli ping
+   # expected: PONG
+   ```
+
+6. **Apply database migrations** (committed SQL lives in `apps/api/drizzle`):
 
    ```bash
    bun run --filter api db:migrate
    ```
 
-6. **Create the first admin user** (there is no default user; logins are checked against the DB):
+7. **Create the first admin user** (there is no default user; logins are checked against the DB):
 
    ```bash
    cd apps/api
    bun run src/scripts/create-admin.ts --email admin@example.com --name "Admin" --password "YourStrongPass1!"
    ```
 
-   The password must satisfy the policy: at least 8 characters, with one uppercase letter and one special character. This script connects using only your `DB_*` settings, so it works on a fresh install even before the Shopee/auth secrets are filled in. To create more users later, an existing admin can manage them in the app, or you can re-run this script (add `--role staff` for a staff account).
+   The password must satisfy the policy: at least 8 characters, with one uppercase letter and one special character.
 
-7. **Run both apps in development:**
+8. **Run both apps in development:**
 
    ```bash
    # from repo root — runs api + web together
@@ -136,84 +176,105 @@ On other distributions, install `git` and a MySQL/MariaDB server with your packa
    bun run dev:web   # frontend on http://localhost:5175
    ```
 
-   The frontend talks to the API through the relative path `/api`. In development, Vite proxies `/api` to `http://localhost:3000` (see `apps/web/vite.config.ts`), so you don't need to configure an API base URL — just make sure both apps are running.
+9. **Verify the stack is healthy.** Helpful checks:
 
-## Environment Variables
+   ```bash
+   bun run --filter api build
+   bun run --filter web build
+   cd apps/api && bun run test
+   cd apps/web && bun run lint
+   ```
+
+   Optional frontend test run if you want to exercise Vitest directly:
+
+   ```bash
+   cd apps/web && bunx vitest run
+   ```
+
+## Environment variables
 
 All secrets live in `.env` (never committed). Key groups:
 
 - **App** — `APP_PORT` (backend HTTP port, default `3000`), `NODE_ENV` (`development` or `production`)
 - **Database** — `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
-- **Shopee partner app** — `PARTNER_ID`, `PARTNER_KEY`, `SHOPEE_REDIRECT_URL` (your Shopee Open Platform partner-app identity; needed to start the OAuth "connect shop" flow, obtained from your own Shopee Open Platform partner account)
-- **Shopee per-shop tokens** (optional) — `SHOP_ID`, `ACCESS_TOKEN`, `REFRESH_TOKEN`. Leave blank on a fresh install: you obtain them automatically by authorizing a shop in the web app (Settings → Integrasi Toko), and they are stored & auto-refreshed in the database. Only set them if you want `bun run db:seed` to preseed a shop manually.
+- **Shopee partner app** — `PARTNER_ID`, `PARTNER_KEY`, `SHOPEE_REDIRECT_URL`
+- **Shopee per-shop tokens** (optional) — `SHOP_ID`, `ACCESS_TOKEN`, `REFRESH_TOKEN`
 - **Encryption** — `TOKEN_SECRET_KEY` (exactly 32 bytes / 64 hex chars; encrypts Shopee credentials at rest)
-- **Authentication** — `AUTH_JWT_SECRET` (≥32 UTF-8 bytes), `AUTH_ALLOWED_ORIGINS` (comma-separated CORS/CSRF allowlist — **must include the origin your frontend runs on**, e.g. `http://localhost:5175`, or login will be blocked)
+- **Authentication** — `AUTH_JWT_SECRET` (≥32 UTF-8 bytes), `AUTH_ALLOWED_ORIGINS` (comma-separated CORS/CSRF allowlist — must include the frontend origin you actually use)
+- **Queue / Redis** — `REDIS_URL` (BullMQ worker connection string; queue-backed sync flows will error if Redis is unavailable)
 - **Label sender info** — `SHOP_NAME`, `SHOP_PHONE`, `SHOP_CITY`
-- **Production only** — `FRONTEND_URL` (used for CORS when `NODE_ENV=production`)
+- **Production only** — `FRONTEND_URL`
 
-> The server validates env on startup and **exits immediately** if `AUTH_JWT_SECRET` is missing/too short or `AUTH_ALLOWED_ORIGINS` has no valid origin. `DB_*`, `PARTNER_ID`, `PARTNER_KEY`, and `TOKEN_SECRET_KEY` are also required to boot. `SHOP_ID`, `ACCESS_TOKEN`, and `REFRESH_TOKEN` are **not** required — the app boots and you can log in without them; you fill those in automatically through the web OAuth flow.
+> The server validates env on startup and exits immediately if required auth, DB, Shopee partner, or encryption variables are missing. Queue-backed flows also expect Redis to be reachable.
 
-Generate strong secrets with Bun (no Node.js required):
+Generate strong secrets with Bun:
 
 ```bash
-bun -e "console.log(require('crypto').randomBytes(32).toString('hex'))"   # TOKEN_SECRET_KEY (64 hex chars)
+bun -e "console.log(require('crypto').randomBytes(32).toString('hex'))"   # TOKEN_SECRET_KEY
 bun -e "console.log(require('crypto').randomBytes(48).toString('hex'))"   # AUTH_JWT_SECRET
-```
-
-Or with OpenSSL (preinstalled on macOS/Linux; on Windows it ships with Git in Git Bash):
-
-```bash
-openssl rand -hex 32   # TOKEN_SECRET_KEY (64 hex chars)
-openssl rand -hex 48   # AUTH_JWT_SECRET
 ```
 
 ## Scripts
 
-Run backend scripts from `apps/api`:
+### Repo root
 
+- `bun run dev` — run API + web together
+- `bun run dev:api` — backend only
+- `bun run dev:web` — frontend only
+
+### Backend (`apps/api`)
+
+- `bun run build` — compile Bun server into `dist/`
 - `bun run dev` — API in watch mode
-- `bun run start` — API once
+- `bun run start` — run API once
 - `bun run test` — run API test suite
-- `bun run db:generate` — generate Drizzle migration files from the schema
+- `bun run db:generate` — generate Drizzle migration files from schema changes
 - `bun run db:migrate` — apply migrations
 - `bun run db:studio` — open Drizzle Studio
-- `bun run db:seed` — seed Shopee API credentials from your `.env` into the `shopee_credentials` table (optional; only useful for the live Shopee integration, and safe to re-run — skipped automatically if `SHOP_ID`/`ACCESS_TOKEN`/`REFRESH_TOKEN` are blank)
-- `bun run create-admin` — create a user, default role `admin` (`--email`, `--name`, `--password`, optional `--role admin|staff`); use this to bootstrap the first admin on a fresh install
+- `bun run db:seed` — optionally seed Shopee credentials from `.env`
+- `bun run create-admin` — create an admin/staff user
 
-Operational helper scripts (in `apps/api/src/scripts`):
+### Frontend (`apps/web`)
 
-- `create-admin.ts` — create a user, default role `admin` (`--email`, `--name`, `--password`, optional `--role admin|staff`); the way to bootstrap the first admin on a fresh install
-- `reset-password.ts` — reset an existing user's password (`--email`, `--password`)
-- `reactivate-user.ts` — reactivate a deactivated user
-- `backfill-ads-expense.ts` — backfill/refresh Shopee Ads daily expense cache (`[days]`, optional `--force` to overwrite cached values with fresh data from Shopee)
+- `bun run dev` — start Vite dev server
+- `bun run build` — type-check and build production assets
+- `bun run lint` — run ESLint
+- `bun run preview` — preview the production build locally
+- `bunx vitest run` — run frontend tests directly via Vitest
 
-## Project Structure
+## Project structure
 
-```
+```text
 apps/
-  api/        Bun + Elysia backend
+  api/
+    drizzle/              committed SQL migrations
     src/
-      modules/   auth, users, order, product, master, profit, hpp, packing-cost, shopee
-      services/  shopee sync, escrow, label, batch shipment
-      scripts/   operational CLI tools
-    drizzle/   SQL migrations
-  web/        React + Vite frontend
+      modules/            thin HTTP modules by domain
+      services/           cross-cutting services and integrations
+      queue/              BullMQ queues and workers
+      scripts/            operational CLI tools
+  web/
     src/
-      pages/     Dashboard, PesananSaya, MasterProduk, LaporanKeuangan, Pengaturan, ...
-      auth/      role matrix, route guards
-      context/   AuthContext
+      pages/              route-level screens
+      components/         feature and shared UI
+      auth/               route guards and role matrix
+      context/            auth/session state
+      lib/                frontend API helpers
+
+docs/
+  architecture.md         high-level architecture and deployment notes
 ```
 
 ## Troubleshooting
 
-- **Server exits on startup with `[FATAL] AUTH_JWT_SECRET ...` or `AUTH_ALLOWED_ORIGINS ...`** — your `.env` is missing those values or the JWT secret is shorter than 32 bytes. Fill them in (see [Environment Variables](#environment-variables)).
-- **`Missing required environment variable: ...`** — one of `DB_*`, `PARTNER_ID`, `PARTNER_KEY`, or `TOKEN_SECRET_KEY` is unset. These are required to boot (use placeholder values for the Shopee partner keys if you aren't using Shopee yet). `SHOP_ID`, `ACCESS_TOKEN`, and `REFRESH_TOKEN` are optional and can be left blank — you obtain them via the web OAuth flow.
-- **Login returns 401 / requests blocked by CORS** — make sure the exact origin of your frontend (e.g. `http://localhost:5175`) is listed in `AUTH_ALLOWED_ORIGINS`.
+- **`[queue] Redis error: connect ECONNREFUSED 127.0.0.1:6379`** — Redis is not running or `REDIS_URL` is wrong. Start Redis and retry.
+- **Server exits on startup with `[FATAL] AUTH_JWT_SECRET ...` or `AUTH_ALLOWED_ORIGINS ...`** — your `.env` is missing those values or the JWT secret is shorter than 32 bytes.
+- **`Missing required environment variable: ...`** — one of `DB_*`, `PARTNER_ID`, `PARTNER_KEY`, or `TOKEN_SECRET_KEY` is unset.
+- **Login returns 401 / requests blocked by CORS** — make sure the exact frontend origin (typically `http://localhost:5175`) is listed in `AUTH_ALLOWED_ORIGINS`.
 - **Frontend loads but every API call fails** — confirm the API is running on port 3000; the Vite dev proxy forwards `/api` there.
-- **`bun` is not recognized / command not found** — restart your terminal after installing Bun so it is added to your `PATH` (on Windows, open a fresh PowerShell window).
-- **Wrong dates / off-by-hours timestamps** — the app assumes WIB (UTC+7). The DB pool sets the session time zone to `+07:00` automatically; make sure your MySQL server allows that.
+- **Wrong dates / off-by-hours timestamps** — the app assumes WIB (UTC+7). The DB pool sets the session time zone to `+07:00` automatically.
 
-## Security Notes
+## Security notes
 
 - `.env` and generated SQL dumps are gitignored and must never be committed.
 - Shopee `partner_key`, `access_token`, and `refresh_token` are encrypted at rest using `TOKEN_SECRET_KEY`.

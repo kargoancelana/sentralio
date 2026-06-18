@@ -4,71 +4,181 @@
 
 | App | Stack | Notes |
 |-----|-------|-------|
-| `apps/api` | Bun + ElysiaJS + Drizzle ORM + MySQL | Serves `/api/*` on `:3000` |
-| `apps/web` | React 19 + Vite + TypeScript | SPA; talks to API via relative `/api` |
+| `apps/api` | Bun + ElysiaJS + Drizzle ORM + MySQL | Serves the backend on `:3000` |
+| `apps/web` | React 19 + Vite + TypeScript | SPA that talks to the API via relative `/api` |
 
-In **development**, Vite proxies `/api` → `localhost:3000`.  
-In **production**, Caddy strips the `/api` prefix and forwards to the Bun process on `:3000`.
+In **development**, Vite proxies `/api` to `http://localhost:3000`.  
+In **production**, Caddy strips the `/api` prefix and forwards requests to the Bun process on `:3000`.
+
+## Runtime building blocks
+
+| Concern | Implementation |
+|---------|----------------|
+| Primary database | MySQL |
+| Queue-backed sync | BullMQ + Redis |
+| Background recurring sync | In-process intervals plus MySQL sync-state locking |
+| Auth | JWT in `HttpOnly` cookie |
+| Reverse proxy / static hosting | Caddy |
+| Process supervisor | systemd (`sentralio-api`) |
 
 ---
 
 ## Backend layering
 
-```
+```text
 HTTP request
-  └─ modules/<domain>/<domain>.route.ts   ← thin: parse input, call service, return response
-       └─ modules/<domain>/<domain>.service.ts  ← business logic, validation, DB queries
-            └─ Drizzle ORM  ←  db/schema.ts (single source of truth)
-                 └─ MySQL
+  └─ modules/<domain>/<domain>.route.ts      thin HTTP layer
+       └─ modules/<domain>/<domain>.service.ts   business logic and validation
+            └─ Drizzle ORM
+                 └─ db/schema.ts             single source of truth
+                      └─ MySQL
 ```
 
-Cross-cutting / external integrations live in `apps/api/src/services/`:
-- Shopee API client (token management, OAuth)
-- Label rendering + cache
-- Background sync (orders, escrow)
+Cross-cutting or external integrations live in `apps/api/src/services/`, for example:
+
+- Shopee API client and token management
+- Label rendering and cache
+- Background sync and sync-state locking
 - Escrow/settlement sync
+- API call monitoring / rate-limit handling
 
 ---
 
-## Core domains (glossary)
+## Sync model
+
+Sentralio currently uses **two complementary sync mechanisms**.
+
+### 1. Queue-backed flows (BullMQ + Redis)
+
+These are the user-visible flows that need durable jobs, retries, and progress tracking:
+
+- **Onboarding backfill** when a new shop connects
+- **Reconnect gap-sync** when a previously disconnected shop reconnects
+- **Recurring product sync** on a scheduler
+- **Manual retry** of failed initial sync from the UI
+
+Relevant files:
+
+- `apps/api/src/queue/connection.ts`
+- `apps/api/src/queue/index.ts`
+- `apps/api/src/queue/queues.ts`
+- `apps/api/src/queue/onboarding.worker.ts`
+- `apps/api/src/queue/gap-sync.worker.ts`
+- `apps/api/src/queue/products-sync.worker.ts`
+
+Startup signals to expect in logs:
+
+```text
+[queue] Redis connected
+[queue] N worker(s) started
+[queue] Scheduling recurring jobs...
+```
+
+### 2. Background recurring sync (process timers + MySQL locks)
+
+Some recurring sync work is still handled in-process without Redis, coordinated via MySQL state/locking:
+
+- active order refresh
+- escrow refresh
+- ads refresh
+- stuck-order checks
+- other periodic sync maintenance in `background-sync.service.ts`
+
+This split is intentional: queue-backed flows handle shop lifecycle and retryable long-running jobs, while timer-driven flows continue to cover recurring maintenance work.
+
+---
+
+## Core domains
 
 ### Shopee integration
-OAuth "connect shop" flow, order sync, escrow/settlement sync, and automatic
-token refresh. Tokens are encrypted at rest using `TOKEN_SECRET_KEY` (AES-GCM).
+OAuth connect flow, encrypted token storage, order sync, escrow sync, automatic token refresh, reconnect handling.
 
-### Soft connect / disconnect
-Disconnecting a shop hides its data and pauses sync without deleting anything.
-Reconnect restores data access and resumes sync.
+### Product master
+Master products, channel listings, SKU/model mapping, stock propagation, recurring product sync.
 
 ### Orders
-List + filtering, batch shipment (dropoff / pickup), batch label print,
-"tertunda" (held) order detection.
+Order list, filtering, held-order detection, batch shipment flows, label generation.
 
 ### HPP (Harga Pokok Penjualan)
-Per-variation cost of goods, with full audit history per entry.
+Per-variation cost of goods with audit history.
 
 ### Packing cost
-Master packing-cost table + per-order packing cost assignment.
+Master packing-cost table and per-order packing-cost assignment.
 
 ### Profit & loss
-Per-order / per-product analytics:  
-`profit = revenue − HPP − packing − Shopee fees − Shopee Ads expense`  
-Ads expense is auto-refreshed to track retroactive adjustments.
+Per-order and per-product analytics:
+
+```text
+profit = revenue - HPP - packing - Shopee fees - Shopee Ads expense
+```
+
+Ads expense is refreshed to track Shopee's retroactive adjustments.
 
 ### Auth
-Session JWT in `HttpOnly` cookie. Admin / staff roles. Brute-force lockout on
-the login endpoint.
+Session JWT in `HttpOnly` cookie with role-based authorization for `admin` and `staff`.
 
 ---
 
 ## Key data flows
 
-> Fill in / refine these as the codebase evolves.
+### Shopee OAuth connect
 
-- [ ] **Shopee OAuth connect**: Settings → Integrasi Toko → callback → token stored encrypted
-- [ ] **Order sync pipeline**: `background-sync.service.ts` → `orders` table → `order_items`
-- [ ] **Escrow/settlement sync**: settlement data → profit recalculation per order
-- [ ] **Label generation + cache**: on-demand render → cached file → served to client
+```text
+Frontend Settings / Integrasi Shopee
+  -> GET /api/shopee/auth/url
+  -> user authorizes in Shopee
+  -> POST /api/shopee/auth/exchange
+  -> credentials stored encrypted in MySQL
+  -> onboarding or reconnect job enqueued when applicable
+```
+
+### New shop onboarding backfill
+
+```text
+OAuth exchange succeeds
+  -> enqueue onboarding job
+  -> worker runs products -> orders -> escrow -> ads
+  -> sync progress stored on shopee_credentials
+  -> frontend polls /api/shopee/sync-status for badge/progress UI
+```
+
+### Reconnect gap-sync
+
+```text
+Previously disconnected shop reconnects
+  -> reconnect handler reads disconnected_at
+  -> enqueue gap-sync job for the missing period only
+  -> worker syncs the gap window
+  -> shop resumes normal recurring sync coverage
+```
+
+### Recurring product sync
+
+```text
+BullMQ scheduler
+  -> enqueue products-sync-all every 8 hours
+  -> worker loops active shops
+  -> per-shop errors are logged without halting the whole recurring run
+```
+
+### Background order / escrow / ads maintenance
+
+```text
+background-sync.service.ts intervals
+  -> acquire sync-state lock in MySQL
+  -> query connected shops
+  -> refresh domain-specific data
+  -> release / recover stale locks
+```
+
+---
+
+## Frontend interaction model
+
+- The SPA uses a relative `/api` base path from `apps/web/src/lib/api.ts`
+- Vite proxies `/api` to `http://localhost:3000` during development
+- Session auth uses cookies, so frontend requests must keep `credentials: 'include'`
+- The Shopee integration screen surfaces sync state with polling, progress labels, and retry actions
 
 ---
 
@@ -76,17 +186,23 @@ the login endpoint.
 
 | Component | Detail |
 |-----------|--------|
-| Server | VPS, single domain `sentralio.my.id` |
-| Reverse proxy | Caddy (strips `/api`, serves web from `apps/web/dist`) |
-| API process | `sentralio-api` (Bun, port `:3000`) |
-| Database | MySQL, local to VPS (not exposed publicly) |
+| Domain | `sentralio.my.id` |
+| Reverse proxy | Caddy |
+| Static assets | `apps/web/dist` |
+| API process | `sentralio-api` on `:3000` |
+| Database | MySQL on the VPS |
+| Queue backing service | Redis on the VPS |
 
-**Frontend deploy steps (after any web change):**
+Typical deploy shape:
 
-```bash
+```text
 git pull
-bun run --filter web build   # rebuilds apps/web/dist
-# then restart sentralio-api (or reload Caddy if only static files changed)
+bun install
+bun run --filter api db:migrate
+bun run --filter web build
+systemctl restart sentralio-api
 ```
 
-For full commands see the Notion "Panduan Deploy Sentralio ke VPS".
+If queue-backed sync features are part of the release, Redis must be installed and reachable before the new build is started.
+
+For exact production commands and ops runbooks, see the internal Notion deployment guide.
