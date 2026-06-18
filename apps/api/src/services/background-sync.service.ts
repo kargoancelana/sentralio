@@ -30,6 +30,7 @@ import { syncShopeeOrdersService, syncShopeeOrdersIncremental } from "./order.se
 import { getShopeeOrderDetails } from "./shopee-raw";
 import { eq, and, or, inArray } from "drizzle-orm";
 import { getConnectedShopIds } from "./active-shops";
+import { refreshOrderStatusesForShop } from "./sync-tasks";
 
 interface SyncJobConfig {
   intervalMs: number;
@@ -684,127 +685,14 @@ class BackgroundSyncService {
       console.log(`[background-sync] Job "${jobName}": no connected shops, skip tick`);
       return;
     }
-    const shops = shopIds.map((shopId) => ({ shopId }));
 
     console.log(`[background-sync] Running job "${jobName}": Refreshing stuck orders`);
     const startTime = Date.now();
     let totalUpdated = 0;
 
     try {
-      // Find all orders in DB that are stuck in READY_TO_SHIP, PROCESSED, or SHIPPED
-      // SHIPPED is included because some orders may have already transitioned to COMPLETED
-      // but the sync hasn't caught the update yet (e.g., update_time outside 15-day window)
-      const stuckOrders = await db.select({
-        orderSn: shopeeOrders.orderSn,
-        shopId: shopeeOrders.shopId,
-        orderStatus: shopeeOrders.orderStatus,
-      })
-        .from(shopeeOrders)
-        .where(
-          or(
-            eq(shopeeOrders.orderStatus, 'READY_TO_SHIP'),
-            eq(shopeeOrders.orderStatus, 'PROCESSED'),
-            eq(shopeeOrders.orderStatus, 'SHIPPED'),
-            eq(shopeeOrders.orderStatus, 'TO_CONFIRM_RECEIVE')
-          )
-        );
-
-      if (stuckOrders.length === 0) {
-        console.log(`[background-sync] Job "${jobName}": No stuck orders found`);
-        return;
-      }
-
-      console.log(`[background-sync] Job "${jobName}": Found ${stuckOrders.length} stuck orders`);
-
-      // Group by shopId
-      const ordersByShop = new Map<number, string[]>();
-      for (const order of stuckOrders) {
-        if (!ordersByShop.has(order.shopId)) {
-          ordersByShop.set(order.shopId, []);
-        }
-        ordersByShop.get(order.shopId)!.push(order.orderSn);
-      }
-
-      // Batch-fetch details from Shopee API (max 50 per request)
-      for (const [shopId, orderSns] of ordersByShop.entries()) {
-        const BATCH = 50;
-        for (let i = 0; i < orderSns.length; i += BATCH) {
-          if (i > 0) await new Promise(r => setTimeout(r, 500));
-
-          const batchSns = orderSns.slice(i, i + BATCH);
-          try {
-            const detailRes = await getShopeeOrderDetails(shopId, batchSns);
-            if (detailRes.error) {
-              console.warn(`[background-sync] Job "${jobName}": Error fetching details for shop ${shopId}:`, detailRes.message);
-              continue;
-            }
-
-            const orderDetails = detailRes.response?.order_list || [];
-            for (const order of orderDetails) {
-              const apiStatus = order.order_status;
-              const existingRows = await db.select().from(shopeeOrders)
-                .where(eq(shopeeOrders.orderSn, order.order_sn)).limit(1);
-              
-              if (existingRows.length === 0) continue;
-              const existing = existingRows[0];
-              const oldStatus = existing.orderStatus;
-
-              // Determine final status (same logic as order.service.ts)
-              let finalStatus = apiStatus;
-              if (order.pickup_done_time && order.pickup_done_time > 0 && finalStatus === 'READY_TO_SHIP') {
-                finalStatus = 'SHIPPED';
-              }
-
-              // A "tertunda" (held) order flips to shippable WITHOUT a status
-              // change: it stays READY_TO_SHIP and only ship_by_date goes from 0
-              // to a real timestamp. So we must refresh ship_by_date even when
-              // the status is unchanged, otherwise the "Tertunda" badge would
-              // never clear via background sync (only via manual sync).
-              const apiShipByDate = order.ship_by_date ?? existing.shipByDate;
-              if (finalStatus === oldStatus && apiShipByDate !== existing.shipByDate) {
-                await db.update(shopeeOrders)
-                  .set({ shipByDate: apiShipByDate, updatedAt: new Date() })
-                  .where(eq(shopeeOrders.orderSn, order.order_sn));
-                console.log(`[background-sync] Job "${jobName}": 🔄 ${order.order_sn} ship_by_date ${existing.shipByDate} → ${apiShipByDate} (status unchanged)`);
-                totalUpdated++;
-              }
-
-              // Only update if status actually changed AND is not a downgrade
-              // CRITICAL: CANCELLED has priority 99, so it will always override PROCESSED
-              if (finalStatus !== oldStatus) {
-                const STATUS_PRIORITY: Record<string, number> = {
-                  'UNPAID': 0, 'READY_TO_SHIP': 1, 'PROCESSED': 2,
-                  'SHIPPED': 3, 'TO_RETURN': 4, 'TO_CONFIRM_RECEIVE': 4, 'COMPLETED': 5,
-                  'IN_CANCEL': 99, 'CANCELLED': 99,  // Terminal states: always override
-                };
-                const oldP = STATUS_PRIORITY[oldStatus] ?? 0;
-                const newP = STATUS_PRIORITY[finalStatus] ?? 0;
-
-                if (newP >= oldP) {
-                  // Extract shipping carrier
-                  const shippingCarrier = order.shipping_carrier 
-                    || order.package_list?.[0]?.shipping_carrier 
-                    || existing.shippingCarrier;
-
-                  await db.update(shopeeOrders)
-                    .set({
-                      orderStatus: finalStatus,
-                      shippingCarrier,
-                      totalAmount: order.total_amount ? Math.round(order.total_amount) : existing.totalAmount,
-                      shipByDate: order.ship_by_date ?? existing.shipByDate,
-                      updatedAt: new Date(),
-                    })
-                    .where(eq(shopeeOrders.orderSn, order.order_sn));
-
-                  console.log(`[background-sync] Job "${jobName}": ✅ Updated ${order.order_sn}: ${oldStatus} → ${finalStatus}`);
-                  totalUpdated++;
-                }
-              }
-            }
-          } catch (err: any) {
-            console.error(`[background-sync] Job "${jobName}": Error processing batch for shop ${shopId}:`, err.message);
-          }
-        }
+      for (const shopId of shopIds) {
+        totalUpdated += await refreshOrderStatusesForShop(shopId);
       }
 
       stats.lastSyncTime = new Date();
