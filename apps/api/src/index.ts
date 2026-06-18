@@ -28,6 +28,7 @@ import { ensureStaffPermissionsLoaded } from "./modules/auth/permissions.service
 import { originMiddleware } from "./modules/auth/origin.middleware";
 import { usersRoutes } from "./modules/users/users.route";
 import { autoBoostRoutes } from "./modules/auto-boost/auto-boost.route";
+import { startQueues, stopQueues } from "./queue";
 // Fail-fast: di production FRONTEND_URL wajib diset (dipakai untuk CORS allowlist).
 if (env.nodeEnv === 'production' && !env.frontendUrl) {
   throw new Error(
@@ -311,6 +312,8 @@ setTimeout(async () => {
     await backgroundSyncService.startBackgroundSync();
     console.log("[STARTUP] Background sync service started successfully");
     
+    await startQueues();
+    
     // Auto Boost Scheduler
     const { autoBoostScheduler } = await import('./services/auto-boost.scheduler');
     autoBoostScheduler.start();
@@ -323,6 +326,7 @@ setTimeout(async () => {
 process.on('SIGINT', async () => {
   console.log("\n[SHUTDOWN] Received SIGINT, shutting down gracefully...");
   backgroundSyncService.stopBackgroundSync();
+  await stopQueues();
   import('./services/auto-boost.scheduler').then(m => m.autoBoostScheduler.stop());
   try {
     const { closeBrowser } = await import('./services/pdf-generator.service');
@@ -334,6 +338,7 @@ process.on('SIGINT', async () => {
 process.on('SIGTERM', async () => {
   console.log("\n[SHUTDOWN] Received SIGTERM, shutting down gracefully...");
   backgroundSyncService.stopBackgroundSync();
+  await stopQueues();
   import('./services/auto-boost.scheduler').then(m => m.autoBoostScheduler.stop());
   try {
     const { closeBrowser } = await import('./services/pdf-generator.service');
