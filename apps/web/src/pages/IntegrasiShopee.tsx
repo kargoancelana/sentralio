@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useToast } from '../components/ui/Toast';
 import { Modal } from '../components/ui/Modal';
 import { useApi, useApiMutation } from '../hooks/useApi';
@@ -85,8 +85,69 @@ function DisconnectModal({ shop, onClose, onConfirm }: any) {
   );
 }
 
+/* ── SYNC STATUS INDICATOR ── */
+function SyncStatusIndicator({ syncData, onRetry, retrying }: { syncData: any, onRetry: (shopId: number) => void, retrying: boolean }) {
+  if (!syncData) return null;
+
+  const { status, progress, label, error, shop_id } = syncData;
+
+  if (status === 'done') {
+    return (
+      <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+        <span className="badge badge-green badge-dot">Tersinkron</span>
+      </div>
+    );
+  }
+
+  if (status === 'error') {
+    return (
+      <div style={{ marginTop: 12, background: 'var(--danger-bg, rgba(220,38,38,0.1))', padding: '10px', borderRadius: 6, border: '1px solid var(--error)', fontSize: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, color: 'var(--error)', fontWeight: 500 }}>
+          <span className="badge badge-red badge-dot">Gagal</span>
+        </div>
+        <div style={{ color: 'var(--error)', marginBottom: 8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={error || 'Unknown error'}>
+          {error || 'Terjadi kesalahan saat sinkronisasi'}
+        </div>
+        <button 
+          className="btn btn-shopee btn-sm" 
+          style={{ padding: '4px 8px', fontSize: 11, height: 'auto', minHeight: 24 }} 
+          onClick={() => onRetry(shop_id)}
+          disabled={retrying}
+        >
+          {retrying ? 'Loading...' : 'Coba Lagi'}
+        </button>
+      </div>
+    );
+  }
+
+  if (status === 'pending') {
+    return (
+      <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+        <span className="badge badge-gray badge-dot">Menunggu antrean...</span>
+      </div>
+    );
+  }
+
+  if (status === 'syncing') {
+    return (
+      <div style={{ marginTop: 12, background: 'rgba(234,179,8,0.1)', padding: '10px', borderRadius: 6, border: '1px solid #eab308', fontSize: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, color: '#ca8a04', fontWeight: 600 }}>
+          <Loader2 size={12} className="spin" />
+          <span>{label}</span>
+          <span style={{ marginLeft: 'auto' }}>{progress}%</span>
+        </div>
+        <div style={{ height: 4, background: 'rgba(234,179,8,0.2)', borderRadius: 2, overflow: 'hidden' }}>
+          <div style={{ height: '100%', background: '#eab308', width: `${progress}%`, transition: 'width 0.3s' }} />
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
 /* ── SHOP CARD ── */
-function ShopCard({ shop, onTest, onDisconnect, onSync, onReauth, testing, syncing }: any) {
+function ShopCard({ shop, onTest, onDisconnect, onSync, onReauth, testing, syncing, syncData, onRetry, retrying }: any) {
   return (
     <div className="shop-card">
       <div className="shop-card-header">
@@ -114,6 +175,8 @@ function ShopCard({ shop, onTest, onDisconnect, onSync, onReauth, testing, synci
           <span>Token exp: <span style={{ color: shop.is_expired ? 'var(--error)' : 'var(--text3)' }}>{new Date(shop.expires_at).toLocaleDateString('id-ID')}</span></span>
         </div>
       </div>
+
+      <SyncStatusIndicator syncData={syncData} onRetry={onRetry} retrying={retrying} />
 
       <div className="shop-actions" style={{ marginTop: 14 }}>
         {shop.connected ? (
@@ -152,6 +215,57 @@ export function IntegrasiShopee() {
   // Paste Modal State
   const [showPasteModal, setShowPasteModal] = useState(false);
   const [pasteUrl, setPasteUrl] = useState('');
+
+  // Sync Status Polling State
+  const [syncStatusData, setSyncStatusData] = useState<Record<number, any>>({});
+  const [retryingIds, setRetryingIds] = useState<Record<number, boolean>>({});
+
+  const fetchSyncStatus = async () => {
+    try {
+      const res = await api.shopeeSyncStatus();
+      if (res.success && res.data) {
+        const newData: Record<number, any> = {};
+        res.data.forEach((item: any) => {
+          newData[item.shop_id] = item;
+        });
+        setSyncStatusData(newData);
+      }
+    } catch (e) {
+      // ignore silently for polling
+    }
+  };
+
+  useEffect(() => {
+    fetchSyncStatus();
+  }, []);
+
+  useEffect(() => {
+    // Check if we need to poll
+    const needsPolling = Object.values(syncStatusData).some(
+      (item: any) => item.status === 'pending' || item.status === 'syncing'
+    );
+
+    if (!needsPolling) return;
+
+    const interval = setInterval(() => {
+      fetchSyncStatus();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [syncStatusData]);
+
+  const handleRetrySync = async (shopId: number) => {
+    setRetryingIds(prev => ({ ...prev, [shopId]: true }));
+    try {
+      await api.shopeeSyncRetry(shopId);
+      toast('Sinkronisasi ulang dimulai', 'info');
+      await fetchSyncStatus();
+    } catch (err: any) {
+      toast(err.message || 'Gagal memulai ulang sinkronisasi', 'error');
+    } finally {
+      setRetryingIds(prev => ({ ...prev, [shopId]: false }));
+    }
+  };
 
   const authMut = useApiMutation(async () => {
     setShowPasteModal(true);
