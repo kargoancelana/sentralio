@@ -185,7 +185,7 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
       }),
     }
   )
-  .get("/shopee/sync-status", async ({ query }) => {
+  .get("/sync-status", async ({ query }) => {
     const shopIdFilter = query.shop_id ? parseInt(query.shop_id as string) : null;
     
     let credentials;
@@ -236,7 +236,7 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
     
     return { success: true, data };
   })
-  .post("/shopee/sync-status/retry", async ({ body, set }) => {
+  .post("/sync-status/retry", async ({ body, set }) => {
     const shopIdNum = parseInt(body.shop_id);
     if (isNaN(shopIdNum)) {
       set.status = 400;

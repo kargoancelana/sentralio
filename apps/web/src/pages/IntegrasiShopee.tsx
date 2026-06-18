@@ -417,6 +417,9 @@ export function IntegrasiShopee() {
               onReauth={() => authMut.execute()}
               testing={testingId === shop.shop_id}
               syncing={syncingId === shop.shop_id}
+              syncData={syncStatusData[shop.shop_id]}
+              onRetry={handleRetrySync}
+              retrying={!!retryingIds[shop.shop_id]}
             />
           ))}
           <div
