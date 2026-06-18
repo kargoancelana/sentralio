@@ -5,6 +5,7 @@ import { env } from "../../config/env";
 import { db } from "../../db/client";
 import { shopeeCredentials } from "../../db/schema";
 import { encrypt } from "../../utils/crypto";
+import { onboardingQueue } from "../../queue";
 
 const SHOPEE_BASE = "https://partner.shopeemobile.com";
 
@@ -128,7 +129,9 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
       const existing = await db.select().from(shopeeCredentials)
         .where(eq(shopeeCredentials.shopId, shopIdNum)).limit(1);
 
+      let prevSyncStatus = null;
       if (existing.length > 0) {
+        prevSyncStatus = existing[0].initialSyncStatus;
         await db.update(shopeeCredentials)
           .set(credentialPayload)
           .where(eq(shopeeCredentials.shopId, shopIdNum));
@@ -136,6 +139,20 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
       } else {
         await db.insert(shopeeCredentials).values(credentialPayload);
         console.log(`[shopee-oauth] Inserted new credentials for shop_id=${shopIdNum}`);
+      }
+
+      const isNewShop = existing.length === 0 || prevSyncStatus === "error";
+      if (isNewShop && prevSyncStatus !== "syncing" && prevSyncStatus !== "done" && prevSyncStatus !== "pending") {
+        console.log(`[shopee-oauth] Enqueueing onboarding job for shop_id=${shopIdNum}...`);
+        try {
+          await onboardingQueue.add(`onboarding-${shopIdNum}`, { shopId: shopIdNum });
+        } catch (qErr: any) {
+          console.error(`[shopee-oauth] Failed to enqueue onboarding job for shop_id=${shopIdNum}:`, qErr.message);
+        }
+      } else if (isNewShop && prevSyncStatus === "pending") {
+        // legacy pending? No, we skip if pending. Wait, instruction says: 
+        // "guard: isNewShop = existing.length === 0 || prevStatus === "error". Skip kalau syncing/done/pending (legacy)"
+        // If prevSyncStatus === "pending", it will fall here but not do anything due to the condition above
       }
 
       console.log(`[shopee-oauth] Token saved. Valid until ${expiresAt.toISOString()}`);
