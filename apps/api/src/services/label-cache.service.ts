@@ -2,7 +2,7 @@
  * Label Cache Service
  * 
  * Persistent database cache for label documents with TTL management.
- * Caches label documents for 24 hours to improve performance
+ * Caches label documents for 14 days to improve performance
  * and reduce Shopee API calls.
  * 
  * **Validates: Requirements 13.1, 13.2, 13.3, 13.4**
@@ -26,7 +26,7 @@ export interface CacheEntry {
  * 
  * Features:
  * - Database-backed persistent storage (survives server restart)
- * - 24-hour TTL for cached labels
+ * - 14-day TTL for cached labels
  * - Automatic expiration checking
  * - Manual cache invalidation
  * - Periodic cleanup of expired entries

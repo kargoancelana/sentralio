@@ -7,7 +7,7 @@
  *
  * Two entry points:
  * - printCustomLabels(labels) — render HTML labels with barcode/QR + picking list
- * - printOfficialLabels(pdfUrls, orderSns) — merge PDFs + append picking list pages
+ * - printOfficialLabels(pdfUrls, orderSns) — merge PDFs only (no picking list)
  *
  * Both auto-mark orders as printed via API.
  */

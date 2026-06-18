@@ -1748,7 +1748,7 @@ export async function getBatchLabelsOptimized(orderSns: string[]): Promise<{
       return {
         success: false,
         successCount: 0,
-        failedOrders: multiShopFailed
+        failedOrders: [...failedOrders, ...multiShopFailed]
       };
     }
     const shopId = validOrders[0].shopId;
