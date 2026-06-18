@@ -44,6 +44,7 @@ Thumbs.db
 .kiro/
 referensi_api/
 api_logistik.md
+prompt.md
 
 # ── Local debugging & helper scripts (apps/api) ───────────────
 apps/api/check-*.ts
