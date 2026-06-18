@@ -1,5 +1,17 @@
 import { int, mysqlTable, timestamp, varchar, text, uniqueIndex, index, bigint, date, primaryKey, mysqlEnum, mediumtext } from "drizzle-orm/mysql-core";
 
+export const companyStatusEnum = mysqlEnum("status", ["pending", "active", "suspended", "expired"]);
+
+export const companies = mysqlTable("companies", {
+  id: int("id").primaryKey().autoincrement(),
+  name: varchar("name", { length: 255 }).notNull(),
+  slug: varchar("slug", { length: 255 }).notNull(),
+  status: companyStatusEnum.notNull().default("active"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => ({
+  uniqSlug: uniqueIndex("uniq_companies_slug").on(t.slug),
+}));
+
 export const masterProducts = mysqlTable("master_products", {
   id: int("id").primaryKey().autoincrement(),
   sku: varchar("sku", { length: 100 }).notNull().unique(),

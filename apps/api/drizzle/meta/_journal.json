@@ -274,6 +274,13 @@
       "when": 1781767457893,
       "tag": "0038_bored_prodigy",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "5",
+      "when": 1781789115916,
+      "tag": "0039_bouncy_ego",
+      "breakpoints": true
     }
   ]
 }
