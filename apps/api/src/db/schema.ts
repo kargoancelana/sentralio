@@ -69,6 +69,12 @@ export const shopeeCredentials = mysqlTable("shopee_credentials", {
   // all data hidden across the app and sync skipped until the shop is reconnected
   // (OAuth re-auth flips this back to 'connected').
   status: varchar("status", { length: 20 }).notNull().default("connected"),
+  initialSyncStatus: varchar("initial_sync_status", { length: 20 }).notNull().default("pending"),
+  initialSyncStep: varchar("initial_sync_step", { length: 40 }),
+  initialSyncError: text("initial_sync_error"),
+  initialSyncStartedAt: timestamp("initial_sync_started_at"),
+  initialSyncAt: timestamp("initial_sync_at"),
+  disconnectedAt: timestamp("disconnected_at"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => ({
   uniqShopId: uniqueIndex("uniq_shop_id").on(t.shopId),
