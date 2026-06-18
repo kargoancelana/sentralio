@@ -22,6 +22,28 @@ From the repo root you still need:
 
 The API expects Redis to be reachable through `REDIS_URL` (default `redis://127.0.0.1:6379`). If Redis is down, queue-backed sync features will fail and the API will log connection errors.
 
+## Local boot vs live Shopee testing
+
+### Local boot only
+This is enough if you want the API to start, the login flow to work, and non-Shopee features to be testable.
+
+Minimum practical requirements:
+
+- valid `DB_*`
+- valid `AUTH_JWT_SECRET`
+- valid `AUTH_ALLOWED_ORIGINS`
+- valid `TOKEN_SECRET_KEY`
+- non-empty `PARTNER_KEY`
+- **numeric** `PARTNER_ID` such as `123456`
+
+### Live Shopee testing
+If you want to test real OAuth or sync against Shopee, you need:
+
+- real `PARTNER_ID`
+- real `PARTNER_KEY`
+- real `SHOPEE_REDIRECT_URL` registered in Shopee Open Platform
+- a reachable frontend origin for the callback flow
+
 ## Common commands
 
 Run these from `apps/api` unless noted otherwise.
@@ -99,6 +121,31 @@ Key file:
 
 - `src/services/background-sync.service.ts`
 
+## Startup success checklist
+
+After `bun run dev` or `bun run start`, a healthy local API should give you all of these:
+
+1. `curl http://localhost:3000/health` returns JSON with:
+
+   ```json
+   {
+     "status": "ok",
+     "database": "connected"
+   }
+   ```
+
+2. Startup logs include:
+
+   ```text
+   [queue] Redis connected
+   [queue] ... worker(s) started
+   [queue] Scheduling recurring jobs...
+   ```
+
+3. Creating the first admin via `src/scripts/create-admin.ts` prints only the stored email.
+
+If step 1 passes but step 2 fails, the API is partially up but queue-backed sync flows are not healthy yet.
+
 ## Operational notes
 
 - Root `.env` is the preferred source of configuration.
@@ -137,3 +184,7 @@ Check in order:
 2. the API boot logs show workers started
 3. the shop is connected and credentials are valid
 4. the sync-status endpoint is returning progress data
+
+### Shopee OAuth still fails even though the app boots
+
+Booting successfully does **not** prove Shopee credentials are real. If you used placeholders for `PARTNER_ID`, `PARTNER_KEY`, or `SHOPEE_REDIRECT_URL`, local login can still work while Shopee OAuth fails.

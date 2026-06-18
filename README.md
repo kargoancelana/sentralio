@@ -33,13 +33,40 @@ Start here depending on what you need:
 | Infra | MySQL, Redis, Caddy, systemd |
 | Testing | `bun test` (API), Vitest tooling (web), fast-check |
 
+## Before you start: choose your goal
+
+There are **two valid setup targets**:
+
+### A. Local app boot (fastest path)
+Use this if you only want to:
+
+- boot the API and frontend
+- log in locally
+- explore the UI
+- work on non-Shopee features
+
+For this path, you still need the required env variables to exist, but **Shopee partner values can be placeholders** as long as they satisfy the expected type:
+
+- `PARTNER_ID` must be **numeric** (example: `123456`)
+- `PARTNER_KEY` can be placeholder text
+- `SHOPEE_REDIRECT_URL` can be a placeholder URL if you are **not** testing live OAuth
+
+### B. Live Shopee integration
+Use this if you want to:
+
+- connect a real shop
+- run OAuth end-to-end
+- test order / escrow / ads / product sync against Shopee
+
+For this path, you need **real Shopee Open Platform credentials** and a **real redirect URL registered with Shopee**.
+
 ## Requirements
 
 - [Bun](https://bun.sh) v1.3+
 - MySQL 8.0+ (or MariaDB) with an empty database created for the app
 - Redis 7+ for queue-backed sync flows (`REDIS_URL`, default `redis://127.0.0.1:6379`)
 - [Git](https://git-scm.com) to clone the repository
-- A Shopee Open Platform partner account — only needed if you want the live Shopee integration (order sync, labels, profit reports). The app boots and you can log in without it; Shopee-backed screens will just be empty until credentials are configured.
+- A Shopee Open Platform partner account — only needed if you want the live Shopee integration (order sync, labels, profit reports). The app boots and you can log in without it; Shopee-backed screens will just be empty or non-functional until real credentials are configured.
 
 ## Installing prerequisites
 
@@ -108,11 +135,15 @@ On other distributions, install `git`, a MySQL/MariaDB server, and Redis with yo
    bun install
    ```
 
+   **Checkpoint:** finishes without dependency-resolution errors.
+
 3. **Create the database.** In MySQL, create an empty schema matching `DB_NAME` (default `sentralio`):
 
    ```sql
    CREATE DATABASE sentralio;
    ```
+
+   **Checkpoint:** the schema exists and is empty before migrations.
 
 4. **Create `.env`** from the example and fill in your values:
 
@@ -125,6 +156,15 @@ On other distributions, install `git`, a MySQL/MariaDB server, and Redis with yo
    ```
 
    The backend loads `.env` from the **repo root** first, then falls back to `apps/api/.env`. Keeping a single root `.env` is the recommended setup.
+
+   **Checkpoint:** if you only want local app boot, make sure these values are valid at minimum:
+
+   - `DB_*`
+   - `AUTH_JWT_SECRET`
+   - `AUTH_ALLOWED_ORIGINS`
+   - `TOKEN_SECRET_KEY`
+   - `PARTNER_ID` as a **number** such as `123456`
+   - `PARTNER_KEY` with any non-empty placeholder text
 
 5. **Start Redis** before running the backend. The default local connection string is already configured in `.env.example`:
 
@@ -153,14 +193,19 @@ On other distributions, install `git`, a MySQL/MariaDB server, and Redis with yo
    bun run --filter api db:migrate
    ```
 
+   **Checkpoint:** migration exits successfully with no SQL error.
+
 7. **Create the first admin user** (there is no default user; logins are checked against the DB):
 
    ```bash
    cd apps/api
    bun run src/scripts/create-admin.ts --email admin@example.com --name "Admin" --password "YourStrongPass1!"
+   cd ../..
    ```
 
    The password must satisfy the policy: at least 8 characters, with one uppercase letter and one special character.
+
+   **Checkpoint:** on success, the script prints only the stored email.
 
 8. **Run both apps in development:**
 
@@ -176,13 +221,36 @@ On other distributions, install `git`, a MySQL/MariaDB server, and Redis with yo
    bun run dev:web   # frontend on http://localhost:5175
    ```
 
-9. **Verify the stack is healthy.** Helpful checks:
+9. **Verify the stack is healthy.** Useful checks:
+
+   ```bash
+   curl http://localhost:3000/health
+   ```
+
+   Expected response shape:
+
+   ```json
+   {
+     "status": "ok",
+     "database": "connected"
+   }
+   ```
+
+   Also verify:
+
+   - API logs show the server started
+   - API logs show `[queue] Redis connected`
+   - API logs show worker startup / scheduler messages
+   - the frontend opens at `http://localhost:5175`
+   - you can log in with the admin user you created
+
+10. **Optional validation checks** before you start changing code:
 
    ```bash
    bun run --filter api build
    bun run --filter web build
-   cd apps/api && bun run test
-   cd apps/web && bun run lint
+   cd apps/api && bun run test && cd ../..
+   cd apps/web && bun run lint && cd ../..
    ```
 
    Optional frontend test run if you want to exercise Vitest directly:
@@ -198,6 +266,9 @@ All secrets live in `.env` (never committed). Key groups:
 - **App** — `APP_PORT` (backend HTTP port, default `3000`), `NODE_ENV` (`development` or `production`)
 - **Database** — `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
 - **Shopee partner app** — `PARTNER_ID`, `PARTNER_KEY`, `SHOPEE_REDIRECT_URL`
+  - `PARTNER_ID` is numeric
+  - for local app boot only, placeholders are acceptable
+  - for live OAuth, these must be real values from Shopee
 - **Shopee per-shop tokens** (optional) — `SHOP_ID`, `ACCESS_TOKEN`, `REFRESH_TOKEN`
 - **Encryption** — `TOKEN_SECRET_KEY` (exactly 32 bytes / 64 hex chars; encrypts Shopee credentials at rest)
 - **Authentication** — `AUTH_JWT_SECRET` (≥32 UTF-8 bytes), `AUTH_ALLOWED_ORIGINS` (comma-separated CORS/CSRF allowlist — must include the frontend origin you actually use)
@@ -270,6 +341,7 @@ docs/
 - **`[queue] Redis error: connect ECONNREFUSED 127.0.0.1:6379`** — Redis is not running or `REDIS_URL` is wrong. Start Redis and retry.
 - **Server exits on startup with `[FATAL] AUTH_JWT_SECRET ...` or `AUTH_ALLOWED_ORIGINS ...`** — your `.env` is missing those values or the JWT secret is shorter than 32 bytes.
 - **`Missing required environment variable: ...`** — one of `DB_*`, `PARTNER_ID`, `PARTNER_KEY`, or `TOKEN_SECRET_KEY` is unset.
+- **Shopee OAuth behaves strangely during local setup** — check whether you used placeholder Shopee credentials. Placeholder values are fine for app boot, but not for live Shopee testing.
 - **Login returns 401 / requests blocked by CORS** — make sure the exact frontend origin (typically `http://localhost:5175`) is listed in `AUTH_ALLOWED_ORIGINS`.
 - **Frontend loads but every API call fails** — confirm the API is running on port 3000; the Vite dev proxy forwards `/api` there.
 - **Wrong dates / off-by-hours timestamps** — the app assumes WIB (UTC+7). The DB pool sets the session time zone to `+07:00` automatically.
