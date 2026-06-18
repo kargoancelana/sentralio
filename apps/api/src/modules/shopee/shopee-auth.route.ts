@@ -184,4 +184,91 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
         shop_id: t.String(),
       }),
     }
-  );
+  )
+  .get("/sync-status", async ({ query }) => {
+    const shopIdFilter = query.shop_id ? parseInt(query.shop_id as string) : null;
+    
+    let credentials;
+    if (shopIdFilter && !isNaN(shopIdFilter)) {
+      credentials = await db.select().from(shopeeCredentials).where(eq(shopeeCredentials.shopId, shopIdFilter));
+    } else {
+      credentials = await db.select().from(shopeeCredentials);
+    }
+    
+    const STEP_PROGRESS: Record<string, { progress: number, label: string }> = {
+      products: { progress: 10, label: "Sinkronisasi Produk" },
+      orders: { progress: 40, label: "Sinkronisasi Pesanan" },
+      escrow: { progress: 65, label: "Sinkronisasi Penghasilan" },
+      ads: { progress: 90, label: "Sinkronisasi Iklan" }
+    };
+    
+    const data = credentials.map((cred) => {
+      let progress = 0;
+      let label = "Menunggu antrean...";
+      
+      if (cred.initialSyncStatus === "done") {
+        progress = 100;
+        label = "Selesai";
+      } else if (cred.initialSyncStatus === "error") {
+        progress = 0;
+        label = "Gagal";
+      } else if (cred.initialSyncStatus === "syncing") {
+        if (cred.initialSyncStep && STEP_PROGRESS[cred.initialSyncStep]) {
+          progress = STEP_PROGRESS[cred.initialSyncStep].progress;
+          label = STEP_PROGRESS[cred.initialSyncStep].label;
+        } else {
+          progress = 5;
+          label = "Memulai sinkronisasi...";
+        }
+      }
+      
+      return {
+        shop_id: cred.shopId,
+        status: cred.initialSyncStatus,
+        step: cred.initialSyncStep,
+        progress,
+        label,
+        error: cred.initialSyncError,
+        started_at: cred.initialSyncStartedAt,
+        finished_at: cred.initialSyncAt
+      };
+    });
+    
+    return { success: true, data };
+  })
+  .post("/sync-status/retry", async ({ body, set }) => {
+    const shopIdNum = parseInt(body.shop_id);
+    if (isNaN(shopIdNum)) {
+      set.status = 400;
+      return { success: false, message: "Invalid shop ID" };
+    }
+    
+    try {
+      await db.update(shopeeCredentials)
+        .set({
+          initialSyncStatus: "pending",
+          initialSyncError: null,
+          initialSyncStep: null,
+          initialSyncStartedAt: null,
+          updatedAt: new Date()
+        })
+        .where(eq(shopeeCredentials.shopId, shopIdNum));
+        
+      await onboardingQueue.add(
+        `onboarding-${shopIdNum}`, 
+        { shopId: shopIdNum },
+        { attempts: 3, backoff: { type: "exponential", delay: 60000 }, removeOnComplete: 100, removeOnFail: 500 }
+      );
+      
+      console.log(`[shopee-oauth] Retrying sync for shop_id=${shopIdNum}`);
+      return { success: true, message: "Sinkronisasi ulang berhasil dijadwalkan" };
+    } catch (err: any) {
+      console.error(`[shopee-oauth] Failed to retry sync for shop_id=${shopIdNum}:`, err.message);
+      set.status = 500;
+      return { success: false, message: "Gagal menjadwalkan ulang sinkronisasi" };
+    }
+  }, {
+    body: t.Object({
+      shop_id: t.String()
+    })
+  });

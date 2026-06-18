@@ -329,6 +329,8 @@ export const api = {
     const qs = shopId ? `?shop_id=${shopId}` : '';
     return fetchApi(`/shopee/credentials/status${qs}`);
   },
+  shopeeSyncStatus: () => fetchApi('/shopee/sync-status'),
+  shopeeSyncRetry: (shopId: number | string) => fetchApi('/shopee/sync-status/retry', { method: 'POST', body: JSON.stringify({ shop_id: String(shopId) }) }),
   shopeeDisconnect: (shopId: number) =>
     fetchApi(`/shopee/credentials/${shopId}`, { method: 'DELETE' }),
 
