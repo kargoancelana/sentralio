@@ -11,7 +11,7 @@
 import type { LabelDocument } from "./label.service";
 import { db } from "../db/client";
 import { labelCacheTable } from "../db/schema";
-import { eq, lt } from "drizzle-orm";
+import { eq, lt, inArray } from "drizzle-orm";
 
 /**
  * Cache entry interface with expiration tracking
@@ -95,6 +95,51 @@ export class LabelCache {
   }
 
   /**
+   * Get multiple labels from cache
+   * 
+   * Returns a map of orderSn to LabelDocument.
+   * Skips expired entries and non-PDF caches.
+   * 
+   * @param orderSns - Array of order serial numbers
+   * @returns Map of cached labels
+   */
+  async getMany(orderSns: string[]): Promise<Map<string, LabelDocument>> {
+    const result = new Map<string, LabelDocument>();
+    if (orderSns.length === 0) return result;
+
+    try {
+      const entries = await db.select()
+        .from(labelCacheTable)
+        .where(inArray(labelCacheTable.orderSn, orderSns));
+
+      const now = Date.now();
+      for (const entry of entries) {
+        if (now >= entry.expiresAt.getTime()) {
+          // Note: we don't delete expired entries here to keep it simple and fast,
+          // they will be cleaned up by the periodic cleanup or when accessed via get()
+          continue;
+        }
+
+        if (!entry.labelUrl || entry.format === 'json') {
+          continue;
+        }
+
+        result.set(entry.orderSn, {
+          orderSn: entry.orderSn,
+          url: entry.labelUrl,
+          format: entry.format as 'pdf' | 'png',
+          trackingNumber: entry.trackingNumber || undefined,
+          retrievedAt: entry.createdAt
+        });
+      }
+      return result;
+    } catch (error: any) {
+      console.warn('[label-cache] Error getting many from cache:', error.message);
+      return result;
+    }
+  }
+
+  /**
    * Store label in cache with 24-hour TTL
    * 
    * @param orderSn - Order serial number (cache key)
@@ -103,22 +148,16 @@ export class LabelCache {
    * **Validates: Requirements 13.1, 13.3**
    */
   async set(orderSn: string, label: LabelDocument): Promise<void> {
-    console.log('[label-cache] Attempting to cache label for order:', orderSn);
-    
     try {
       const expiresAt = new Date(Date.now() + this.TTL_MS);
       
-      console.log('[label-cache] Checking if entry exists...');
       // Upsert: update if exists, insert if not
       const existing = await db.select()
         .from(labelCacheTable)
         .where(eq(labelCacheTable.orderSn, orderSn))
         .limit(1);
 
-      console.log('[label-cache] Existing entries found:', existing.length);
-
       if (existing.length > 0) {
-        console.log('[label-cache] Updating existing cache entry...');
         // Update existing entry - don't update createdAt
         await db.update(labelCacheTable)
           .set({
@@ -128,31 +167,16 @@ export class LabelCache {
             expiresAt
           })
           .where(eq(labelCacheTable.orderSn, orderSn));
-        console.log('[label-cache] Cache entry updated successfully');
       } else {
-        console.log('[label-cache] Inserting new cache entry...');
-        console.log('[label-cache] Data to insert:', {
-          orderSn,
-          labelUrl: label.url.substring(0, 50) + '...',
-          format: label.format,
-          trackingNumber: label.trackingNumber,
-          expiresAt: expiresAt.toISOString()
-        });
-        
         // Insert new entry - createdAt will use DEFAULT (now())
-        const result = await db.insert(labelCacheTable).values({
+        await db.insert(labelCacheTable).values({
           orderSn,
           labelUrl: label.url,
           format: label.format,
           trackingNumber: label.trackingNumber || null,
           expiresAt
         });
-        
-        console.log('[label-cache] Insert result:', result);
-        console.log('[label-cache] Cache entry inserted successfully');
       }
-      
-      console.log('[label-cache] ✅ Successfully cached label for order:', orderSn);
     } catch (error: any) {
       console.error('[label-cache] ❌ Error setting cache for order:', orderSn);
       console.error('[label-cache] Error message:', error.message);

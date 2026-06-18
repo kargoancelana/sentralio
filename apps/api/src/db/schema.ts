@@ -1,4 +1,4 @@
-import { int, mysqlTable, timestamp, varchar, text, uniqueIndex, index, bigint, date, primaryKey, mysqlEnum } from "drizzle-orm/mysql-core";
+import { int, mysqlTable, timestamp, varchar, text, uniqueIndex, index, bigint, date, primaryKey, mysqlEnum, mediumtext } from "drizzle-orm/mysql-core";
 
 export const masterProducts = mysqlTable("master_products", {
   id: int("id").primaryKey().autoincrement(),
@@ -144,10 +144,10 @@ export const syncState = mysqlTable("sync_state", {
 export const labelCacheTable = mysqlTable("label_cache", {
   id: int("id").primaryKey().autoincrement(),
   orderSn: varchar("order_sn", { length: 100 }).notNull().unique(),
-  labelUrl: text("label_url").notNull(), // MEDIUMTEXT: base64 PDF bisa 50-200KB
+  labelUrl: mediumtext("label_url").notNull(), // MEDIUMTEXT: base64 PDF bisa 50-200KB
   format: varchar("format", { length: 10 }).notNull().default("pdf"),
   trackingNumber: varchar("tracking_number", { length: 100 }),
-  labelDataJson: text("label_data_json"), // MEDIUMTEXT: JSON for frontend label rendering (cache for re-prints)
+  labelDataJson: mediumtext("label_data_json"), // MEDIUMTEXT: JSON for frontend label rendering (cache for re-prints)
   expiresAt: timestamp("expires_at").notNull(), // Label URL expires after 14 days
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (t) => ({
