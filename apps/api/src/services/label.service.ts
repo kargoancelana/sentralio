@@ -1651,8 +1651,10 @@ export async function getBatchLabelsOptimized(orderSns: string[]): Promise<{
     const cachedPdfs: string[] = [];
     const uncachedOrderSns: string[] = [];
 
+    const cacheMap = await labelCache.getMany(orderSns);
+
     for (const orderSn of orderSns) {
-      const cached = await labelCache.get(orderSn);
+      const cached = cacheMap.get(orderSn);
       if (cached && cached.url) {
         // Extract base64 from data URL
         const base64Match = cached.url.match(/^data:application\/pdf;base64,(.+)$/);
@@ -1686,64 +1688,19 @@ export async function getBatchLabelsOptimized(orderSns: string[]): Promise<{
       return { success: true, pdfUrl, successCount: orderSns.length, failedOrders: [] };
     }
 
-    // If MOST are cached (>50%), merge cached + only fetch uncached from Shopee
-    // This avoids re-downloading already-cached labels
-    if (cachedPdfs.length > 0 && uncachedOrderSns.length > 0) {
-      console.log('[label-service] batch: partial cache hit, fetching only uncached orders from Shopee:', { cached: cachedPdfs.length, uncached: uncachedOrderSns.length, total: orderSns.length });
-      
-      // Recursively fetch only uncached orders
-      const uncachedResult = await getBatchLabelsOptimized(uncachedOrderSns);
-      
-      // Merge cached PDFs with freshly fetched ones (maintain original order)
-      const allPdfBuffers: string[] = [];
-      let uncachedIdx = 0;
-      const uncachedPdfBuffers: string[] = [];
-      
-      // Extract base64 from uncached result
-      if (uncachedResult.pdfUrl) {
-        const match = uncachedResult.pdfUrl.match(/^data:application\/pdf;base64,(.+)$/);
-        if (match) uncachedPdfBuffers.push(match[1]);
-      }
-      
-      // Build merged PDF in original order: cached first, then uncached
-      // (Shopee batch download already handles ordering within each group)
-      allPdfBuffers.push(...cachedPdfs);
-      allPdfBuffers.push(...uncachedPdfBuffers);
-      
-      // Merge all
-      if (allPdfBuffers.length > 0) {
-        const { mergePdfBuffers } = await import('./pdf-merge');
-        const mergedBase64 = await mergePdfBuffers(allPdfBuffers);
-        const pdfUrl = `data:application/pdf;base64,${mergedBase64}`;
-        const duration = Date.now() - startTime;
-        const totalSuccess = cachedPdfs.length + uncachedResult.successCount;
-        console.log('[label-service] ⚡ batch partial cache merge:', { duration: `${duration}ms`, cached: cachedPdfs.length, fetched: uncachedResult.successCount, total: totalSuccess });
-        const partialCachedCount = cachedPdfs.length;
-        emitLog({
-          operation: 'batch_optimized_summary',
-          totalOrders: orderSns.length,
-          cachedCount: partialCachedCount,
-          fastPathCount: 0,
-          fallbackCount: 0,
-          failedCount: uncachedResult.failedOrders.length,
-          userFacingDurationMs: duration,
-        } satisfies BatchOptimizedSummaryLog);
-        return { success: true, pdfUrl, successCount: totalSuccess, failedOrders: uncachedResult.failedOrders };
-      }
-      
-      // If no PDFs at all, return uncached result as-is
-      return uncachedResult;
-    }
-
     console.log('[label-service] batch cache check:', { cached: cachedPdfs.length, uncached: uncachedOrderSns.length, total: orderSns.length });
 
     // ── Step 1: Validate orders and get shopId ──
     // Task 9.1 / Requirement 5.1–5.6, 5.10: one batch DB query instead of N sequential queries
     const validOrders: Array<{ orderSn: string; shopId: number; trackingNumber?: string; shippingCarrier?: string }> = [];
 
-    const validationResults = await batchValidateLabelEligibility(uncachedOrderSns);
-    for (let i = 0; i < uncachedOrderSns.length; i++) {
-      const orderSn = uncachedOrderSns[i];
+    // For mixed cache + non-cache, we use the normal miss path for ALL orders
+    // This is simpler and avoids the recursive partial cache branch
+    const fetchOrderSns = orderSns;
+
+    const validationResults = await batchValidateLabelEligibility(fetchOrderSns);
+    for (let i = 0; i < fetchOrderSns.length; i++) {
+      const orderSn = fetchOrderSns[i];
       const validation = validationResults[i];
       if (validation.valid) {
         validOrders.push({
@@ -1791,7 +1748,7 @@ export async function getBatchLabelsOptimized(orderSns: string[]): Promise<{
       return {
         success: false,
         successCount: 0,
-        failedOrders: multiShopFailed
+        failedOrders: [...failedOrders, ...multiShopFailed]
       };
     }
     const shopId = validOrders[0].shopId;

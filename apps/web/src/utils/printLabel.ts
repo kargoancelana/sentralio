@@ -7,7 +7,7 @@
  *
  * Two entry points:
  * - printCustomLabels(labels) — render HTML labels with barcode/QR + picking list
- * - printOfficialLabels(pdfUrls, orderSns) — merge PDFs + append picking list pages
+ * - printOfficialLabels(pdfUrls, orderSns) — merge PDFs only (no picking list)
  *
  * Both auto-mark orders as printed via API.
  */
@@ -517,137 +517,6 @@ export async function printOfficialLabels(
       const pdf = await PDFDocument.load(data);
       const pages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
       pages.forEach(p => mergedPdf.addPage(p));
-    }
-  }
-
-  // Fetch picking items for the orders
-  let pickingItems: PickingItem[] = [];
-  try {
-    const result = await api.orderLabelDataBatch(orderSns);
-    if (result.success && result.data) {
-      const items = result.data.results.filter((r: any) => r.success && r.data).map((r: any) => r.data);
-      if (items.length > 0) {
-        pickingItems = aggregatePickingItems(items);
-      }
-    }
-  } catch {
-    // Picking list is optional — proceed without it
-  }
-
-  // Append picking list page(s) using pdf-lib text drawing
-  if (pickingItems.length > 0) {
-    const fontRegular = await mergedPdf.embedFont(StandardFonts.Helvetica);
-    const fontBold = await mergedPdf.embedFont(StandardFonts.HelveticaBold);
-
-    // Page dimensions: 4x6 inches = 288x432 points
-    const PAGE_WIDTH = 288;
-    const PAGE_HEIGHT = 432;
-    const MARGIN_X = 18;
-    const MARGIN_TOP = 30;
-    const TITLE_SIZE = 18;
-    const ITEM_SIZE = 9;
-    const LINE_HEIGHT = 13;
-    const ITEMS_PER_PAGE = 20;
-
-    const pages: PickingItem[][] = [];
-    for (let i = 0; i < pickingItems.length; i += ITEMS_PER_PAGE) {
-      pages.push(pickingItems.slice(i, i + ITEMS_PER_PAGE));
-    }
-
-    // Grand total across all picking items, drawn only on the last page so
-    // the user reads it once after walking through every variant. Mirrors
-    // the HTML picking list behavior in `buildPickingListHtml`.
-    const totalQty = pickingItems.reduce((sum, it) => sum + it.qty, 0);
-
-    for (let pageIdx = 0; pageIdx < pages.length; pageIdx++) {
-      const page = mergedPdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-      let y = PAGE_HEIGHT - MARGIN_TOP;
-
-      const titleText = pages.length > 1
-        ? `PICKING LIST (${pageIdx + 1}/${pages.length})`
-        : 'PICKING LIST';
-      const titleWidth = fontBold.widthOfTextAtSize(titleText, TITLE_SIZE);
-      page.drawText(titleText, {
-        x: (PAGE_WIDTH - titleWidth) / 2,
-        y,
-        size: TITLE_SIZE,
-        font: fontBold,
-        color: rgb(0, 0, 0),
-      });
-      y -= 8;
-
-      page.drawLine({
-        start: { x: MARGIN_X, y },
-        end: { x: PAGE_WIDTH - MARGIN_X, y },
-        thickness: 1.5,
-        color: rgb(0, 0, 0),
-      });
-      y -= 18;
-
-      for (const item of pages[pageIdx]) {
-        const isUnmapped = item.sku === UNMAPPED_SKU_SENTINEL;
-        const textColor = isUnmapped ? rgb(0.5, 0.5, 0.5) : rgb(0, 0, 0);
-
-        if (isUnmapped) {
-          y -= 4;
-          page.drawLine({
-            start: { x: MARGIN_X, y: y + 6 },
-            end: { x: PAGE_WIDTH - MARGIN_X, y: y + 6 },
-            thickness: 0.5,
-            color: rgb(0.7, 0.7, 0.7),
-          });
-          y -= 4;
-        }
-
-        const qtyText = ` : ${item.qty}pcs`;
-        const maxNameWidth = PAGE_WIDTH - (2 * MARGIN_X) - fontRegular.widthOfTextAtSize(qtyText, ITEM_SIZE);
-        let variantName = item.variantName;
-        while (fontRegular.widthOfTextAtSize(variantName, ITEM_SIZE) > maxNameWidth && variantName.length > 3) {
-          variantName = variantName.slice(0, -4) + '...';
-        }
-
-        page.drawText(variantName, {
-          x: MARGIN_X,
-          y,
-          size: ITEM_SIZE,
-          font: fontBold,
-          color: textColor,
-        });
-        const nameWidth = fontBold.widthOfTextAtSize(variantName, ITEM_SIZE);
-        page.drawText(qtyText, {
-          x: MARGIN_X + nameWidth,
-          y,
-          size: ITEM_SIZE,
-          font: fontRegular,
-          color: textColor,
-        });
-
-        y -= LINE_HEIGHT;
-      }
-
-      // Draw grand total on the last page (right-aligned, below a separator line).
-      const isLastPage = pageIdx === pages.length - 1;
-      if (isLastPage) {
-        y -= 4;
-        page.drawLine({
-          start: { x: MARGIN_X, y },
-          end: { x: PAGE_WIDTH - MARGIN_X, y },
-          thickness: 1,
-          color: rgb(0, 0, 0),
-        });
-        y -= 14;
-
-        const TOTAL_SIZE = 11;
-        const totalText = `Total : ${totalQty}pcs`;
-        const totalWidth = fontBold.widthOfTextAtSize(totalText, TOTAL_SIZE);
-        page.drawText(totalText, {
-          x: PAGE_WIDTH - MARGIN_X - totalWidth,
-          y,
-          size: TOTAL_SIZE,
-          font: fontBold,
-          color: rgb(0, 0, 0),
-        });
-      }
     }
   }
 

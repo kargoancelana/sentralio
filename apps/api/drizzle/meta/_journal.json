@@ -267,6 +267,13 @@
       "when": 1781746494691,
       "tag": "0037_living_lionheart",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "5",
+      "when": 1781767457893,
+      "tag": "0038_bored_prodigy",
+      "breakpoints": true
     }
   ]
 }
