@@ -140,7 +140,7 @@ export class LabelCache {
   }
 
   /**
-   * Store label in cache with 24-hour TTL
+   * Store label in cache with 14-day TTL
    * 
    * @param orderSn - Order serial number (cache key)
    * @param label - Label document to cache
