@@ -29,6 +29,7 @@ import { shopeeCredentials, shopeeOrders, syncState } from "../db/schema";
 import { syncShopeeOrdersService, syncShopeeOrdersIncremental } from "./order.service";
 import { getShopeeOrderDetails } from "./shopee-raw";
 import { eq, and, or, inArray } from "drizzle-orm";
+import { getConnectedShopIds } from "./active-shops";
 
 interface SyncJobConfig {
   intervalMs: number;
@@ -234,7 +235,7 @@ class BackgroundSyncService {
       description: 'Active orders (incremental with 6min overlap, update_time, 7 days first run)',
       isIncremental: true,
       timeRangeField: 'update_time',
-    }, shops);
+    });
 
     // Stagger: wait 2s between job starts to avoid rate limit burst
     await new Promise(r => setTimeout(r, 2000));
@@ -252,7 +253,7 @@ class BackgroundSyncService {
       description: 'Active safety net (last 10 days, update_time, includes CANCELLED)',
       isIncremental: false,
       timeRangeField: 'update_time',
-    }, shops);
+    });
 
     await new Promise(r => setTimeout(r, 2000));
 
@@ -267,7 +268,7 @@ class BackgroundSyncService {
       description: 'Completed orders (30 days with auto-chunking, update_time, includes CANCELLED)',
       isIncremental: true,
       timeRangeField: 'update_time',
-    }, shops);
+    });
 
     await new Promise(r => setTimeout(r, 2000));
 
@@ -275,7 +276,7 @@ class BackgroundSyncService {
     // OPTIMIZED: 30 minutes (was 15 min)
     // READY_TO_SHIP, PROCESSED, or SHIPPED that should have progressed.
     // This bypasses get_order_list and directly fetches details for stuck orders.
-    this.scheduleStuckOrdersJob(shops);
+    this.scheduleStuckOrdersJob();
 
     await new Promise(r => setTimeout(r, 2000));
 
@@ -323,8 +324,7 @@ class BackgroundSyncService {
    */
   private scheduleJob(
     jobName: string,
-    config: SyncJobConfig,
-    shops: { shopId: number }[]
+    config: SyncJobConfig
   ) {
     // Initialize stats
     this.syncStats.set(jobName, {
@@ -335,12 +335,12 @@ class BackgroundSyncService {
     });
 
     // Run immediately on start
-    this.runSyncJob(jobName, config, shops);
+    this.runSyncJob(jobName, config);
 
     // Schedule recurring job
     const intervalId = setInterval(() => {
       if (!this.isShuttingDown) {
-        this.runSyncJob(jobName, config, shops);
+        this.runSyncJob(jobName, config);
       }
     }, config.intervalMs);
 
@@ -360,11 +360,17 @@ class BackgroundSyncService {
    */
   private async runSyncJob(
     jobName: string,
-    config: SyncJobConfig,
-    shops: { shopId: number }[]
+    config: SyncJobConfig
   ) {
     const stats = this.syncStats.get(jobName);
     if (!stats) return;
+
+    const shopIds = await getConnectedShopIds();
+    if (shopIds.length === 0) {
+      console.log(`[background-sync] Job "${jobName}": no connected shops, skip tick`);
+      return;
+    }
+    const shops = shopIds.map((shopId) => ({ shopId }));
 
     console.log(`[background-sync] Running job "${jobName}": ${config.description}`);
     const startTime = Date.now();
@@ -636,7 +642,7 @@ class BackgroundSyncService {
    * then batch-fetches their current status from Shopee API.
    * This handles the edge case where both create_time and update_time are outside the sync window.
    */
-  private scheduleStuckOrdersJob(shops: { shopId: number }[]) {
+  private scheduleStuckOrdersJob() {
     const jobName = 'stuck-orders-refresh';
     const intervalMs = 30 * 60 * 1000; // Every 30 minutes (was 15 min)
 
@@ -648,12 +654,12 @@ class BackgroundSyncService {
     });
 
     // Run immediately
-    this.runStuckOrdersRefresh(shops);
+    this.runStuckOrdersRefresh();
 
     // Schedule recurring
     const intervalId = setInterval(() => {
       if (!this.isShuttingDown) {
-        this.runStuckOrdersRefresh(shops);
+        this.runStuckOrdersRefresh();
       }
     }, intervalMs);
 
@@ -668,10 +674,17 @@ class BackgroundSyncService {
    * 
    * INCLUDES CANCELLED: Also catches orders that were PROCESSED but got cancelled.
    */
-  private async runStuckOrdersRefresh(shops: { shopId: number }[]) {
+  private async runStuckOrdersRefresh() {
     const jobName = 'stuck-orders-refresh';
     const stats = this.syncStats.get(jobName);
     if (!stats) return;
+
+    const shopIds = await getConnectedShopIds();
+    if (shopIds.length === 0) {
+      console.log(`[background-sync] Job "${jobName}": no connected shops, skip tick`);
+      return;
+    }
+    const shops = shopIds.map((shopId) => ({ shopId }));
 
     console.log(`[background-sync] Running job "${jobName}": Refreshing stuck orders`);
     const startTime = Date.now();
