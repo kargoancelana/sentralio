@@ -1,13 +1,13 @@
 import { Worker } from "bullmq";
 import { connection } from "./connection";
 import { allQueues } from "./queues";
-import { startExampleWorker } from "./example.worker";
+import { startOnboardingWorker } from "./onboarding.worker";
 
 let workers: Worker[] = [];
 
 export async function startQueues() {
   console.log("[queue] Starting workers...");
-  workers = [startExampleWorker()];
+  workers = [startOnboardingWorker()];
   console.log(`[queue] ${workers.length} worker(s) started`);
 }
 
@@ -19,4 +19,4 @@ export async function stopQueues() {
   console.log("[queue] Stopped");
 }
 
-export { exampleQueue } from "./queues";
+export { onboardingQueue } from "./queues";
