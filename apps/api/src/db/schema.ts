@@ -69,6 +69,7 @@ export const products = mysqlTable("products", {
 
 export const shopeeCredentials = mysqlTable("shopee_credentials", {
   id: int("id").primaryKey().autoincrement(),
+  companyId: int("company_id").notNull().default(1).references(() => companies.id),
   partnerId: int("partner_id").notNull(),
   partnerKey: varchar("partner_key", { length: 255 }).notNull(),
   shopId: int("shop_id").notNull(),
@@ -90,6 +91,7 @@ export const shopeeCredentials = mysqlTable("shopee_credentials", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => ({
   uniqShopId: uniqueIndex("uniq_shop_id").on(t.shopId),
+  idxCompany: index("idx_shopee_credentials_company").on(t.companyId),
 }));
 
 export const shopeeOrders = mysqlTable("shopee_orders", {
@@ -280,6 +282,7 @@ export const userRoleEnum = mysqlEnum("role", ["admin", "staff"]);
 
 export const users = mysqlTable("users", {
   id:           int("id").primaryKey().autoincrement(),
+  companyId:    int("company_id").notNull().default(1).references(() => companies.id),
   email:        varchar("email", { length: 254 }).notNull(),        // stored verbatim
   emailLower:   varchar("email_lower", { length: 254 }).notNull(),  // ASCII-lowercased + trimmed; used for lookup
   name:         varchar("name", { length: 100 }).notNull(),
@@ -291,6 +294,7 @@ export const users = mysqlTable("users", {
   updatedAt:    timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
 }, (t) => ({
   uniqEmailLower: uniqueIndex("uniq_users_email_lower").on(t.emailLower),
+  idxCompany: index("idx_users_company").on(t.companyId),
 }));
 
 export const failedLoginAttempts = mysqlTable("failed_login_attempts", {

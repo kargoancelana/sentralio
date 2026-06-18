@@ -1,8 +1,8 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "cf1f2319-5964-4783-a02d-52d30b0d4fa8",
-  "prevId": "508cce31-61d1-4c85-8d8d-095ff1f96e76",
+  "id": "cc6859c0-5632-4e04-9034-ffbf6409dd5c",
+  "prevId": "ba5b17bd-beb0-4672-a7c5-1da4ed7eb721",
   "tables": {
     "account_lockouts": {
       "name": "account_lockouts",
@@ -237,6 +237,68 @@
       "compositePrimaryKeys": {
         "auto_boost_queue_id": {
           "name": "auto_boost_queue_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "companies": {
+      "name": "companies",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "slug": {
+          "name": "slug",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "enum('pending','active','suspended','expired')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'active'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(now())"
+        }
+      },
+      "indexes": {
+        "uniq_companies_slug": {
+          "name": "uniq_companies_slug",
+          "columns": [
+            "slug"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "companies_id": {
+          "name": "companies_id",
           "columns": [
             "id"
           ]
@@ -515,7 +577,7 @@
         },
         "label_url": {
           "name": "label_url",
-          "type": "text",
+          "type": "mediumtext",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
@@ -537,7 +599,7 @@
         },
         "label_data_json": {
           "name": "label_data_json",
-          "type": "text",
+          "type": "mediumtext",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
@@ -1363,6 +1425,14 @@
           "notNull": true,
           "autoincrement": true
         },
+        "company_id": {
+          "name": "company_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
         "partner_id": {
           "name": "partner_id",
           "type": "int",
@@ -1420,6 +1490,49 @@
           "autoincrement": false,
           "default": "'connected'"
         },
+        "initial_sync_status": {
+          "name": "initial_sync_status",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'pending'"
+        },
+        "initial_sync_step": {
+          "name": "initial_sync_step",
+          "type": "varchar(40)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "initial_sync_error": {
+          "name": "initial_sync_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "initial_sync_started_at": {
+          "name": "initial_sync_started_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "initial_sync_at": {
+          "name": "initial_sync_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "disconnected_at": {
+          "name": "disconnected_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp",
@@ -1436,9 +1549,30 @@
             "shop_id"
           ],
           "isUnique": true
+        },
+        "idx_shopee_credentials_company": {
+          "name": "idx_shopee_credentials_company",
+          "columns": [
+            "company_id"
+          ],
+          "isUnique": false
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "shopee_credentials_company_id_companies_id_fk": {
+          "name": "shopee_credentials_company_id_companies_id_fk",
+          "tableFrom": "shopee_credentials",
+          "tableTo": "companies",
+          "columnsFrom": [
+            "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {
         "shopee_credentials_id": {
           "name": "shopee_credentials_id",
@@ -1986,6 +2120,14 @@
           "notNull": true,
           "autoincrement": true
         },
+        "company_id": {
+          "name": "company_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
         "email": {
           "name": "email",
           "type": "varchar(254)",
@@ -2062,9 +2204,30 @@
             "email_lower"
           ],
           "isUnique": true
+        },
+        "idx_users_company": {
+          "name": "idx_users_company",
+          "columns": [
+            "company_id"
+          ],
+          "isUnique": false
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "users_company_id_companies_id_fk": {
+          "name": "users_company_id_companies_id_fk",
+          "tableFrom": "users",
+          "tableTo": "companies",
+          "columnsFrom": [
+            "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {
         "users_id": {
           "name": "users_id",

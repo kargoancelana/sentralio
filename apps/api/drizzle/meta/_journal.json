@@ -281,6 +281,13 @@
       "when": 1781789115916,
       "tag": "0039_bouncy_ego",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "5",
+      "when": 1781825803111,
+      "tag": "0040_warm_slapstick",
+      "breakpoints": true
     }
   ]
 }
