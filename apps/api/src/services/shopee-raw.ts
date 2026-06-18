@@ -1,5 +1,6 @@
 import * as crypto from 'crypto';
 import { getValidToken, refreshAccessToken } from './shopee-auth';
+import { recordApiCall } from './api-monitor';
 
 function isAuthError(data: any): boolean {
   if (!data) return false;
@@ -12,6 +13,13 @@ function isAuthError(data: any): boolean {
     msg.includes("token") ||
     (errorKey === "error_param" && msg.includes("invalid timestamp"))
   );
+}
+
+function isRateLimitError(status: number, data: any): boolean {
+  if (status === 429) return true;
+  const e = String(data?.error ?? "").toLowerCase();
+  const m = String(data?.message ?? "").toLowerCase();
+  return /rate|limit|too many/.test(e) || /rate|limit|too many/.test(m);
 }
 
 /**
@@ -42,6 +50,7 @@ export async function shopeeRequest(input: { method: string; path: string; query
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
 
+      recordApiCall(input.path);
       res = await fetch(url, {
         method: input.method,
         signal: controller.signal,
@@ -70,6 +79,13 @@ export async function shopeeRequest(input: { method: string; path: string; query
 
     if (res.status >= 400 && res.status < 500) {
       const data = await res.json();
+      
+      if (isRateLimitError(res.status, data) && i < 2) {
+        const delay = Math.min(30000, 2000 * Math.pow(2, i)) + Math.floor(Math.random() * 500);
+        console.warn(`[shopeeRequest] Rate limit (${res.status}) on ${input.path}, backoff ${delay}ms (attempt ${i + 1}/3)`);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
       
       if (isAuthError(data)) {
         if (!isRetryFromExpired) {
