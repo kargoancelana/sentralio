@@ -145,14 +145,14 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
       if (isNewShop && prevSyncStatus !== "syncing" && prevSyncStatus !== "done" && prevSyncStatus !== "pending") {
         console.log(`[shopee-oauth] Enqueueing onboarding job for shop_id=${shopIdNum}...`);
         try {
-          await onboardingQueue.add(`onboarding-${shopIdNum}`, { shopId: shopIdNum });
+          await onboardingQueue.add(
+            `onboarding-${shopIdNum}`, 
+            { shopId: shopIdNum },
+            { attempts: 3, backoff: { type: "exponential", delay: 60000 }, removeOnComplete: 100, removeOnFail: 500 }
+          );
         } catch (qErr: any) {
           console.error(`[shopee-oauth] Failed to enqueue onboarding job for shop_id=${shopIdNum}:`, qErr.message);
         }
-      } else if (isNewShop && prevSyncStatus === "pending") {
-        // legacy pending? No, we skip if pending. Wait, instruction says: 
-        // "guard: isNewShop = existing.length === 0 || prevStatus === "error". Skip kalau syncing/done/pending (legacy)"
-        // If prevSyncStatus === "pending", it will fall here but not do anything due to the condition above
       }
 
       console.log(`[shopee-oauth] Token saved. Valid until ${expiresAt.toISOString()}`);

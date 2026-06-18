@@ -38,12 +38,8 @@ export function startOnboardingWorker(): Worker {
       await job.updateProgress(5);
 
       // Step 1: Products
-      try {
-        console.log(`[onboarding-worker] Shop ${shopId} - syncing products...`);
-        await syncProductsForShop(shopId);
-      } catch (err: any) {
-        console.warn(`[onboarding-worker] Shop ${shopId} - products sync failed: ${err.message}`);
-      }
+      console.log(`[onboarding-worker] Shop ${shopId} - syncing products...`);
+      await syncProductsForShop(shopId);
 
       await job.updateProgress(30);
 
@@ -52,14 +48,10 @@ export function startOnboardingWorker(): Worker {
         .set({ initialSyncStep: "orders", updatedAt: new Date() })
         .where(eq(shopeeCredentials.shopId, shopId));
       
-      try {
-        console.log(`[onboarding-worker] Shop ${shopId} - syncing orders (30 days)...`);
-        await syncOrdersForShop(shopId, 30);
-        console.log(`[onboarding-worker] Shop ${shopId} - refreshing order statuses...`);
-        await refreshOrderStatusesForShop(shopId);
-      } catch (err: any) {
-        console.warn(`[onboarding-worker] Shop ${shopId} - orders sync failed: ${err.message}`);
-      }
+      console.log(`[onboarding-worker] Shop ${shopId} - syncing orders (30 days)...`);
+      await syncOrdersForShop(shopId, 30);
+      console.log(`[onboarding-worker] Shop ${shopId} - refreshing order statuses...`);
+      await refreshOrderStatusesForShop(shopId);
 
       await job.updateProgress(60);
 
@@ -68,12 +60,8 @@ export function startOnboardingWorker(): Worker {
         .set({ initialSyncStep: "escrow", updatedAt: new Date() })
         .where(eq(shopeeCredentials.shopId, shopId));
 
-      try {
-        console.log(`[onboarding-worker] Shop ${shopId} - syncing escrow (180 days)...`);
-        await syncEscrowForShop(180, `escrow_onboarding_${shopId}`);
-      } catch (err: any) {
-        console.warn(`[onboarding-worker] Shop ${shopId} - escrow sync failed: ${err.message}`);
-      }
+      console.log(`[onboarding-worker] Shop ${shopId} - syncing escrow (180 days)...`);
+      await syncEscrowForShop(180, `escrow_onboarding_${shopId}`);
 
       await job.updateProgress(85);
 
@@ -82,20 +70,16 @@ export function startOnboardingWorker(): Worker {
         .set({ initialSyncStep: "ads", updatedAt: new Date() })
         .where(eq(shopeeCredentials.shopId, shopId));
 
-      try {
-        console.log(`[onboarding-worker] Shop ${shopId} - syncing ads (180 days)...`);
-        const { startDate, endDate } = lastNDaysWIB(180);
-        await syncAdsForShop(shopId, startDate, endDate);
-      } catch (err: any) {
-        console.warn(`[onboarding-worker] Shop ${shopId} - ads sync failed: ${err.message}`);
-      }
+      console.log(`[onboarding-worker] Shop ${shopId} - syncing ads (180 days)...`);
+      const { startDate, endDate } = lastNDaysWIB(180);
+      await syncAdsForShop(shopId, startDate, endDate);
 
       // Complete
       console.log(`[onboarding-worker] Shop ${shopId} onboarding complete!`);
       await db.update(shopeeCredentials)
         .set({
           initialSyncStatus: "done",
-          initialSyncStep: "done",
+          initialSyncStep: null,
           initialSyncAt: new Date(),
           updatedAt: new Date()
         })
@@ -104,7 +88,11 @@ export function startOnboardingWorker(): Worker {
       await job.updateProgress(100);
       return { success: true, shopId };
     },
-    { connection }
+    { 
+      connection,
+      concurrency: 2,
+      limiter: { max: 1, duration: 1500 }
+    }
   );
 
   worker.on("failed", async (job, err) => {
