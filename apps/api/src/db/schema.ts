@@ -31,6 +31,7 @@ export const masterProductVariants = mysqlTable("master_product_variants", {
 
 export const productGroups = mysqlTable("product_groups", {
   id: int("id").primaryKey().autoincrement(),
+  companyId: int("company_id").notNull().default(1).references(() => companies.id),
   shopId: int("shop_id").notNull(),
   shopeeItemId: varchar("shopee_item_id", { length: 64 }),
   name: varchar("name", { length: 255 }).notNull(),
@@ -43,11 +44,13 @@ export const productGroups = mysqlTable("product_groups", {
   lastSync: timestamp("last_sync"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (t) => ({
-  uniqShopeeItemId: uniqueIndex("uniq_shopee_item_id").on(t.shopId, t.shopeeItemId)
+  uniqShopeeItemId: uniqueIndex("uniq_shopee_item_id").on(t.shopId, t.shopeeItemId),
+  idxCompany: index("idx_product_groups_company").on(t.companyId),
 }));
 
 export const products = mysqlTable("products", {
   id: int("id").primaryKey().autoincrement(),
+  companyId: int("company_id").notNull().default(1).references(() => companies.id),
   shopId: int("shop_id").notNull(),
   masterProductId: int("master_product_id").references(() => masterProducts.id),
   groupId: int("group_id")
@@ -64,7 +67,8 @@ export const products = mysqlTable("products", {
   lastError: text("last_error"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => ({
-  uniqShopeeModelId: uniqueIndex("uniq_shopee_model_id").on(t.shopId, t.shopeeModelId)
+  uniqShopeeModelId: uniqueIndex("uniq_shopee_model_id").on(t.shopId, t.shopeeModelId),
+  idxCompany: index("idx_products_company").on(t.companyId),
 }));
 
 export const shopeeCredentials = mysqlTable("shopee_credentials", {
@@ -96,6 +100,7 @@ export const shopeeCredentials = mysqlTable("shopee_credentials", {
 
 export const shopeeOrders = mysqlTable("shopee_orders", {
   id: int("id").primaryKey().autoincrement(),
+  companyId: int("company_id").notNull().default(1).references(() => companies.id),
   shopId: int("shop_id").notNull(),
   orderSn: varchar("order_sn", { length: 100 }).notNull().unique(),
   orderStatus: varchar("order_status", { length: 50 }).notNull(),
@@ -116,6 +121,7 @@ export const shopeeOrders = mysqlTable("shopee_orders", {
 }, (t) => ({
   uniqOrderSn: uniqueIndex("uniq_order_sn").on(t.orderSn),
   idxEscrowReleaseTime: index("idx_escrow_release_time").on(t.escrowReleaseTime),
+  idxCompany: index("idx_shopee_orders_company").on(t.companyId),
 }));
 
 export const shopeeOrderItems = mysqlTable("shopee_order_items", {
@@ -141,6 +147,7 @@ export const shopeeOrderItems = mysqlTable("shopee_order_items", {
 // Sync state table for background sync resilience
 export const syncState = mysqlTable("sync_state", {
   id: int("id").primaryKey().autoincrement(),
+  companyId: int("company_id").notNull().default(1).references(() => companies.id),
   jobName: varchar("job_name", { length: 100 }).notNull(),
   shopId: int("shop_id").notNull(),
   lastSyncTime: timestamp("last_sync_time").notNull(),
@@ -151,6 +158,7 @@ export const syncState = mysqlTable("sync_state", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => ({
   uniqJobShop: uniqueIndex("uniq_job_shop").on(t.jobName, t.shopId),
+  idxCompany: index("idx_sync_state_company").on(t.companyId),
 }));
 
 // Label cache table for persistent label URL storage
@@ -268,12 +276,14 @@ export const costAuditLog = mysqlTable("cost_audit_log", {
 // ─── Shopee Ads Daily Expense Cache ────────────────────────────
 
 export const shopeeAdsDailyExpense = mysqlTable("shopee_ads_daily_expense", {
+  companyId: int("company_id").notNull().default(1).references(() => companies.id),
   shopId: bigint("shop_id", { mode: "number" }).notNull(),
   date: date("date", { mode: "string" }).notNull(),
   expense: int("expense").notNull().default(0),
   fetchedAt: timestamp("fetched_at").notNull().defaultNow(),
 }, (t) => ({
   pk: primaryKey({ columns: [t.shopId, t.date] }),
+  idxCompany: index("idx_shopee_ads_daily_expense_company").on(t.companyId),
 }));
 
 // ─── Auth Tables ───────────────────────────────────────────────
@@ -332,30 +342,39 @@ export const staffPermissions = mysqlTable("staff_permissions", {
 
 export const autoBoostConfig = mysqlTable("auto_boost_config", {
   shopId: bigint("shop_id", { mode: "number" }).primaryKey(),
+  companyId: int("company_id").notNull().default(1).references(() => companies.id),
   enabled: int("enabled").notNull().default(0), // 0/1
   mode: varchar("mode", { length: 16 }).notNull().default("rotation"), // rotation | fixed
   activeHourStart: int("active_hour_start").notNull().default(0),  // 0-23 WIB
   activeHourEnd: int("active_hour_end").notNull().default(23),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
-});
+}, (t) => ({
+  idxCompany: index("idx_auto_boost_config_company").on(t.companyId),
+}));
 
 export const autoBoostQueue = mysqlTable("auto_boost_queue", {
   id: int("id").autoincrement().primaryKey(),
+  companyId: int("company_id").notNull().default(1).references(() => companies.id),
   shopId: bigint("shop_id", { mode: "number" }).notNull(),
   shopeeItemId: bigint("shopee_item_id", { mode: "number" }).notNull(),
   position: int("position").notNull().default(0), // urutan rotasi
   enabled: int("enabled").notNull().default(1),
   lastBoostedAt: timestamp("last_boosted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (t) => ({
+  idxCompany: index("idx_auto_boost_queue_company").on(t.companyId),
+}));
 
 export const autoBoostLog = mysqlTable("auto_boost_log", {
   id: int("id").autoincrement().primaryKey(),
+  companyId: int("company_id").notNull().default(1).references(() => companies.id),
   shopId: bigint("shop_id", { mode: "number" }).notNull(),
   shopeeItemId: bigint("shopee_item_id", { mode: "number" }).notNull(),
   status: varchar("status", { length: 16 }).notNull(), // success | failed
   message: varchar("message", { length: 512 }),
   boostedAt: timestamp("boosted_at").notNull().defaultNow(),
-});
+}, (t) => ({
+  idxCompany: index("idx_auto_boost_log_company").on(t.companyId),
+}));
 
