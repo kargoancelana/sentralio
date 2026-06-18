@@ -315,6 +315,9 @@ setTimeout(async () => {
     
     await startQueues();
     
+    const { startApiMonitorLogger } = await import("./services/api-monitor");
+    startApiMonitorLogger();
+    
     // Auto Boost Scheduler
     const { autoBoostScheduler } = await import('./services/auto-boost.scheduler');
     autoBoostScheduler.start();
