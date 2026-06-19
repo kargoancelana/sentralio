@@ -14,20 +14,28 @@ export const companies = mysqlTable("companies", {
 
 export const masterProducts = mysqlTable("master_products", {
   id: int("id").primaryKey().autoincrement(),
-  sku: varchar("sku", { length: 100 }).notNull().unique(),
+  companyId: int("company_id").notNull().default(1).references(() => companies.id),
+  sku: varchar("sku", { length: 100 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   stock: int("stock").notNull().default(0),
   imageUrl: varchar("image_url", { length: 500 }), // cover thumbnail captured at import time
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (t) => ({
+  uniqCompanySku: uniqueIndex("uniq_master_products_company_sku").on(t.companyId, t.sku),
+  idxCompany: index("idx_master_products_company").on(t.companyId),
+}));
 
 export const masterProductVariants = mysqlTable("master_product_variants", {
   id: int("id").primaryKey().autoincrement(),
+  companyId: int("company_id").notNull().default(1).references(() => companies.id),
   masterProductId: int("master_product_id").notNull().references(() => masterProducts.id, { onDelete: "cascade" }),
-  sku: varchar("sku", { length: 100 }).notNull().unique(),
+  sku: varchar("sku", { length: 100 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   stock: int("stock").notNull().default(0),
-});
+}, (t) => ({
+  uniqCompanySku: uniqueIndex("uniq_master_product_variants_company_sku").on(t.companyId, t.sku),
+  idxCompany: index("idx_master_product_variants_company").on(t.companyId),
+}));
 
 export const productGroups = mysqlTable("product_groups", {
   id: int("id").primaryKey().autoincrement(),
@@ -184,6 +192,7 @@ export const labelCacheTable = mysqlTable("label_cache", {
 
 export const hppEntries = mysqlTable("hpp_entries", {
   id: int("id").primaryKey().autoincrement(),
+  companyId: int("company_id").notNull().default(1).references(() => companies.id),
   variantId: int("variant_id").notNull()
     .references(() => masterProductVariants.id, { onDelete: "cascade" }),
   hppValue: int("hpp_value").notNull(),          // in Rupiah
@@ -196,12 +205,14 @@ export const hppEntries = mysqlTable("hpp_entries", {
 }, (t) => ({
   idxVariant: index("idx_hpp_variant").on(t.variantId),
   idxVariantPeriod: index("idx_hpp_variant_period").on(t.variantId, t.startDate, t.endDate),
+  idxCompany: index("idx_hpp_entries_company").on(t.companyId),
 }));
 
 // ─── Master Packing Cost Entries ──────────────────────────────
 
 export const masterPackingCostEntries = mysqlTable("master_packing_cost_entries", {
   id: int("id").primaryKey().autoincrement(),
+  companyId: int("company_id").notNull().default(1).references(() => companies.id),
   masterProductId: int("master_product_id").notNull()
     .references(() => masterProducts.id, { onDelete: "cascade" }),
   packingCost: int("packing_cost").notNull(),     // in Rupiah, range [0, 999999999]
@@ -215,12 +226,14 @@ export const masterPackingCostEntries = mysqlTable("master_packing_cost_entries"
 }, (t) => ({
   idxMasterProduct: index("idx_master_packing_master_product").on(t.masterProductId),
   idxMasterProductPeriod: index("idx_master_packing_period").on(t.masterProductId, t.startDate, t.endDate),
+  idxCompany: index("idx_master_packing_cost_entries_company").on(t.companyId),
 }));
 
 // ─── Biaya Packing Entries ─────────────────────────────────────
 
 export const packingCostEntries = mysqlTable("packing_cost_entries", {
   id: int("id").primaryKey().autoincrement(),
+  companyId: int("company_id").notNull().default(1).references(() => companies.id),
   productGroupId: int("product_group_id").notNull()
     .references(() => productGroups.id, { onDelete: "cascade" }),
   packingCost: int("packing_cost").notNull(),     // in Rupiah
@@ -234,6 +247,7 @@ export const packingCostEntries = mysqlTable("packing_cost_entries", {
 }, (t) => ({
   idxProductGroup: index("idx_packing_product_group").on(t.productGroupId),
   idxProductGroupPeriod: index("idx_packing_product_group_period").on(t.productGroupId, t.startDate, t.endDate),
+  idxCompany: index("idx_packing_cost_entries_company").on(t.companyId),
 }));
 
 // ─── Shopee Order Fees ─────────────────────────────────────────
