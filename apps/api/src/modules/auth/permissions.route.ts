@@ -1,53 +1,42 @@
-/**
- * Staff permissions routes — admin-only configuration of staff feature access.
- *
- *   GET /auth/permissions  → list configurable features with current enabled state
- *   PUT /auth/permissions  → update toggles (admin only)
- *
- * Both require the `user_management` feature (admin only), reusing the existing
- * authorization so only admins can change what staff can see/do.
- */
-
-import { Elysia } from 'elysia';
+import Elysia, { t } from 'elysia';
+import { getStaffPermissions, setStaffPermissions } from './permissions.service';
 import { authMiddleware } from './auth.middleware';
-import {
-  getStaffPermissions,
-  setStaffPermissions,
-  CONFIGURABLE_STAFF_FEATURES,
-} from './permissions.service';
+import { featureGuardMiddleware } from './feature-guard.middleware';
 
-export const permissionsRoutes = new Elysia({ prefix: '/auth' })
+export const permissionsRoute = new Elysia({ prefix: '/auth' })
   .use(authMiddleware)
-
-  .get('/permissions', async ({ requireFeature, set }) => {
-    requireFeature('user_management');
-    const permissions = await getStaffPermissions();
-    set.status = 200;
-    return { ok: true, permissions };
-  })
-
-  .put('/permissions', async ({ body, requireFeature, set }) => {
-    requireFeature('user_management');
-
-    const b = (body ?? {}) as { permissions?: unknown };
-    if (!Array.isArray(b.permissions)) {
-      set.status = 400;
-      return { ok: false, error: 'invalid_body', message: 'permissions array required' };
-    }
-
-    // Sanitize: accept only known configurable features with boolean enabled.
-    const updates = b.permissions
-      .filter(
-        (p): p is { feature: string; enabled: boolean } =>
-          !!p &&
-          typeof (p as any).feature === 'string' &&
-          typeof (p as any).enabled === 'boolean' &&
-          (CONFIGURABLE_STAFF_FEATURES as readonly string[]).includes((p as any).feature),
-      )
-      .map((p) => ({ feature: p.feature, enabled: p.enabled }));
-
-    await setStaffPermissions(updates);
-    const permissions = await getStaffPermissions();
-    set.status = 200;
-    return { ok: true, permissions };
-  });
+  .use(featureGuardMiddleware)
+  .get(
+    '/permissions',
+    async ({ user, requireFeature, set }) => {
+      requireFeature('user_management');
+      const permissions = await getStaffPermissions(user.companyId);
+      set.status = 200;
+      return { ok: true, permissions };
+    },
+    {
+      detail: { summary: "Get staff permissions for the caller's company" },
+    },
+  )
+  .put(
+    '/permissions',
+    async ({ user, body, requireFeature, set }) => {
+      requireFeature('user_management');
+      const updates = body.permissions;
+      await setStaffPermissions(user.companyId, updates);
+      const permissions = await getStaffPermissions(user.companyId);
+      set.status = 200;
+      return { ok: true, permissions };
+    },
+    {
+      body: t.Object({
+        permissions: t.Array(
+          t.Object({
+            feature: t.String({ minLength: 1 }),
+            enabled: t.Boolean(),
+          }),
+        ),
+      }),
+      detail: { summary: "Update staff permissions for the caller's company" },
+    },
+  );

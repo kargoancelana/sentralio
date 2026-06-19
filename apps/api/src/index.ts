@@ -23,7 +23,7 @@ import { EscrowSyncService } from "./services/escrow-sync.service";
 import { authPublicRoutes, authProtectedRoutes } from "./modules/auth/auth.route";
 import { authMiddleware } from "./modules/auth/auth.middleware";
 import { featureGuardMiddleware } from "./modules/auth/feature-guard.middleware";
-import { permissionsRoutes } from "./modules/auth/permissions.route";
+import { permissionsRoute } from "./modules/auth/permissions.route";
 import { ensureStaffPermissionsLoaded } from "./modules/auth/permissions.service";
 import { originMiddleware } from "./modules/auth/origin.middleware";
 import { usersRoutes } from "./modules/users/users.route";
@@ -122,7 +122,7 @@ const app = new Elysia()
   .use(authProtectedRoutes)
 
   // Staff permission configuration (admin only)
-  .use(permissionsRoutes)
+  .use(permissionsRoute)
 
   // Centralized feature authorization (path-based) — enforces configurable
   // staff permissions on the backend (403) for all feature routes below.
