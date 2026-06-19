@@ -34,8 +34,9 @@ export async function syncProductsForShop(shopId: number) {
     .from(shopeeCredentials)
     .where(eq(shopeeCredentials.shopId, shopId))
     .limit(1);
-  if (credRows.length > 0) {
-    await autoMapProducts(credRows[0].companyId);
+  const cred = credRows[0];
+  if (cred) {
+    await autoMapProducts(cred.companyId);
   } else {
     console.warn(`[sync-tasks] Skipping autoMapProducts: no shopeeCredentials found for shopId=${shopId}`);
   }
