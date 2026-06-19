@@ -288,6 +288,13 @@
       "when": 1781825803111,
       "tag": "0040_warm_slapstick",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "5",
+      "when": 1781826802262,
+      "tag": "0041_boring_namora",
+      "breakpoints": true
     }
   ]
 }
