@@ -351,14 +351,17 @@ export const revokedSessions = mysqlTable("revoked_sessions", {
   idxExpiresAt: index("idx_revoked_expires").on(t.expiresAt),
 }));
 
-// Configurable per-feature access for the `staff` role. Admin always has full
-// access (not represented here). One row per configurable feature key.
+// Configurable per-feature access for the `staff` role, scoped per company.
+// Admin always has full access (not represented here). One row per (company, feature).
 // enabled: 1 = staff may access this feature, 0 = denied (403 on backend, hidden on frontend).
 export const staffPermissions = mysqlTable("staff_permissions", {
-  feature: varchar("feature", { length: 64 }).primaryKey(),
+  companyId: int("company_id").notNull().default(1).references(() => companies.id),
+  feature: varchar("feature", { length: 64 }).notNull(),
   enabled: int("enabled").notNull().default(0), // 1=true, 0=false
   updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
-});
+}, (t) => ({
+  pk: primaryKey({ columns: [t.companyId, t.feature] }),
+}));
 
 export const autoBoostConfig = mysqlTable("auto_boost_config", {
   shopId: bigint("shop_id", { mode: "number" }).primaryKey(),
