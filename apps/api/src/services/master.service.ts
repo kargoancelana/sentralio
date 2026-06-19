@@ -30,10 +30,10 @@ function isRetryableError(errorMsg: string): boolean {
  * Retry: Each batch gets 1 retry on failure.
  * Batch: Groups model_ids by item_id to reduce API calls.
  */
-export async function updateStockByMasterSku(masterProductId: number, newStock: number) {
+export async function updateStockByMasterSku(masterProductId: number, newStock: number, companyId: number) {
   // 1. Validate master product exists & fetch SKU for matching
   const masterRows = await db.select().from(masterProducts)
-    .where(eq(masterProducts.id, masterProductId)).limit(1);
+    .where(and(eq(masterProducts.companyId, companyId), eq(masterProducts.id, masterProductId))).limit(1);
 
   if (masterRows.length === 0) {
     throw new Error(`Master product with id=${masterProductId} not found`);
@@ -146,7 +146,7 @@ export async function updateStockByMasterSku(masterProductId: number, newStock: 
   if (syncCount > 0) {
     await db.update(masterProducts)
       .set({ stock: newStock })
-      .where(eq(masterProducts.id, masterProductId));
+      .where(and(eq(masterProducts.companyId, companyId), eq(masterProducts.id, masterProductId)));
     console.log(`[MASTER SKU SYNC] sku=${master.sku} master stock updated to ${newStock}`);
   } else {
     console.error(`[MASTER SKU SYNC] sku=${master.sku} ALL syncs failed — master stock NOT updated (reconciliation)`);
@@ -289,9 +289,9 @@ export async function updateMasterVariants(masterProductId: number, variants: an
 /**
  * Maps Shopee model_ids to a master product (atomic transaction).
  */
-export async function mapModelsToMaster(masterProductId: number, shopeeModelIds: string[]) {
+export async function mapModelsToMaster(masterProductId: number, shopeeModelIds: string[], companyId: number) {
   const masterRows = await db.select().from(masterProducts)
-    .where(eq(masterProducts.id, masterProductId)).limit(1);
+    .where(and(eq(masterProducts.companyId, companyId), eq(masterProducts.id, masterProductId))).limit(1);
 
   if (masterRows.length === 0) {
     throw new Error(`Master product with id=${masterProductId} not found`);
@@ -300,7 +300,7 @@ export async function mapModelsToMaster(masterProductId: number, shopeeModelIds:
   const master = masterRows[0];
 
   const productRows = await db.select().from(products)
-    .where(inArray(products.shopeeModelId, shopeeModelIds));
+    .where(and(eq(products.companyId, companyId), inArray(products.shopeeModelId, shopeeModelIds)));
 
   const foundModelIds = productRows.map(p => p.shopeeModelId);
   const missingModelIds = shopeeModelIds.filter(id => !foundModelIds.includes(id));
@@ -325,7 +325,7 @@ export async function mapModelsToMaster(masterProductId: number, shopeeModelIds:
     for (const modelId of shopeeModelIds) {
       await tx.update(products)
         .set({ masterProductId })
-        .where(eq(products.shopeeModelId, modelId));
+        .where(and(eq(products.companyId, companyId), eq(products.shopeeModelId, modelId)));
       mappedCount++;
     }
   });
@@ -602,9 +602,9 @@ export async function deleteMasterProduct(masterProductId: number, companyId: nu
 /**
  * Unlink all variants of a product group (listing) from their master product.
  */
-export async function unlinkProductGroup(shopeeItemId: string) {
+export async function unlinkProductGroup(shopeeItemId: string, companyId: number) {
   const groupProducts = await db.select().from(products)
-    .where(eq(products.shopeeItemId, shopeeItemId));
+    .where(and(eq(products.companyId, companyId), eq(products.shopeeItemId, shopeeItemId)));
 
   if (groupProducts.length === 0) {
     throw new Error(`No variants found for item_id=${shopeeItemId}`);
@@ -617,7 +617,7 @@ export async function unlinkProductGroup(shopeeItemId: string) {
 
   await db.update(products)
     .set({ masterProductId: null })
-    .where(eq(products.shopeeItemId, shopeeItemId));
+    .where(and(eq(products.companyId, companyId), eq(products.shopeeItemId, shopeeItemId)));
 
   console.log(`[MASTER UNLINK] item_id=${shopeeItemId} unlinked ${linked.length} variants`);
 
@@ -627,13 +627,13 @@ export async function unlinkProductGroup(shopeeItemId: string) {
 /**
  * Link all variants of a product group (listing) to a master product.
  */
-export async function mapProductGroupToMaster(masterProductId: number, shopeeItemId: string) {
+export async function mapProductGroupToMaster(masterProductId: number, shopeeItemId: string, companyId: number) {
   const masterRows = await db.select().from(masterProducts)
-    .where(eq(masterProducts.id, masterProductId)).limit(1);
+    .where(and(eq(masterProducts.companyId, companyId), eq(masterProducts.id, masterProductId))).limit(1);
   if (masterRows.length === 0) throw new Error(`Master product id=${masterProductId} not found`);
 
   const groupProducts = await db.select().from(products)
-    .where(eq(products.shopeeItemId, shopeeItemId));
+    .where(and(eq(products.companyId, companyId), eq(products.shopeeItemId, shopeeItemId)));
   if (groupProducts.length === 0) throw new Error(`No variants found for item_id=${shopeeItemId}`);
 
   // Check for conflicts (already mapped to a DIFFERENT master)
