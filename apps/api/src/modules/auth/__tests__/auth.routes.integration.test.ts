@@ -64,12 +64,14 @@ function awaitableResult<T>(value: T) {
 
 interface FakeUser {
   id: number;
+  companyId: number;
   email: string;
   emailLower: string;
   name: string;
   role: "admin" | "staff";
   passwordHash: string;
   isActive: number;
+  tokensValidFrom?: number;
 }
 
 /**
@@ -201,6 +203,7 @@ const TEST_NOW = new Date("2024-06-01T10:00:00.000Z");
 
 const ADMIN_USER: FakeUser = {
   id: 1,
+  companyId: 1,
   email: "admin@example.com",
   emailLower: "admin@example.com",
   name: "Admin User",
@@ -211,6 +214,7 @@ const ADMIN_USER: FakeUser = {
 
 const STAFF_USER: FakeUser = {
   id: 2,
+  companyId: 1,
   email: "staff@example.com",
   emailLower: "staff@example.com",
   name: "Staff User",
@@ -244,6 +248,7 @@ describe("POST /auth/login — 200 happy path", () => {
 
     // user must have id, email, name, role
     expect(result.user.id).toBe(1);
+    expect(result.user.companyId).toBe(1);
     expect(result.user.email).toBe("admin@example.com");
     expect(result.user.name).toBe("Admin User");
     expect(result.user.role).toBe("admin");
@@ -253,8 +258,8 @@ describe("POST /auth/login — 200 happy path", () => {
     expect(result.user).not.toHaveProperty("passwordHash");
     expect(result.user).not.toHaveProperty("password_hash");
 
-    // Exactly the four safe fields
-    expect(Object.keys(result.user).sort()).toEqual(["email", "id", "name", "role"]);
+    // Exactly the five safe fields
+    expect(Object.keys(result.user).sort()).toEqual(["companyId", "email", "id", "name", "role"]);
   });
 });
 
