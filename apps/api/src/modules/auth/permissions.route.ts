@@ -19,14 +19,14 @@ import {
 export const permissionsRoutes = new Elysia({ prefix: '/auth' })
   .use(authMiddleware)
 
-  .get('/permissions', async ({ requireFeature, set }) => {
+  .get('/permissions', async ({ user, requireFeature, set }) => {
     requireFeature('user_management');
-    const permissions = await getStaffPermissions();
+    const permissions = await getStaffPermissions(user.companyId);
     set.status = 200;
     return { ok: true, permissions };
   })
 
-  .put('/permissions', async ({ body, requireFeature, set }) => {
+  .put('/permissions', async ({ user, body, requireFeature, set }) => {
     requireFeature('user_management');
 
     const b = (body ?? {}) as { permissions?: unknown };
@@ -46,8 +46,8 @@ export const permissionsRoutes = new Elysia({ prefix: '/auth' })
       )
       .map((p) => ({ feature: p.feature, enabled: p.enabled }));
 
-    await setStaffPermissions(updates);
-    const permissions = await getStaffPermissions();
+    await setStaffPermissions(user.companyId, updates);
+    const permissions = await getStaffPermissions(user.companyId);
     set.status = 200;
     return { ok: true, permissions };
   });
