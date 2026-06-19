@@ -106,28 +106,28 @@ export const masterRoutes = new Elysia({ prefix: "/master" })
   )
 
   // ─── List Master Products ────────────────────────────
-  .get("/list", async () => {
-    const data = await listMasterProducts();
+  .get("/list", async ({ user }) => {
+    const data = await listMasterProducts(user.companyId);
     return { success: true, data };
   })
 
   // ─── Unlinked Models ─────────────────────────────────
-  .get("/unlinked-models", async () => {
-    const data = await getUnlinkedModels();
+  .get("/unlinked-models", async ({ user }) => {
+    const data = await getUnlinkedModels(user.companyId);
     return { success: true, data };
   })
 
   // ─── Update Master SKU/Name ──────────────────────────
   .patch(
     "/:id",
-    async ({ params, body, set }) => {
+    async ({ params, body, set, user }) => {
       try {
         const id = Number(params.id);
         if (!Number.isFinite(id)) {
           set.status = 400;
           return { success: false, message: "Invalid master product id" };
         }
-        const result = await updateMasterProduct(id, body);
+        const result = await updateMasterProduct(id, body, user.companyId);
         return { success: true, data: result };
       } catch (error: any) {
         const msg = error.message || "Failed to update master product";
@@ -147,14 +147,14 @@ export const masterRoutes = new Elysia({ prefix: "/master" })
   // ─── Delete Master Product ──────────────────────────────
   .delete(
     "/:id",
-    async ({ params, set }) => {
+    async ({ params, set, user }) => {
       try {
         const id = Number(params.id);
         if (!Number.isFinite(id)) {
           set.status = 400;
           return { success: false, message: "Invalid master product id" };
         }
-        const result = await deleteMasterProduct(id);
+        const result = await deleteMasterProduct(id, user.companyId);
         return { success: true, data: result };
       } catch (error: any) {
         const msg = error.message || "Failed to delete master product";
