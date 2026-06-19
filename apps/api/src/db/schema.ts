@@ -126,6 +126,7 @@ export const shopeeOrders = mysqlTable("shopee_orders", {
 
 export const shopeeOrderItems = mysqlTable("shopee_order_items", {
   id: int("id").primaryKey().autoincrement(),
+  companyId: int("company_id").notNull().default(1).references(() => companies.id),
   orderSn: varchar("order_sn", { length: 100 }).notNull(),
   itemName: varchar("item_name", { length: 500 }).notNull(),
   modelName: varchar("model_name", { length: 500 }),
@@ -142,6 +143,7 @@ export const shopeeOrderItems = mysqlTable("shopee_order_items", {
   // they process the same order concurrently. With this UNIQUE constraint the
   // ER_DUP_ENTRY catches in those services actually trigger and keep data clean.
   uniqOrderItemModel: uniqueIndex("uniq_order_item_model").on(t.orderSn, t.itemId, t.modelId),
+  idxCompany: index("idx_shopee_order_items_company").on(t.companyId),
 }));
 
 // Sync state table for background sync resilience
@@ -165,6 +167,7 @@ export const syncState = mysqlTable("sync_state", {
 // Stores label URLs with expiry time to speed up re-printing
 export const labelCacheTable = mysqlTable("label_cache", {
   id: int("id").primaryKey().autoincrement(),
+  companyId: int("company_id").notNull().default(1).references(() => companies.id),
   orderSn: varchar("order_sn", { length: 100 }).notNull().unique(),
   labelUrl: mediumtext("label_url").notNull(), // MEDIUMTEXT: base64 PDF bisa 50-200KB
   format: varchar("format", { length: 10 }).notNull().default("pdf"),
@@ -174,6 +177,7 @@ export const labelCacheTable = mysqlTable("label_cache", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (t) => ({
   uniqOrderSn: uniqueIndex("uniq_label_order_sn").on(t.orderSn),
+  idxCompany: index("idx_label_cache_company").on(t.companyId),
 }));
 
 // ─── HPP Entries ───────────────────────────────────────────────
@@ -236,6 +240,7 @@ export const packingCostEntries = mysqlTable("packing_cost_entries", {
 
 export const shopeeOrderFees = mysqlTable("shopee_order_fees", {
   id: int("id").primaryKey().autoincrement(),
+  companyId: int("company_id").notNull().default(1).references(() => companies.id),
   orderSn: varchar("order_sn", { length: 100 }).notNull(),
   commissionFee: int("commission_fee").notNull().default(0),
   serviceFee: int("service_fee").notNull().default(0),
@@ -256,6 +261,7 @@ export const shopeeOrderFees = mysqlTable("shopee_order_fees", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => ({
   uniqOrderSn: uniqueIndex("uniq_fee_order_sn").on(t.orderSn),
+  idxCompany: index("idx_shopee_order_fees_company").on(t.companyId),
 }));
 
 // ─── Audit Log ─────────────────────────────────────────────────
