@@ -302,6 +302,13 @@
       "when": 1781828953920,
       "tag": "0042_chemical_phil_sheldon",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "5",
+      "when": 1781831142648,
+      "tag": "0043_unusual_cardiac",
+      "breakpoints": true
     }
   ]
 }
