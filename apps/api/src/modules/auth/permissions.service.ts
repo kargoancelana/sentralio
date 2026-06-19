@@ -80,7 +80,7 @@ export function invalidateStaffPermissionsCache(): void {
  * is cold it falls back to compiled defaults (and a background load is
  * triggered). Call ensureStaffPermissionsLoaded() at startup to warm it.
  */
-export function isStaffFeatureEnabled(feature: Feature): boolean {
+export function isStaffFeatureEnabled(feature: Feature, _companyId?: number): boolean {
   if (ALWAYS_ON_STAFF.includes(feature)) return true;
   if (ADMIN_ONLY.includes(feature)) return false;
 

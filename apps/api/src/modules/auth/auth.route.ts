@@ -87,7 +87,7 @@ export const authPublicRoutes = new Elysia({ prefix: '/auth' })
             email: result.user.email,
             name: result.user.name,
             role: result.user.role,
-            features: FEATURES.filter((f) => decide(result.user.role, f)),
+            features: FEATURES.filter((f) => decide(result.user.role, f, result.user.companyId)),
           },
         };
 
@@ -179,7 +179,7 @@ export const authProtectedRoutes = new Elysia({ prefix: '/auth' })
       name: user.name,
       role: user.role,
       // Effective feature access for this user (admin = all; staff = configured).
-      features: FEATURES.filter((f) => decide(user.role, f)),
+      features: FEATURES.filter((f) => decide(user.role, f, user.companyId)),
     };
   })
 

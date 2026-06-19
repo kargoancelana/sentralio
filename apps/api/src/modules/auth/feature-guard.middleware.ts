@@ -65,7 +65,7 @@ export const featureGuardMiddleware = new Elysia({ name: 'feature-guard' }).onBe
     const feature = featureForPath(pathname);
     if (feature === null) return; // unguarded route
 
-    if (!decide(user.role, feature)) {
+    if (!decide(user.role, feature, user.companyId)) {
       set.status = 403;
       return {
         ok: false,

@@ -85,7 +85,7 @@ export const authMiddleware = new Elysia({ name: 'auth-middleware' })
      * @throws         Throws an error so Elysia stops executing the handler.
      */
     function requireFeature(feature: Feature): void {
-      if (!decide(user.role, feature)) {
+      if (!decide(user.role, feature, user.companyId)) {
         set.status = 403;
         throw new Error(
           `Forbidden: role '${user.role}' does not have access to feature '${feature}'.`,

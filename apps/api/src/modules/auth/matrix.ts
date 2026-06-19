@@ -51,11 +51,13 @@ const MATRIX: Record<Role, Record<Feature, boolean>> = {
  * admin-configured toggles. This indirection avoids a circular import between
  * matrix.ts and permissions.service.ts.
  */
-let staffResolver: (feature: Feature) => boolean = (feature) =>
+let staffResolver: (feature: Feature, companyId?: number) => boolean = (feature) =>
   MATRIX.staff[feature] ?? false;
 
 /** Register the dynamic staff resolver (called by permissions.service). */
-export function registerStaffResolver(resolver: (feature: Feature) => boolean): void {
+export function registerStaffResolver(
+  resolver: (feature: Feature, companyId?: number) => boolean,
+): void {
   staffResolver = resolver;
 }
 
@@ -67,15 +69,15 @@ export function registerStaffResolver(resolver: (feature: Feature) => boolean): 
  *
  * Implements Requirement 5.10 and 11.1.
  */
-export function decide(role: Role, feature: Feature): boolean {
+export function decide(role: Role, feature: Feature, companyId?: number): boolean {
   if (role === 'admin') return MATRIX.admin[feature] ?? false;
-  return staffResolver(feature);
+  return staffResolver(feature, companyId);
 }
 
 /**
  * Returns the list of features that are visible (allowed) for the given role.
  * Used to filter sidebar navigation entries per Requirement 11.5.
  */
-export function visibleNavFor(role: Role): Feature[] {
-  return FEATURES.filter((feature) => decide(role, feature));
+export function visibleNavFor(role: Role, companyId?: number): Feature[] {
+  return FEATURES.filter((feature) => decide(role, feature, companyId));
 }
