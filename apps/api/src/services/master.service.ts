@@ -468,8 +468,9 @@ export async function importFromListing(shopeeItemId: string, companyId: number)
 /**
  * List all master products with their linked model_ids.
  */
-export async function listMasterProducts() {
-  const masters = await db.select().from(masterProducts);
+export async function listMasterProducts(companyId: number) {
+  const masters = await db.select().from(masterProducts)
+    .where(eq(masterProducts.companyId, companyId));
 
   // Only count/show links from connected shops (soft-disconnect hides a
   // disconnected shop's product links — Opsi B). A master linked solely to
@@ -477,7 +478,7 @@ export async function listMasterProducts() {
   const connectedRows = await db
     .select({ shopId: shopeeCredentials.shopId })
     .from(shopeeCredentials)
-    .where(eq(shopeeCredentials.status, "connected"));
+    .where(and(eq(shopeeCredentials.companyId, companyId), eq(shopeeCredentials.status, "connected")));
   const connectedShopIds = new Set(connectedRows.map((r) => r.shopId));
 
   const result = [];
@@ -534,12 +535,12 @@ export async function listMasterProducts() {
 /**
  * List all model_ids that are NOT mapped to any master product.
  */
-export async function getUnlinkedModels() {
+export async function getUnlinkedModels(companyId: number) {
   const unlinked = await db.select({
     id: products.id,
     shopeeModelId: products.shopeeModelId,
     shopeeItemId: products.shopeeItemId,
-  }).from(products).where(isNull(products.masterProductId));
+  }).from(products).where(and(eq(products.companyId, companyId), isNull(products.masterProductId)));
 
   return unlinked;
 }
@@ -547,9 +548,9 @@ export async function getUnlinkedModels() {
 /**
  * Update master product SKU/name.
  */
-export async function updateMasterProduct(masterProductId: number, data: { sku?: string; name?: string }) {
+export async function updateMasterProduct(masterProductId: number, data: { sku?: string; name?: string }, companyId: number) {
   const masterRows = await db.select().from(masterProducts)
-    .where(eq(masterProducts.id, masterProductId)).limit(1);
+    .where(and(eq(masterProducts.companyId, companyId), eq(masterProducts.id, masterProductId))).limit(1);
 
   if (masterRows.length === 0) {
     throw new Error(`Master product with id=${masterProductId} not found`);
@@ -563,7 +564,8 @@ export async function updateMasterProduct(masterProductId: number, data: { sku?:
     throw new Error("Nothing to update. Provide sku or name.");
   }
 
-  await db.update(masterProducts).set(updatePayload).where(eq(masterProducts.id, masterProductId));
+  await db.update(masterProducts).set(updatePayload)
+    .where(and(eq(masterProducts.companyId, companyId), eq(masterProducts.id, masterProductId)));
 
   console.log(`[MASTER UPDATE] id=${masterProductId} updated: ${JSON.stringify(updatePayload)}`);
 
@@ -573,9 +575,9 @@ export async function updateMasterProduct(masterProductId: number, data: { sku?:
 /**
  * Delete a master product and unlink all mapped models.
  */
-export async function deleteMasterProduct(masterProductId: number) {
+export async function deleteMasterProduct(masterProductId: number, companyId: number) {
   const masterRows = await db.select().from(masterProducts)
-    .where(eq(masterProducts.id, masterProductId)).limit(1);
+    .where(and(eq(masterProducts.companyId, companyId), eq(masterProducts.id, masterProductId))).limit(1);
 
   if (masterRows.length === 0) {
     throw new Error(`Master product with id=${masterProductId} not found`);
@@ -589,7 +591,8 @@ export async function deleteMasterProduct(masterProductId: number) {
     .where(eq(products.masterProductId, masterProductId));
 
   // 2. Delete master product
-  await db.delete(masterProducts).where(eq(masterProducts.id, masterProductId));
+  await db.delete(masterProducts)
+    .where(and(eq(masterProducts.companyId, companyId), eq(masterProducts.id, masterProductId)));
 
   console.log(`[MASTER DELETE] id=${masterProductId} sku=${master.sku} deleted`);
 
