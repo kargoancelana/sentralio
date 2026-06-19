@@ -1,5 +1,5 @@
 import { db } from "../db/client";
-import { shopeeOrders } from "../db/schema";
+import { shopeeOrders, shopeeCredentials } from "../db/schema";
 import { syncShopeeOrdersService } from "./order.service";
 import { getShopeeOrderDetails } from "./shopee-raw";
 import { EscrowSyncService } from "./escrow-sync.service";
@@ -28,7 +28,19 @@ export async function syncAdsForShop(shopId: number, startDate: string, endDate:
 
 export async function syncProductsForShop(shopId: number) {
   const result = await syncShopeeProducts(shopId);
-  await autoMapProducts();
+
+  // Resolve the company that owns this shop so auto-map stays scoped per-company.
+  const credRows = await db.select({ companyId: shopeeCredentials.companyId })
+    .from(shopeeCredentials)
+    .where(eq(shopeeCredentials.shopId, shopId))
+    .limit(1);
+  const cred = credRows[0];
+  if (cred) {
+    await autoMapProducts(cred.companyId);
+  } else {
+    console.warn(`[sync-tasks] Skipping autoMapProducts: no shopeeCredentials found for shopId=${shopId}`);
+  }
+
   return result;
 }
 

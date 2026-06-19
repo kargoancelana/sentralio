@@ -1,4 +1,4 @@
-import { eq, isNull, inArray } from "drizzle-orm";
+import { eq, isNull, inArray, and } from "drizzle-orm";
 import { db } from "../db/client";
 import { masterProducts, products, productGroups, masterProductVariants, shopeeCredentials } from "../db/schema";
 import { 
@@ -169,8 +169,9 @@ export async function updateStockByMasterSku(masterProductId: number, newStock: 
   };
 }
 
-export async function updateMasterVariants(masterProductId: number, variants: any[]) {
-  const masterRows = await db.select().from(masterProducts).where(eq(masterProducts.id, masterProductId)).limit(1);
+export async function updateMasterVariants(masterProductId: number, variants: any[], companyId: number) {
+  const masterRows = await db.select().from(masterProducts)
+    .where(and(eq(masterProducts.companyId, companyId), eq(masterProducts.id, masterProductId))).limit(1);
   if (masterRows.length === 0) throw new Error("Master product not found");
 
   // ── Delete variants removed from the list ──
@@ -199,7 +200,7 @@ export async function updateMasterVariants(masterProductId: number, variants: an
       // variant with this SKU already exists, update it instead of inserting.
       const existing = v.sku
         ? await db.select().from(masterProductVariants)
-            .where(eq(masterProductVariants.sku, v.sku)).limit(1)
+            .where(and(eq(masterProductVariants.companyId, companyId), eq(masterProductVariants.sku, v.sku))).limit(1)
         : [];
       if (existing.length > 0) {
         await db.update(masterProductVariants)
@@ -207,7 +208,7 @@ export async function updateMasterVariants(masterProductId: number, variants: an
           .where(eq(masterProductVariants.id, existing[0].id));
       } else {
         await db.insert(masterProductVariants)
-          .values({ masterProductId, sku: v.sku, name: v.name, stock: v.stock });
+          .values({ companyId, masterProductId, sku: v.sku, name: v.name, stock: v.stock });
       }
     }
   }
@@ -273,7 +274,7 @@ export async function updateMasterVariants(masterProductId: number, variants: an
   }
 
   // Re-run auto mapping in case variant SKUs changed
-  await autoMapProducts();
+  await autoMapProducts(companyId);
 
   return {
     status: failedProducts.length === 0 ? "success" : "partial_success",
@@ -343,14 +344,16 @@ export async function mapModelsToMaster(masterProductId: number, shopeeModelIds:
  * Auto-maps all unmapped products based on SKU matching masterProductVariants.
  * Call this after Shopee catalog sync or after updating variant SKUs.
  */
-export async function autoMapProducts() {
-  const allVariants = await db.select().from(masterProductVariants);
+export async function autoMapProducts(companyId: number) {
+  const allVariants = await db.select().from(masterProductVariants)
+    .where(eq(masterProductVariants.companyId, companyId));
   const variantMap = new Map<string, number>(); // sku -> masterProductId
   for (const v of allVariants) {
     if (v.sku) variantMap.set(v.sku.trim().toUpperCase(), v.masterProductId);
   }
 
-  const allProducts = await db.select().from(products);
+  const allProducts = await db.select().from(products)
+    .where(eq(products.companyId, companyId));
   let mappedCount = 0;
   let unmappedCount = 0;
 
@@ -390,10 +393,10 @@ export async function autoMapProducts() {
  * Creates 1 master per product group/listing, NOT per variant.
  * Auto-maps all unmapped variants under this listing to the new master.
  */
-export async function importFromListing(shopeeItemId: string) {
+export async function importFromListing(shopeeItemId: string, companyId: number) {
   // 1. Find the product group (listing)
   const groupRows = await db.select().from(productGroups)
-    .where(eq(productGroups.shopeeItemId, shopeeItemId)).limit(1);
+    .where(and(eq(productGroups.companyId, companyId), eq(productGroups.shopeeItemId, shopeeItemId))).limit(1);
 
   if (groupRows.length === 0) {
     throw new Error(`No product group found for shopee_item_id=${shopeeItemId}. Run /shopee/sync-products first.`);
@@ -404,7 +407,7 @@ export async function importFromListing(shopeeItemId: string) {
   // 2. Determine Master SKU and ensure uniqueness
   let masterSku = group.itemSku || shopeeItemId;
   const existingMaster = await db.select().from(masterProducts)
-    .where(eq(masterProducts.sku, masterSku)).limit(1);
+    .where(and(eq(masterProducts.companyId, companyId), eq(masterProducts.sku, masterSku))).limit(1);
 
   if (existingMaster.length > 0) {
     masterSku = `${masterSku}-${Date.now().toString().slice(-6)}`;
@@ -414,6 +417,7 @@ export async function importFromListing(shopeeItemId: string) {
   const masterName = group.name || `Shopee Item ${shopeeItemId}`;
 
   const [result] = await db.insert(masterProducts).values({
+    companyId,
     sku: masterSku,
     name: masterName,
     stock: 0,
@@ -424,7 +428,7 @@ export async function importFromListing(shopeeItemId: string) {
 
   // 4. Import all variations under this listing as master product variants
   const unmappedVariants = await db.select().from(products)
-    .where(eq(products.shopeeItemId, shopeeItemId));
+    .where(and(eq(products.companyId, companyId), eq(products.shopeeItemId, shopeeItemId)));
 
   let variantCount = 0;
   for (const v of unmappedVariants) {
@@ -432,10 +436,11 @@ export async function importFromListing(shopeeItemId: string) {
     
     // Check if variant already exists
     const existingVar = await db.select().from(masterProductVariants)
-      .where(eq(masterProductVariants.sku, v.modelSku)).limit(1);
+      .where(and(eq(masterProductVariants.companyId, companyId), eq(masterProductVariants.sku, v.modelSku))).limit(1);
       
     if (existingVar.length === 0) {
       await db.insert(masterProductVariants).values({
+        companyId,
         masterProductId: masterId,
         sku: v.modelSku,
         name: v.modelName || "Default",
@@ -446,7 +451,7 @@ export async function importFromListing(shopeeItemId: string) {
   }
 
   // Auto-map variations if they match
-  await autoMapProducts();
+  await autoMapProducts(companyId);
 
   return {
     status: "success",

@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { authMiddleware } from "../auth/auth.middleware";
 import {
   updateStockByMasterSku,
   mapModelsToMaster,
@@ -13,6 +14,7 @@ import {
 } from "../../services/master.service";
 
 export const masterRoutes = new Elysia({ prefix: "/master" })
+  .use(authMiddleware)
 
   // ─── Stock Update ────────────────────────────────────
   .post(
@@ -38,9 +40,9 @@ export const masterRoutes = new Elysia({ prefix: "/master" })
   // ─── Update Master Variants ──────────────────────────
   .post(
     "/update-variants",
-    async ({ body, set }) => {
+    async ({ body, set, user }) => {
       try {
-        const result = await updateMasterVariants(body.master_product_id, body.variants);
+        const result = await updateMasterVariants(body.master_product_id, body.variants, user.companyId);
         return { success: true, data: result };
       } catch (error: any) {
         set.status = 500;
@@ -86,9 +88,9 @@ export const masterRoutes = new Elysia({ prefix: "/master" })
   // ─── Import from Listing ─────────────────────────────
   .post(
     "/import-from-listing",
-    async ({ body, set }) => {
+    async ({ body, set, user }) => {
       try {
-        const result = await importFromListing(body.shopee_item_id);
+        const result = await importFromListing(body.shopee_item_id, user.companyId);
         return { success: true, data: result };
       } catch (error: any) {
         const msg = error.message || "Failed to import listing";
