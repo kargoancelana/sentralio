@@ -27,6 +27,7 @@ import { validatePasswordPolicy } from './password-policy';
 
 export interface PublicUser {
   id: number;
+  companyId: number;
   email: string;
   name: string;
   role: 'admin' | 'staff';
@@ -231,6 +232,7 @@ export async function login(input: LoginInput): Promise<LoginResult> {
       kind: 'ok',
       user: {
         id: user.id,
+        companyId: user.companyId,
         email: user.email,
         name: user.name,
         role: user.role,
@@ -352,6 +354,7 @@ export async function validateSession(
   return {
     user: {
       id: user.id,
+      companyId: user.companyId,
       email: user.email,
       name: user.name,
       role: user.role,

@@ -49,6 +49,7 @@ beforeAll(async () => {
 
 interface FakeUser {
   id: number;
+  companyId: number;
   email: string;
   emailLower: string;
   name: string;
@@ -137,6 +138,7 @@ test("Property 6 [issued session invariants]: cookie, JWT claims, and public use
       async (sub, role, name, email, now) => {
         const user: FakeUser = {
           id: sub,
+          companyId: 1,
           email,
           emailLower: email.toLowerCase(),
           name,
@@ -174,15 +176,16 @@ test("Property 6 [issued session invariants]: cookie, JWT claims, and public use
         expect(typeof decoded.jti).toBe("string");
         expect(decoded.jti.length).toBeGreaterThan(0);
 
-        // The public user payload exposes ONLY id/email/name/role — no
+        // The public user payload exposes ONLY id/companyId/email/name/role — no
         // passwordHash (or any other) field leaks.
         expect(result.user).toEqual({
           id: user.id,
+          companyId: user.companyId,
           email: user.email,
           name: user.name,
           role: user.role,
         });
-        expect(Object.keys(result.user).sort()).toEqual(["email", "id", "name", "role"]);
+        expect(Object.keys(result.user).sort()).toEqual(["companyId", "email", "id", "name", "role"]);
         expect((result.user as Record<string, unknown>).passwordHash).toBeUndefined();
       },
     ),
