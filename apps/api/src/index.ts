@@ -1,7 +1,7 @@
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
 import { rateLimit } from "elysia-rate-limit";
-import { eq, lt, sql } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 import { env } from "./config/env";
 import { productRoutes } from "./modules/product/product.route";
 import { shopeeRoutes } from "./modules/shopee/shopee.route";
@@ -215,14 +215,18 @@ const app = new Elysia()
   })
 
   // ─── Multi-Seller: List all connected shops ─────────────────
-  .get("/shopee/credentials/list", async () => {
+  .get("/shopee/credentials/list", async ({ user }) => {
     try {
       // Smart-refresh: proactively refresh any expired/near-expired tokens
       await ensureAllTokensFresh();
 
-      // Only list connected shops — disconnected shops are hidden everywhere.
+      // Only list connected shops for the caller's company — disconnected shops
+      // are hidden everywhere, and other companies' shops must never appear.
       const rows = await db.select().from(shopeeCredentials)
-        .where(eq(shopeeCredentials.status, "connected"));
+        .where(and(
+          eq(shopeeCredentials.companyId, user.companyId),
+          eq(shopeeCredentials.status, "connected"),
+        ));
       return {
         success: true,
         data: rows.map(r => ({
@@ -241,15 +245,19 @@ const app = new Elysia()
   })
 
   // ─── Multi-Seller: Status of specific shop ──────────────────
-  .get("/shopee/credentials/status", async ({ query }) => {
+  .get("/shopee/credentials/status", async ({ query, user }) => {
     try {
       const shopId = query.shop_id ? parseInt(query.shop_id as string) : undefined;
       let rows;
       if (shopId) {
         rows = await db.select().from(shopeeCredentials)
-          .where(eq(shopeeCredentials.shopId, shopId)).limit(1);
+          .where(and(
+            eq(shopeeCredentials.companyId, user.companyId),
+            eq(shopeeCredentials.shopId, shopId),
+          )).limit(1);
       } else {
-        rows = await db.select().from(shopeeCredentials).limit(1);
+        rows = await db.select().from(shopeeCredentials)
+          .where(eq(shopeeCredentials.companyId, user.companyId)).limit(1);
       }
       if (rows.length === 0) {
         return { connected: false, message: "No credentials found" };
@@ -274,7 +282,7 @@ const app = new Elysia()
   // survive) but mark it disconnected and clear tokens. All of the shop's data
   // is then hidden across the app and sync skips it, until it's reconnected via
   // OAuth re-auth (which flips status back to 'connected').
-  .delete("/shopee/credentials/:shopId", async ({ params, set }) => {
+  .delete("/shopee/credentials/:shopId", async ({ params, set, user }) => {
     const shopId = parseInt(params.shopId);
     if (!Number.isFinite(shopId)) {
       set.status = 400;
@@ -282,7 +290,10 @@ const app = new Elysia()
     }
     try {
       const existing = await db.select().from(shopeeCredentials)
-        .where(eq(shopeeCredentials.shopId, shopId)).limit(1);
+        .where(and(
+          eq(shopeeCredentials.companyId, user.companyId),
+          eq(shopeeCredentials.shopId, shopId),
+        )).limit(1);
       if (existing.length === 0) {
         set.status = 404;
         return { success: false, message: `Shop ${shopId} not found` };
@@ -296,7 +307,10 @@ const app = new Elysia()
           disconnectedAt: new Date(),
           updatedAt: new Date(),
         })
-        .where(eq(shopeeCredentials.shopId, shopId));
+        .where(and(
+          eq(shopeeCredentials.companyId, user.companyId),
+          eq(shopeeCredentials.shopId, shopId),
+        ));
       console.log(`[shopee-cred] Soft-disconnected shop_id=${shopId} (data hidden, sync skipped)`);
       return { success: true, message: `Shop ${shopId} disconnected` };
     } catch (err: any) {
