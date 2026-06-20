@@ -225,7 +225,10 @@ export async function login(input: LoginInput): Promise<LoginResult> {
   // with NO cookie and NO partial persisted state (Req 1.9).
   try {
     await clearFailures(emailLower, deps);
-    const jwt = await signJwt({ sub: user.id, role: user.role }, now);
+    const jwt = await signJwt(
+      { sub: user.id, role: user.role, companyId: user.companyId },
+      now,
+    );
     const cookie = buildSessionCookie(jwt);
 
     return {
@@ -432,7 +435,11 @@ export async function renew(
     await revokeJti(db, session.user.id, session.jti, session.exp, now);
 
     const jwt = await signJwt(
-      { sub: session.user.id, role: session.user.role },
+      {
+        sub: session.user.id,
+        role: session.user.role,
+        companyId: session.user.companyId,
+      },
       now,
     );
     const cookie = buildSessionCookie(jwt);
@@ -562,7 +569,11 @@ export async function changePassword(
     //    satisfies iat >= tokens_valid_from.
     await revokeJti(db, session.user.id, session.jti, session.exp, now);
     const jwt = await signJwt(
-      { sub: session.user.id, role: session.user.role },
+      {
+        sub: session.user.id,
+        role: session.user.role,
+        companyId: session.user.companyId,
+      },
       new Date(cutoffSec * 1000),
     );
     const cookie = buildSessionCookie(jwt);

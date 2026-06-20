@@ -4,6 +4,8 @@ import { randomUUID } from 'crypto';
 export interface AuthJwtPayload {
   sub: number;                  // users.id
   role: 'admin' | 'staff';
+  companyId: number | null;     // users.company_id — dibawa di token (Fase 1.2). null untuk token lama (pra-1.2).
+  scope: 'tenant';              // scope token — token terbitan tenant selalu 'tenant' (Fase 1.2). Platform pakai signer terpisah.
   iat: number;                  // unix seconds
   exp: number;                  // = iat + 28800 (8h)
   jti: string;                  // UUIDv4
@@ -25,7 +27,9 @@ function getSecret(): Uint8Array {
  * Uses HS256 algorithm only.
  */
 export async function signJwt(
-  payload: Omit<AuthJwtPayload, 'iat' | 'exp' | 'jti'>,
+  payload: Omit<AuthJwtPayload, 'iat' | 'exp' | 'jti' | 'scope' | 'companyId'> & {
+    companyId?: number;
+  },
   now: Date,
 ): Promise<string> {
   const iat = Math.floor(now.getTime() / 1000);
@@ -35,6 +39,8 @@ export async function signJwt(
   return new SignJWT({
     sub: String(payload.sub),  // jose expects sub as string in standard claims
     role: payload.role,
+    companyId: payload.companyId,  // klaim dibawa (Fase 1.2); JSON.stringify membuang key ini saat undefined
+    scope: 'tenant',               // signer tenant selalu cap scope 'tenant' (Fase 1.2)
     iat,
     exp,
     jti,
@@ -50,6 +56,7 @@ export async function signJwt(
 function extractClaims(payload: Record<string, unknown>): AuthJwtPayload {
   const sub = payload.sub;
   const role = payload.role;
+  const companyId = payload.companyId;
   const iat = payload.iat;
   const exp = payload.exp;
   const jti = payload.jti;
@@ -70,9 +77,18 @@ function extractClaims(payload: Record<string, unknown>): AuthJwtPayload {
     throw new Error('JWT missing or invalid jti claim');
   }
 
+  // companyId DIBAWA tapi tidak diwajibkan pada Fase 1.2: sesi tenant yang
+  // terbit sebelum 1.2 (tanpa klaim companyId) harus tetap lolos validasi
+  // (tidak ada force-logout). Token sejak 1.2 selalu menyertakan companyId
+  // numerik. Cross-check/enforcement ditunda ke fase berikutnya.
+  // scope dinormalkan ke 'tenant' di sini: ini verifier tenant, dan token
+  // ber-scope platform (yang tidak punya klaim `role`) sudah ditolak oleh cek
+  // role di atas. Enforcement cross-scope (403) adalah fase berikutnya.
   return {
     sub: Number(sub),
     role: role as 'admin' | 'staff',
+    companyId: typeof companyId === 'number' ? companyId : null,
+    scope: 'tenant',
     iat,
     exp,
     jti,
