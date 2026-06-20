@@ -9,6 +9,7 @@ import { and, eq } from 'drizzle-orm';
 import { db as defaultDb } from '../../db/client';
 import { users } from '../../db/schema';
 import { isValidEmailSyntax, normalizeEmail } from '../auth/email';
+import { isValidUsernameSyntax, normalizeUsername } from '../auth/username';
 import { hashPassword } from '../auth/password';
 import { validatePasswordPolicy } from '../auth/password-policy';
 
@@ -38,6 +39,15 @@ export interface CreateUserData {
   name: string;
   role: string;
   password: string;
+  /** Optional login handle. When provided: validated + must be globally unique. */
+  username?: string | null;
+  /**
+   * Owning company for the new user. The /users route always passes the
+   * authenticated admin's companyId so the new user lands in the SAME company
+   * as the admin who created them. Defaults to 1 (default company) when omitted
+   * so existing single-tenant callers/tests keep working.
+   */
+  companyId?: number;
 }
 
 export interface UpdateUserData {
@@ -138,6 +148,15 @@ export async function createUser(
     errors.password = pw.message!;
   }
 
+  // 5. Validate username syntax when provided (optional field).
+  //    Empty string / null / undefined -> treated as "no username" (allowed).
+  const hasUsername =
+    typeof data.username === 'string' && data.username.trim().length > 0;
+  if (hasUsername && !isValidUsernameSyntax(data.username as string)) {
+    errors.username =
+      'Username harus 3-32 karakter dan hanya boleh huruf, angka, titik, atau garis bawah.';
+  }
+
   // If any validation failed so far, return early (Req 6.5)
   if (Object.keys(errors).length > 0) {
     return { ok: false, errors };
@@ -155,13 +174,33 @@ export async function createUser(
     return { ok: false, errors: { email: 'Email sudah digunakan.' } };
   }
 
+  // Check case-insensitive username uniqueness when provided (global, Fase 1.4).
+  const usernameLower = hasUsername
+    ? normalizeUsername(data.username as string)
+    : null;
+
+  if (usernameLower) {
+    const existingUsername = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.usernameLower, usernameLower))
+      .limit(1);
+
+    if (existingUsername.length > 0) {
+      return { ok: false, errors: { username: 'Username sudah digunakan.' } };
+    }
+  }
+
   // Hash password with bcrypt cost >= 12 (Req 6.6, 7.1)
   const passwordHash = await hashPassword(data.password);
 
   // Insert user with is_active = 1 (Req 6.7)
   const result = await db.insert(users).values({
+    companyId: data.companyId ?? 1, // owning company from caller's token (defaults to 1)
     email: data.email,          // stored verbatim
     emailLower,                 // normalized for lookups
+    username: hasUsername ? (data.username as string) : null, // verbatim handle or null
+    usernameLower,              // normalized handle for lookups, or null
     name: trimmedName,          // trimmed
     role: data.role as 'admin' | 'staff',
     passwordHash,               // only the hash, never the plaintext
