@@ -346,27 +346,30 @@ async function syncShopeeProductsForShop(shopId: number) {
  * Fetch the full Shopee catalog: items + variants + mapping status.
  * Returns a structured array of items, each with their variants and master linkage.
  */
-export async function getShopeeCatalog() {
+export async function getShopeeCatalog(companyId: number) {
   // 1. Fetch product groups, but only from connected shops (soft-disconnect
   //    hides a disconnected shop's products until it's reconnected).
   const connectedRows = await db
     .select({ shopId: shopeeCredentials.shopId })
     .from(shopeeCredentials)
-    .where(eq(shopeeCredentials.status, "connected"));
+    .where(and(eq(shopeeCredentials.companyId, companyId), eq(shopeeCredentials.status, "connected")));
   const connectedShopIds = new Set(connectedRows.map((r) => r.shopId));
 
-  const allGroups = await db.select().from(productGroups);
+  const allGroups = await db.select().from(productGroups)
+    .where(eq(productGroups.companyId, companyId));
   const groups = allGroups.filter((g) => connectedShopIds.has(g.shopId));
 
   // 2. Pre-load shop name map from credentials
-  const shopRows = await db.select({ shopId: shopeeCredentials.shopId, shopName: shopeeCredentials.shopName }).from(shopeeCredentials);
+  const shopRows = await db.select({ shopId: shopeeCredentials.shopId, shopName: shopeeCredentials.shopName }).from(shopeeCredentials)
+    .where(eq(shopeeCredentials.companyId, companyId));
   const shopNameMap = new Map<number, string>();
   for (const s of shopRows) {
     shopNameMap.set(s.shopId, s.shopName || `Toko #${s.shopId}`);
   }
 
   // Pre-load all valid Master Produk SKUs
-  const allMasterVariants = await db.select({ sku: masterProductVariants.sku }).from(masterProductVariants);
+  const allMasterVariants = await db.select({ sku: masterProductVariants.sku }).from(masterProductVariants)
+    .where(eq(masterProductVariants.companyId, companyId));
   const validMskus = new Set(allMasterVariants.map(v => v.sku?.trim().toUpperCase()).filter(Boolean));
 
   // 3. Build catalog
@@ -374,7 +377,7 @@ export async function getShopeeCatalog() {
   for (const group of groups) {
     // 4. Fetch all variants for this item
     const variants = await db.select().from(products)
-      .where(eq(products.groupId, group.id));
+      .where(and(eq(products.companyId, companyId), eq(products.groupId, group.id)));
 
     // 5. Enrich variants with master product info
     const enrichedVariants = [];
@@ -382,7 +385,7 @@ export async function getShopeeCatalog() {
       let master = null;
       if (v.masterProductId) {
         const masterRows = await db.select().from(masterProducts)
-          .where(eq(masterProducts.id, v.masterProductId)).limit(1);
+          .where(and(eq(masterProducts.companyId, companyId), eq(masterProducts.id, v.masterProductId))).limit(1);
         if (masterRows.length > 0) {
           master = {
             id: masterRows[0].id,
