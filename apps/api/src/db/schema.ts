@@ -315,6 +315,8 @@ export const users = mysqlTable("users", {
   companyId:    int("company_id").notNull().default(1).references(() => companies.id),
   email:        varchar("email", { length: 254 }).notNull(),        // stored verbatim
   emailLower:   varchar("email_lower", { length: 254 }).notNull(),  // ASCII-lowercased + trimmed; used for lookup
+  username:     varchar("username", { length: 32 }),                // nullable; stored verbatim; optional login handle
+  usernameLower: varchar("username_lower", { length: 32 }),         // nullable; ASCII-lowercased + trimmed; unique global when set
   name:         varchar("name", { length: 100 }).notNull(),
   role:         userRoleEnum.notNull(),
   passwordHash: varchar("password_hash", { length: 100 }).notNull(), // bcrypt = 60 chars; widened for safety
@@ -324,6 +326,7 @@ export const users = mysqlTable("users", {
   updatedAt:    timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
 }, (t) => ({
   uniqEmailLower: uniqueIndex("uniq_users_email_lower").on(t.emailLower),
+  uniqUsernameLower: uniqueIndex("uniq_users_username_lower").on(t.usernameLower),
   idxCompany: index("idx_users_company").on(t.companyId),
 }));
 
