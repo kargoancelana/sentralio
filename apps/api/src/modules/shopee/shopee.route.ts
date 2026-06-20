@@ -32,12 +32,12 @@ export const shopeeRoutes = new Elysia({ prefix: "/shopee" })
   })
   .post(
     "/update-item",
-    async ({ body, set }) => {
+    async ({ body, set, user }) => {
       try {
         const result = await updateShopeeItem(body.item_id, {
           name: body.name,
           description: body.description,
-        });
+        }, user.companyId);
         return { success: true, data: result };
       } catch (error: any) {
         set.status = 500;
@@ -54,9 +54,9 @@ export const shopeeRoutes = new Elysia({ prefix: "/shopee" })
   )
   .post(
     "/update-price",
-    async ({ body, set }) => {
+    async ({ body, set, user }) => {
       try {
-        const result = await updateShopeePrice(body.item_id, body.model_id, body.price);
+        const result = await updateShopeePrice(body.item_id, body.model_id, body.price, user.companyId);
         return { success: true, data: result };
       } catch (error: any) {
         set.status = 500;
@@ -73,9 +73,9 @@ export const shopeeRoutes = new Elysia({ prefix: "/shopee" })
   )
   .post(
     "/update-variant-stock",
-    async ({ body, set }) => {
+    async ({ body, set, user }) => {
       try {
-        const result = await updateShopeeVariantStock(body.item_id, body.model_id, body.stock);
+        const result = await updateShopeeVariantStock(body.item_id, body.model_id, body.stock, user.companyId);
         return { success: true, data: result };
       } catch (error: any) {
         set.status = 500;
@@ -92,9 +92,9 @@ export const shopeeRoutes = new Elysia({ prefix: "/shopee" })
   )
   .post(
     "/toggle-status",
-    async ({ body, set }) => {
+    async ({ body, set, user }) => {
       try {
-        const result = await toggleShopeeItemStatus(body.item_ids, body.unlist);
+        const result = await toggleShopeeItemStatus(body.item_ids, body.unlist, user.companyId);
         return { success: true, data: result };
       } catch (error: any) {
         set.status = 500;
@@ -115,7 +115,7 @@ export const shopeeRoutes = new Elysia({ prefix: "/shopee" })
         const result = await updateShopeeModel(body.item_id, body.model_id, {
           modelName: body.model_name,
           modelSku: body.model_sku,
-        });
+        }, user.companyId);
         if (body.model_sku !== undefined) {
           await autoMapProducts(user.companyId); // Auto map after updating SKU
         }

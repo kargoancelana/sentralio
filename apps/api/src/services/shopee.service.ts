@@ -440,9 +440,9 @@ export async function getShopeeCatalog(companyId: number) {
 /**
  * Update product name via Shopee API and local DB.
  */
-export async function updateShopeeItem(itemId: string, data: { name?: string; description?: string }) {
+export async function updateShopeeItem(itemId: string, data: { name?: string; description?: string }, companyId: number) {
   const groupRows = await db.select({ shopId: productGroups.shopId }).from(productGroups)
-    .where(eq(productGroups.shopeeItemId, itemId)).limit(1);
+    .where(and(eq(productGroups.companyId, companyId), eq(productGroups.shopeeItemId, itemId))).limit(1);
   const shopId = groupRows.length > 0 ? groupRows[0].shopId : undefined;
 
   const updatePayload: Record<string, any> = { item_id: parseInt(itemId) };
@@ -468,7 +468,7 @@ export async function updateShopeeItem(itemId: string, data: { name?: string; de
   if (Object.keys(localUpdate).length > 0) {
     await db.update(productGroups)
       .set(localUpdate)
-      .where(eq(productGroups.shopeeItemId, itemId));
+      .where(and(eq(productGroups.companyId, companyId), eq(productGroups.shopeeItemId, itemId)));
   }
 
   console.log(`[EDIT] Updated item ${itemId}: ${JSON.stringify(data)}`);
@@ -478,9 +478,9 @@ export async function updateShopeeItem(itemId: string, data: { name?: string; de
 /**
  * Update variant price via Shopee API and local DB.
  */
-export async function updateShopeePrice(itemId: string, modelId: string, price: number) {
+export async function updateShopeePrice(itemId: string, modelId: string, price: number, companyId: number) {
   const groupRows = await db.select({ shopId: productGroups.shopId }).from(productGroups)
-    .where(eq(productGroups.shopeeItemId, itemId)).limit(1);
+    .where(and(eq(productGroups.companyId, companyId), eq(productGroups.shopeeItemId, itemId))).limit(1);
   const shopId = groupRows.length > 0 ? groupRows[0].shopId : undefined;
 
   const result = await shopeeRequest({
@@ -500,7 +500,7 @@ export async function updateShopeePrice(itemId: string, modelId: string, price: 
   // Update DB lokal
   await db.update(products)
     .set({ price: Math.round(price) })
-    .where(eq(products.shopeeModelId, modelId));
+    .where(and(eq(products.companyId, companyId), eq(products.shopeeModelId, modelId)));
 
   console.log(`[EDIT] Updated price item=${itemId} model=${modelId} price=${price}`);
   return { status: "success", item_id: itemId, model_id: modelId, price };
@@ -513,13 +513,14 @@ export async function updateShopeeVariantStock(
   itemId: string,
   modelId: string,
   stock: number,
+  companyId: number,
 ) {
   await updateStockOnShopeeBatch(itemId, [{ shopeeModelId: modelId, stock }]);
 
   // Update DB lokal
   await db.update(products)
     .set({ shopeeStock: stock })
-    .where(eq(products.shopeeModelId, modelId));
+    .where(and(eq(products.companyId, companyId), eq(products.shopeeModelId, modelId)));
 
   console.log(`[EDIT] Updated stock item=${itemId} model=${modelId} stock=${stock}`);
   return { status: "success", item_id: itemId, model_id: modelId, stock };
@@ -528,11 +529,11 @@ export async function updateShopeeVariantStock(
 /**
  * Toggle item status on Shopee (list/unlist).
  */
-export async function toggleShopeeItemStatus(itemIds: string[], unlist: boolean) {
+export async function toggleShopeeItemStatus(itemIds: string[], unlist: boolean, companyId: number) {
   if (itemIds.length === 0) return { status: "success", items: 0, new_status: unlist ? "UNLIST" : "NORMAL" };
   
   const groupRows = await db.select({ shopId: productGroups.shopId }).from(productGroups)
-    .where(eq(productGroups.shopeeItemId, itemIds[0])).limit(1);
+    .where(and(eq(productGroups.companyId, companyId), eq(productGroups.shopeeItemId, itemIds[0]))).limit(1);
   const shopId = groupRows.length > 0 ? groupRows[0].shopId : undefined;
 
   const result = await shopeeRequest({
@@ -554,7 +555,7 @@ export async function toggleShopeeItemStatus(itemIds: string[], unlist: boolean)
   for (const itemId of itemIds) {
     await db.update(productGroups)
       .set({ itemStatus: newStatus })
-      .where(eq(productGroups.shopeeItemId, itemId));
+      .where(and(eq(productGroups.companyId, companyId), eq(productGroups.shopeeItemId, itemId)));
   }
 
   console.log(`[EDIT] Toggled ${itemIds.length} items to ${newStatus}`);
@@ -568,10 +569,11 @@ export async function toggleShopeeItemStatus(itemIds: string[], unlist: boolean)
 export async function updateShopeeModel(
   itemId: string,
   modelId: string,
-  data: { modelName?: string; modelSku?: string }
+  data: { modelName?: string; modelSku?: string },
+  companyId: number
 ) {
   const groupRows = await db.select({ shopId: productGroups.shopId, name: productGroups.name }).from(productGroups)
-    .where(eq(productGroups.shopeeItemId, itemId)).limit(1);
+    .where(and(eq(productGroups.companyId, companyId), eq(productGroups.shopeeItemId, itemId))).limit(1);
   
   if (groupRows.length === 0) {
     throw new Error(`Product group not found for item_id=${itemId}`);
@@ -583,7 +585,7 @@ export async function updateShopeeModel(
   // Get old model data before update
   const oldProductRows = await db.select({ modelName: products.modelName, modelSku: products.modelSku })
     .from(products)
-    .where(eq(products.shopeeModelId, modelId))
+    .where(and(eq(products.companyId, companyId), eq(products.shopeeModelId, modelId)))
     .limit(1);
   const oldModelName = oldProductRows.length > 0 ? oldProductRows[0].modelName : null;
 
@@ -616,7 +618,7 @@ export async function updateShopeeModel(
 
   await db.update(products)
     .set(dbUpdate)
-    .where(eq(products.shopeeModelId, modelId));
+    .where(and(eq(products.companyId, companyId), eq(products.shopeeModelId, modelId)));
 
   // CRITICAL: Update shopee_order_items for real-time picking list accuracy
   // Match by shopId + itemName + modelName (this identifies orders from THIS specific listing)
