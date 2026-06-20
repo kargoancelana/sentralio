@@ -16,6 +16,7 @@ import { eq } from 'drizzle-orm';
 import { db as defaultDb } from '../../db/client';
 import { users, revokedSessions } from '../../db/schema';
 import { isValidEmailSyntax, normalizeEmail } from './email';
+import { isValidUsernameSyntax, normalizeUsername } from './username';
 import { isLockedOut, recordFailure, clearFailures, type DrizzleDb } from './lockout';
 import { signJwt, verifyJwtIgnoreExp } from './jwt';
 import { buildSessionCookie } from './cookie';
@@ -54,7 +55,7 @@ export interface LoginLocked {
 /** Pre-credential structural validation failure (400). */
 export interface LoginInvalidInput {
   kind: 'fail-400';
-  reason: 'json' | 'missing' | 'email_syntax';
+  reason: 'json' | 'missing' | 'email_syntax' | 'username_syntax';
 }
 
 /** Internal failure during session issuance (500): no cookie, no partial state. */
@@ -118,13 +119,22 @@ export interface LoginInput {
 }
 
 interface ParsedCredentials {
-  email: string;
+  /** The login identifier (an email or a username), un-normalized. */
+  identifier: string;
+  /** Which kind of identifier was supplied. Determines the lookup column. */
+  identifierType: 'email' | 'username';
   password: string;
 }
 
 /**
  * Parse + structurally validate the raw body.
  * Returns the credentials on success, or a 400 result describing the reason.
+ *
+ * Fase 1.4: the login form sends a single `identifier` that may be an email OR
+ * a username. When `identifier` is present we auto-detect by '@': a value
+ * containing '@' is validated as an email, otherwise as a username. The legacy
+ * `email` field is still accepted (email-only) for backward compatibility and
+ * is validated exactly as before.
  */
 function parseAndValidateBody(
   rawBody: unknown,
@@ -146,19 +156,39 @@ function parseAndValidateBody(
     return { kind: 'fail-400', reason: 'json' };
   }
 
-  // Step 2: Required-field check — email and password must both be strings.
+  // Step 2: Required-field check — password plus at least one identifier
+  // (`identifier` preferred, else legacy `email`) must be strings.
   const record = body as Record<string, unknown>;
-  const { email, password } = record;
-  if (typeof email !== 'string' || typeof password !== 'string') {
+  const { email, identifier, password } = record;
+  if (typeof password !== 'string') {
+    return { kind: 'fail-400', reason: 'missing' };
+  }
+  const hasIdentifier = typeof identifier === 'string';
+  const hasEmail = typeof email === 'string';
+  if (!hasIdentifier && !hasEmail) {
     return { kind: 'fail-400', reason: 'missing' };
   }
 
-  // Step 3: Email syntax (validated on the raw, un-normalized value per Req 1.6).
-  if (!isValidEmailSyntax(email)) {
-    return { kind: 'fail-400', reason: 'email_syntax' };
+  // Step 3: Syntax validation on the raw, un-normalized value (per Req 1.6).
+  if (hasIdentifier) {
+    // Auto-detect: '@' means email, otherwise username.
+    if ((identifier as string).includes('@')) {
+      if (!isValidEmailSyntax(identifier as string)) {
+        return { kind: 'fail-400', reason: 'email_syntax' };
+      }
+      return { identifier: identifier as string, identifierType: 'email', password };
+    }
+    if (!isValidUsernameSyntax(identifier as string)) {
+      return { kind: 'fail-400', reason: 'username_syntax' };
+    }
+    return { identifier: identifier as string, identifierType: 'username', password };
   }
 
-  return { email, password };
+  // Legacy email-only path (unchanged behavior).
+  if (!isValidEmailSyntax(email as string)) {
+    return { kind: 'fail-400', reason: 'email_syntax' };
+  }
+  return { identifier: email as string, identifierType: 'email', password };
 }
 
 /**
@@ -185,23 +215,28 @@ export async function login(input: LoginInput): Promise<LoginResult> {
     return parsed;
   }
 
-  // Step 4: normalize the email into the canonical lookup key (Req 1.7).
-  const emailLower = normalizeEmail(parsed.email);
+  // Step 4: normalize the identifier into the canonical lookup key (Req 1.7).
+  // For both email and username the key is trim + ASCII-lowercase. The lockout
+  // tables key off this string regardless of identifier type.
+  const lookupKey =
+    parsed.identifierType === 'email'
+      ? normalizeEmail(parsed.identifier)
+      : normalizeUsername(parsed.identifier);
 
   const deps = { db, now };
 
   // Step 5: lockout check — do NOT verify the password and do NOT record a
   // failure when locked (Req 8.1c, 8.3).
-  if (await isLockedOut(emailLower, deps)) {
+  if (await isLockedOut(lookupKey, deps)) {
     return { kind: 'fail-429' };
   }
 
-  // Step 6: user lookup by normalized email.
-  const rows = await db
-    .select()
-    .from(users)
-    .where(eq(users.emailLower, emailLower))
-    .limit(1);
+  // Step 6: user lookup by the normalized key — email_lower for an email
+  // identifier, username_lower for a username identifier.
+  const rows =
+    parsed.identifierType === 'email'
+      ? await db.select().from(users).where(eq(users.emailLower, lookupKey)).limit(1)
+      : await db.select().from(users).where(eq(users.usernameLower, lookupKey)).limit(1);
   const user = rows[0];
 
   // Step 7: bcrypt compare. When the user is missing, compare against a dummy
@@ -216,7 +251,7 @@ export async function login(input: LoginInput): Promise<LoginResult> {
   // failure, then return the single canonical 401 marker.
   const isInactive = user ? user.isActive !== 1 : false;
   if (!user || !passwordOk || isInactive) {
-    await recordFailure(emailLower, ip, deps);
+    await recordFailure(lookupKey, ip, deps);
     return { kind: 'fail-401' };
   }
 
@@ -224,7 +259,7 @@ export async function login(input: LoginInput): Promise<LoginResult> {
   // Wrap signing + persistence in try/catch: on any failure return fail-500
   // with NO cookie and NO partial persisted state (Req 1.9).
   try {
-    await clearFailures(emailLower, deps);
+    await clearFailures(lookupKey, deps);
     const jwt = await signJwt(
       { sub: user.id, role: user.role, companyId: user.companyId },
       now,
