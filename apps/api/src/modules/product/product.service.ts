@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db } from "../../db/client";
 import { products, productGroups } from "../../db/schema";
 import { updateStockOnShopee } from "../../services/shopee.service";
@@ -12,10 +12,11 @@ export async function syncStockByProductId(input: {
   productId: number;
   newStock: number;
   source: StockSource;
+  companyId: number;
 }) {
   console.log(`[sync] request key=product_id value=${input.productId} stock=${input.newStock} source=${input.source}`);
 
-  const rows = await db.select().from(products).where(eq(products.id, input.productId)).limit(1);
+  const rows = await db.select().from(products).where(and(eq(products.companyId, input.companyId), eq(products.id, input.productId))).limit(1);
   const row = rows[0];
   if (!row) {
     throw new Error("Product not found");
@@ -24,6 +25,7 @@ export async function syncStockByProductId(input: {
     groupId: row.groupId,
     newStock: input.newStock,
     source: input.source,
+    companyId: input.companyId,
   });
 }
 
@@ -31,12 +33,13 @@ export async function syncStockByShopeeItemId(input: {
   shopeeItemId: string;
   newStock: number;
   source: StockSource;
+  companyId: number;
 }) {
   console.log(
     `[sync] request key=shopee_item_id value=${input.shopeeItemId} stock=${input.newStock} source=${input.source}`,
   );
 
-  const rows = await db.select().from(products).where(eq(products.shopeeItemId, input.shopeeItemId)).limit(1);
+  const rows = await db.select().from(products).where(and(eq(products.companyId, input.companyId), eq(products.shopeeItemId, input.shopeeItemId))).limit(1);
   const row = rows[0];
   if (!row) {
     throw new Error("Product not found for shopee_item_id");
@@ -45,17 +48,18 @@ export async function syncStockByShopeeItemId(input: {
     groupId: row.groupId,
     newStock: input.newStock,
     source: input.source,
+    companyId: input.companyId,
   });
 }
 
-export async function syncStockForGroup(input: { groupId: number; newStock: number; source: StockSource }) {
+export async function syncStockForGroup(input: { groupId: number; newStock: number; source: StockSource; companyId: number }) {
   console.warn(`[DEPRECATED] syncStockForGroup called with group_id=${input.groupId}. Use /master/update-stock instead.`);
   if (input.newStock < 0 || input.newStock > STOCK_MAX) {
     throw new Error(`Invalid stock: must be between 0 and ${STOCK_MAX}`);
   }
 
   // 1. Fetch current group
-  const groupRows = await db.select().from(productGroups).where(eq(productGroups.id, input.groupId)).limit(1);
+  const groupRows = await db.select().from(productGroups).where(and(eq(productGroups.companyId, input.companyId), eq(productGroups.id, input.groupId))).limit(1);
   const groupRow = groupRows[0];
   if (!groupRow) {
     throw new Error("Product group not found");
@@ -68,10 +72,10 @@ export async function syncStockForGroup(input: { groupId: number; newStock: numb
   }
 
   // 3. Update master stock
-  await db.update(productGroups).set({ stock: input.newStock }).where(eq(productGroups.id, input.groupId));
+  await db.update(productGroups).set({ stock: input.newStock }).where(and(eq(productGroups.companyId, input.companyId), eq(productGroups.id, input.groupId)));
 
   // 4. Fetch associated listings
-  const groupProducts = await db.select().from(products).where(eq(products.groupId, input.groupId));
+  const groupProducts = await db.select().from(products).where(and(eq(products.companyId, input.companyId), eq(products.groupId, input.groupId)));
   
   if (groupProducts.length === 0) {
     console.warn(`[sync] warning: group has no listings group_id=${input.groupId}`);
@@ -153,12 +157,12 @@ export async function syncStockForGroup(input: { groupId: number; newStock: numb
   };
 }
 
-export async function getGroupStatus(groupId: number) {
-  const groupRows = await db.select().from(productGroups).where(eq(productGroups.id, groupId)).limit(1);
+export async function getGroupStatus(groupId: number, companyId: number) {
+  const groupRows = await db.select().from(productGroups).where(and(eq(productGroups.companyId, companyId), eq(productGroups.id, groupId))).limit(1);
   const groupRow = groupRows[0];
   if (!groupRow) return null;
 
-  const groupProducts = await db.select().from(products).where(eq(products.groupId, groupId));
+  const groupProducts = await db.select().from(products).where(and(eq(products.companyId, companyId), eq(products.groupId, groupId)));
 
   return {
     group_id: groupRow.id,

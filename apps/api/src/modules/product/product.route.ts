@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { authMiddleware } from "../auth/auth.middleware";
 import * as productController from "./product.controller";
 
 const StockBody = t.Object({
@@ -7,12 +8,13 @@ const StockBody = t.Object({
 });
 
 export const productRoutes = new Elysia({ prefix: "/products" })
+  .use(authMiddleware)
   .post(
     "/stock/update",
-    async ({ body, set }) => {
+    async ({ body, set, user }) => {
       try {
         const source = body.source ?? "system";
-        const result = await productController.patchStockByGroupId(body.group_id, body.stock, source);
+        const result = await productController.patchStockByGroupId(body.group_id, body.stock, source, user.companyId);
         return result;
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Unknown error";
@@ -36,13 +38,13 @@ export const productRoutes = new Elysia({ prefix: "/products" })
       }),
     }
   )
-  .get("/stock/:groupId", async ({ params, set }) => {
+  .get("/stock/:groupId", async ({ params, set, user }) => {
     const groupId = Number(params.groupId);
     if (!Number.isFinite(groupId)) {
       set.status = 400;
       return { error: "Invalid group id" };
     }
-    const result = await productController.getGroupStatus(groupId);
+    const result = await productController.getGroupStatus(groupId, user.companyId);
     if (!result) {
       set.status = 404;
       return { error: "Product group not found" };
@@ -51,7 +53,7 @@ export const productRoutes = new Elysia({ prefix: "/products" })
   })
   .patch(
     "/:id/stock",
-    async ({ params, body, request, set }) => {
+    async ({ params, body, request, set, user }) => {
       const strictError = await validateStrictStockFromRawJson(request);
       if (strictError) {
         set.status = 400;
@@ -68,7 +70,7 @@ export const productRoutes = new Elysia({ prefix: "/products" })
         if (!body.source) {
           console.log(`[sync] source not provided, defaulting to "system"`);
         }
-        const result = await productController.patchStockByProductId(id, body.stock, source);
+        const result = await productController.patchStockByProductId(id, body.stock, source, user.companyId);
         return result;
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Unknown error";
@@ -91,7 +93,7 @@ export const productRoutes = new Elysia({ prefix: "/products" })
   )
   .patch(
     "/by-shopee-item/:shopeeItemId/stock",
-    async ({ params, body, request, set }) => {
+    async ({ params, body, request, set, user }) => {
       const strictError = await validateStrictStockFromRawJson(request);
       if (strictError) {
         set.status = 400;
@@ -103,7 +105,7 @@ export const productRoutes = new Elysia({ prefix: "/products" })
         if (!body.source) {
           console.log(`[sync] source not provided, defaulting to "system"`);
         }
-        const result = await productController.patchStockByShopeeItemId(params.shopeeItemId, body.stock, source);
+        const result = await productController.patchStockByShopeeItemId(params.shopeeItemId, body.stock, source, user.companyId);
         return result;
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Unknown error";
