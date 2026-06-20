@@ -44,11 +44,12 @@ export const usersRoutes = new Elysia({ prefix: '/users' })
   .post('/', async ({ body, user, requireFeature, set }) => {
     requireFeature('user_management');
 
-    const { email, name, role, password } = body as {
+    const { email, name, role, password, username } = body as {
       email: unknown;
       name: unknown;
       role: unknown;
       password: unknown;
+      username: unknown;
     };
 
     const result = await createUser({
@@ -56,6 +57,8 @@ export const usersRoutes = new Elysia({ prefix: '/users' })
       name: typeof name === 'string' ? name : '',
       role: typeof role === 'string' ? role : '',
       password: typeof password === 'string' ? password : '',
+      username: typeof username === 'string' ? username : null,
+      companyId: user.companyId,
     });
 
     if (!result.ok) {
