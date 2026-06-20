@@ -1,11 +1,12 @@
 import * as crypto from "crypto";
 import { Elysia, t } from "elysia";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { env } from "../../config/env";
 import { db } from "../../db/client";
 import { shopeeCredentials } from "../../db/schema";
 import { encrypt } from "../../utils/crypto";
 import { onboardingQueue, gapSyncQueue } from "../../queue";
+import { authMiddleware } from "../auth/auth.middleware";
 
 const SHOPEE_BASE = "https://partner.shopeemobile.com";
 
@@ -18,6 +19,7 @@ function makeSign(partnerId: number, partnerKey: string, path: string, timestamp
 }
 
 export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
+  .use(authMiddleware)
 
   // ─── Dapatkan URL otorisasi sebagai JSON (untuk redirect frontend) ───────────
   .get("/auth/url", () => {
@@ -49,7 +51,7 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
   // ─── Tukarkan kode otorisasi dengan token (upsert multi-seller) ────
   .post(
     "/auth/exchange",
-    async ({ body, set }) => {
+    async ({ body, set, user }) => {
       const { code, shop_id } = body;
       const shopIdNum = parseInt(shop_id);
 
@@ -125,19 +127,26 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
         updatedAt: new Date(),
       };
 
-      // Upsert multi-seller: periksa berdasarkan shop_id
+      // Upsert multi-seller: periksa berdasarkan (company_id, shop_id) supaya
+      // satu toko hanya bisa di-upsert oleh company pemiliknya.
       const existing = await db.select().from(shopeeCredentials)
-        .where(eq(shopeeCredentials.shopId, shopIdNum)).limit(1);
+        .where(and(
+          eq(shopeeCredentials.companyId, user.companyId),
+          eq(shopeeCredentials.shopId, shopIdNum),
+        )).limit(1);
 
       let prevSyncStatus = null;
       if (existing.length > 0) {
         prevSyncStatus = existing[0].initialSyncStatus;
         await db.update(shopeeCredentials)
           .set(credentialPayload)
-          .where(eq(shopeeCredentials.shopId, shopIdNum));
+          .where(and(
+            eq(shopeeCredentials.companyId, user.companyId),
+            eq(shopeeCredentials.shopId, shopIdNum),
+          ));
         console.log(`[shopee-oauth] Updated existing credentials for shop_id=${shopIdNum}`);
       } else {
-        await db.insert(shopeeCredentials).values(credentialPayload);
+        await db.insert(shopeeCredentials).values({ ...credentialPayload, companyId: user.companyId });
         console.log(`[shopee-oauth] Inserted new credentials for shop_id=${shopIdNum}`);
       }
 
@@ -185,14 +194,17 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
       }),
     }
   )
-  .get("/sync-status", async ({ query }) => {
+  .get("/sync-status", async ({ query, user }) => {
     const shopIdFilter = query.shop_id ? parseInt(query.shop_id as string) : null;
     
     let credentials;
     if (shopIdFilter && !isNaN(shopIdFilter)) {
-      credentials = await db.select().from(shopeeCredentials).where(eq(shopeeCredentials.shopId, shopIdFilter));
+      credentials = await db.select().from(shopeeCredentials).where(and(
+        eq(shopeeCredentials.companyId, user.companyId),
+        eq(shopeeCredentials.shopId, shopIdFilter),
+      ));
     } else {
-      credentials = await db.select().from(shopeeCredentials);
+      credentials = await db.select().from(shopeeCredentials).where(eq(shopeeCredentials.companyId, user.companyId));
     }
     
     const STEP_PROGRESS: Record<string, { progress: number, label: string }> = {
@@ -236,7 +248,7 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
     
     return { success: true, data };
   })
-  .post("/sync-status/retry", async ({ body, set }) => {
+  .post("/sync-status/retry", async ({ body, set, user }) => {
     const shopIdNum = parseInt(body.shop_id);
     if (isNaN(shopIdNum)) {
       set.status = 400;
@@ -252,7 +264,10 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
           initialSyncStartedAt: null,
           updatedAt: new Date()
         })
-        .where(eq(shopeeCredentials.shopId, shopIdNum));
+        .where(and(
+          eq(shopeeCredentials.companyId, user.companyId),
+          eq(shopeeCredentials.shopId, shopIdNum),
+        ));
         
       await onboardingQueue.add(
         `onboarding-${shopIdNum}`, 
