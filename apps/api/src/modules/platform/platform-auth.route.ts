@@ -13,6 +13,10 @@
 import { Elysia } from 'elysia';
 import { platformLogin, platformMe, type PlatformLoginResult } from './platform-auth.service';
 import { buildPlatformClearCookie, PLATFORM_COOKIE_NAME } from './platform-cookie';
+import { hasValidTenantScope } from '../auth/scope-guard';
+
+/** Tenant session cookie name — mirror of auth.middleware's local constant. */
+const TENANT_COOKIE_NAME = 'wms_session';
 
 /** Ambil IP client terbaik dari context Elysia (sama dgn auth tenant). */
 function extractIp(request: Request, server: { requestIP?: (req: Request) => { address: string } | null } | null): string {
@@ -83,17 +87,41 @@ export const platformAuthProtectedRoutes = new Elysia({ prefix: '/api/platform/a
     const admin = await platformMe({ cookieValue, now: new Date() });
 
     if (!admin) {
+      // Cross-scope guard (Fase 1.3): no valid platform session, but the request
+      // carries a correctly-signed TENANT token in the tenant cookie → a company
+      // user hitting a /platform route. Respond 403 (authenticated, wrong portal)
+      // instead of a generic 401. Pure crypto check — no DB lookup.
+      const tenantCookie = cookie[TENANT_COOKIE_NAME];
+      const tenantCookieValue =
+        tenantCookie && typeof tenantCookie.value === 'string' && tenantCookie.value !== ''
+          ? tenantCookie.value
+          : undefined;
+      const wrongScope = await hasValidTenantScope(tenantCookieValue);
+
       set.headers['Set-Cookie'] = buildPlatformClearCookie();
-      set.status = 401;
-      return { platformAdmin: null as unknown as { id: number; email: string; name: string } };
+      set.status = wrongScope ? 403 : 401;
+      return {
+        platformAdmin: null as unknown as { id: number; email: string; name: string },
+        platformAuthError: (wrongScope ? 'wrong_scope' : 'unauthorized') as
+          | 'wrong_scope'
+          | 'unauthorized',
+      };
     }
 
-    return { platformAdmin: admin };
+    return { platformAdmin: admin, platformAuthError: undefined };
   })
-  .onBeforeHandle(({ platformAdmin, set }) => {
+  .onBeforeHandle(({ platformAdmin, platformAuthError, set }) => {
     if (!platformAdmin) {
       if (!set.status || set.status === 200) {
         set.status = 401;
+      }
+      if (platformAuthError === 'wrong_scope') {
+        return {
+          ok: false,
+          error: 'wrong_scope',
+          message:
+            'This session belongs to the app and cannot access the Super Admin portal.',
+        };
       }
       return { ok: false, error: 'unauthorized', message: 'A valid platform session is required.' };
     }

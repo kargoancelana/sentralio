@@ -20,6 +20,8 @@ import { Elysia } from 'elysia';
 import { validateSession, type PublicUser } from './auth.service';
 import { decide, type Feature } from './matrix';
 import { buildClearCookie } from './cookie';
+import { hasValidPlatformScope } from './scope-guard';
+import { PLATFORM_COOKIE_NAME } from '../platform/platform-cookie';
 
 const COOKIE_NAME = 'wms_session';
 
@@ -59,13 +61,27 @@ export const authMiddleware = new Elysia({ name: 'auth-middleware' })
     const session = await validateSession({ cookieValue, now: new Date() });
 
     if (!session) {
+      // Cross-scope guard (Fase 1.3): no valid tenant session, but the request
+      // carries a correctly-signed PLATFORM token in the platform cookie → a
+      // Super Admin hitting a tenant route. Respond 403 (authenticated, wrong
+      // portal) instead of a generic 401. Pure crypto check — no DB lookup.
+      const platformCookie = cookie[PLATFORM_COOKIE_NAME];
+      const platformCookieValue =
+        platformCookie && typeof platformCookie.value === 'string' && platformCookie.value !== ''
+          ? platformCookie.value
+          : undefined;
+      const wrongScope = await hasValidPlatformScope(platformCookieValue);
+
       // Emit the clear-cookie header regardless of whether cookie was present
       // (Req 2.7).
       set.headers['Set-Cookie'] = buildClearCookie();
-      set.status = 401;
+      set.status = wrongScope ? 403 : 401;
       // Return null-ish user; the beforeHandle hook below will short-circuit.
       return {
         user: null as unknown as AuthUser,
+        authError: (wrongScope ? 'wrong_scope' : 'unauthorized') as
+          | 'wrong_scope'
+          | 'unauthorized',
         requireFeature: (_feature: Feature): void => {
           // no-op placeholder; beforeHandle stops execution before handlers run
         },
@@ -93,15 +109,23 @@ export const authMiddleware = new Elysia({ name: 'auth-middleware' })
       }
     }
 
-    return { user, requireFeature };
+    return { user, authError: undefined, requireFeature };
   })
   // Guard: reject requests whose session failed validation before any handler
-  // runs (Req 4.4).
-  .onBeforeHandle({ as: 'global' }, ({ user, set }) => {
+  // runs (Req 4.4). A correctly-signed platform token (wrong scope) yields 403.
+  .onBeforeHandle({ as: 'global' }, ({ user, authError, set }) => {
     if (!user) {
       // Status and Set-Cookie were already set by the derive step above.
       if (!set.status || set.status === 200) {
         set.status = 401;
+      }
+      if (authError === 'wrong_scope') {
+        return {
+          ok: false,
+          error: 'wrong_scope',
+          message:
+            'This session belongs to the Super Admin portal and cannot access the app.',
+        };
       }
       return {
         ok: false,
