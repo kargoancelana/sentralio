@@ -19,9 +19,9 @@ export const masterRoutes = new Elysia({ prefix: "/master" })
   // ─── Stock Update ────────────────────────────────────
   .post(
     "/update-stock",
-    async ({ body, set }) => {
+    async ({ body, set, user }) => {
       try {
-        const result = await updateStockByMasterSku(body.master_product_id, body.stock);
+        const result = await updateStockByMasterSku(body.master_product_id, body.stock, user.companyId);
         return { success: true, data: result };
       } catch (error: any) {
         const msg = error.message || "Failed to update master stock";
@@ -65,9 +65,9 @@ export const masterRoutes = new Elysia({ prefix: "/master" })
   // ─── Mapping ─────────────────────────────────────────
   .post(
     "/map",
-    async ({ body, set }) => {
+    async ({ body, set, user }) => {
       try {
-        const result = await mapModelsToMaster(body.master_product_id, body.shopee_model_ids);
+        const result = await mapModelsToMaster(body.master_product_id, body.shopee_model_ids, user.companyId);
         return { success: true, data: result };
       } catch (error: any) {
         const msg = error.message || "Failed to map models";
@@ -170,9 +170,9 @@ export const masterRoutes = new Elysia({ prefix: "/master" })
   // ─── Unlink Product Group ───────────────────────────────────
   .post(
     "/unlink",
-    async ({ body, set }) => {
+    async ({ body, set, user }) => {
       try {
-        const result = await unlinkProductGroup(body.shopee_item_id);
+        const result = await unlinkProductGroup(body.shopee_item_id, user.companyId);
         return { success: true, data: result };
       } catch (error: any) {
         const msg = error.message || "Failed to unlink";
@@ -190,9 +190,9 @@ export const masterRoutes = new Elysia({ prefix: "/master" })
   // ─── Link Product Group to Master ──────────────────────────
   .post(
     "/link-group",
-    async ({ body, set }) => {
+    async ({ body, set, user }) => {
       try {
-        const result = await mapProductGroupToMaster(body.master_product_id, body.shopee_item_id);
+        const result = await mapProductGroupToMaster(body.master_product_id, body.shopee_item_id, user.companyId);
         return { success: true, data: result };
       } catch (error: any) {
         const msg = error.message || "Failed to link";
