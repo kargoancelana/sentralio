@@ -177,6 +177,18 @@ export async function syncShopeeProducts(targetShopId?: number) {
 }
 
 async function syncShopeeProductsForShop(shopId: number) {
+  // Resolve the company that owns this shop so every synced row carries the
+  // correct company_id (otherwise inserts fall back to the DEFAULT 1).
+  const credRows = await db.select({ companyId: shopeeCredentials.companyId })
+    .from(shopeeCredentials)
+    .where(eq(shopeeCredentials.shopId, shopId))
+    .limit(1);
+  const companyId = credRows[0]?.companyId;
+  if (!companyId) {
+    console.warn(`[SYNC] Skipping shopId=${shopId}: no shopeeCredentials found (cannot resolve company_id)`);
+    return { total_items: 0, total_models: 0, status: "skipped" };
+  }
+
   // 1. Fetch all item IDs (paginated)
   const itemIds = await getItemListAll(shopId);
   let totalModels = 0;
@@ -209,6 +221,7 @@ async function syncShopeeProductsForShop(shopId: number) {
     // 3a. UPSERT product group with enriched data
     await db.insert(productGroups)
       .values({
+        companyId,
         shopId,
         shopeeItemId: itemId,
         name: itemName,
@@ -222,6 +235,7 @@ async function syncShopeeProductsForShop(shopId: number) {
       })
       .onDuplicateKeyUpdate({
         set: {
+          companyId,
           name: itemName,
           description,
           itemSku,
@@ -234,7 +248,7 @@ async function syncShopeeProductsForShop(shopId: number) {
 
     // 3b. Get group ID
     const groupRows = await db.select({ id: productGroups.id }).from(productGroups)
-      .where(eq(productGroups.shopeeItemId, itemId)).limit(1);
+      .where(and(eq(productGroups.shopId, shopId), eq(productGroups.shopeeItemId, itemId))).limit(1);
 
     if (groupRows.length === 0) continue;
     const groupId = groupRows[0].id;
@@ -251,7 +265,7 @@ async function syncShopeeProductsForShop(shopId: number) {
     // 5. Get existing models in DB for this item
     const existingModels = await db.select({ shopeeModelId: products.shopeeModelId })
       .from(products)
-      .where(eq(products.shopeeItemId, itemId));
+      .where(and(eq(products.shopId, shopId), eq(products.shopeeItemId, itemId)));
     
     const existingModelIds = new Set(existingModels.map(m => m.shopeeModelId));
     const shopeeModelIds = new Set(models.map(m => m.model_id.toString()));
@@ -261,7 +275,7 @@ async function syncShopeeProductsForShop(shopId: number) {
     if (modelsToDelete.length > 0) {
       console.log(`[SYNC] Deleting ${modelsToDelete.length} removed models for item_id=${itemId}`);
       for (const m of modelsToDelete) {
-        await db.delete(products).where(eq(products.shopeeModelId, m.shopeeModelId));
+        await db.delete(products).where(and(eq(products.shopId, shopId), eq(products.shopeeModelId, m.shopeeModelId)));
       }
     }
 
@@ -297,6 +311,7 @@ async function syncShopeeProductsForShop(shopId: number) {
 
       await db.insert(products)
         .values({
+          companyId,
           shopId,
           groupId,
           shopeeItemId: itemId,
@@ -310,6 +325,7 @@ async function syncShopeeProductsForShop(shopId: number) {
         })
         .onDuplicateKeyUpdate({
           set: {
+            companyId,
             groupId,
             modelName,
             modelSku,
