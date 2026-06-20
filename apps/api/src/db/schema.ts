@@ -327,6 +327,23 @@ export const users = mysqlTable("users", {
   idxCompany: index("idx_users_company").on(t.companyId),
 }));
 
+// Platform-level Super Admin identity store for the /platform portal.
+// GLOBAL (not per-tenant): intentionally has NO company_id. Login lives in a
+// separate portal endpoint (Fase 1.1b), not the tenant /auth login.
+export const platformAdmins = mysqlTable("platform_admins", {
+  id:           int("id").primaryKey().autoincrement(),
+  email:        varchar("email", { length: 254 }).notNull(),        // stored verbatim
+  emailLower:   varchar("email_lower", { length: 254 }).notNull(),  // ASCII-lowercased + trimmed; used for lookup
+  name:         varchar("name", { length: 100 }).notNull(),
+  passwordHash: varchar("password_hash", { length: 100 }).notNull(), // bcrypt = 60 chars; widened for safety
+  isActive:     int("is_active").notNull().default(1),               // 1=true, 0=false (MySQL booleanish)
+  tokensValidFrom: bigint("tokens_valid_from", { mode: "number" }).notNull().default(0), // unix seconds; sessions with iat < this are invalid
+  createdAt:    timestamp("created_at").notNull().defaultNow(),
+  updatedAt:    timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+}, (t) => ({
+  uniqEmailLower: uniqueIndex("uniq_platform_admins_email_lower").on(t.emailLower),
+}));
+
 export const failedLoginAttempts = mysqlTable("failed_login_attempts", {
   id:          int("id").primaryKey().autoincrement(),
   emailLower:  varchar("email_lower", { length: 254 }).notNull(),
