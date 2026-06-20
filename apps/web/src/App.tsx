@@ -1,7 +1,9 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
+import { PlatformAuthProvider } from './context/PlatformAuthContext';
 import { Layout } from './components/layout/Layout';
+import { PlatformLayout } from './components/platform/PlatformLayout';
 import { Dashboard } from './pages/Dashboard';
 import { MasterProduk } from './pages/MasterProduk';
 import { ProdukChannel } from './pages/ProdukChannel';
@@ -10,7 +12,10 @@ import { ShopeeCallback } from './pages/ShopeeCallback';
 import { PesananSaya } from './pages/PesananSaya';
 import { LaporanKeuangan } from './pages/LaporanKeuangan';
 import { LoginPage } from './pages/Login';
+import { PlatformLogin } from './pages/platform/PlatformLogin';
+import { PlatformDashboard } from './pages/platform/PlatformDashboard';
 import { ProtectedRoute } from './auth/ProtectedRoute';
+import { PlatformProtectedRoute } from './auth/PlatformProtectedRoute';
 import { RoleGate } from './auth/RoleGate';
 import { FeatureGate } from './auth/FeatureGate';
 import { Pengaturan } from './pages/Pengaturan';
@@ -18,13 +23,51 @@ import { AutoBoost } from './pages/AutoBoost';
 import './styles/globals.css';
 import './styles/hpp-layout.css';
 
+/**
+ * Subtree app tenant, dibungkus AuthProvider tenant. Hanya ter-mount untuk
+ * route non-/platform, jadi cek sesi tenant / 'wms.session-expired' tidak
+ * pernah jalan di dalam portal Super Admin.
+ */
+function TenantAuthLayout() {
+  return (
+    <AuthProvider>
+      <Outlet />
+    </AuthProvider>
+  );
+}
+
+/**
+ * Subtree portal Super Admin, dibungkus PlatformAuthProvider sendiri. Terisolasi
+ * dari AuthProvider tenant: cookie sesi beda, cek /me beda.
+ */
+function PlatformAuthLayout() {
+  return (
+    <PlatformAuthProvider>
+      <Outlet />
+    </PlatformAuthProvider>
+  );
+}
+
 function App() {
   return (
     <ThemeProvider>
       <BrowserRouter>
-        {/* AuthProvider must be inside BrowserRouter because it uses useNavigate */}
-        <AuthProvider>
-          <Routes>
+        <Routes>
+          {/* Portal Super Admin (/platform) - auth context terisolasi */}
+          <Route element={<PlatformAuthLayout />}>
+            {/* Public portal route */}
+            <Route path="/platform/login" element={<PlatformLogin />} />
+
+            {/* Protected portal routes */}
+            <Route element={<PlatformProtectedRoute />}>
+              <Route element={<PlatformLayout />}>
+                <Route path="/platform" element={<PlatformDashboard />} />
+              </Route>
+            </Route>
+          </Route>
+
+          {/* App tenant (selain /platform) */}
+          <Route element={<TenantAuthLayout />}>
             {/* Public route */}
             <Route path="/login" element={<LoginPage />} />
 
@@ -36,7 +79,7 @@ function App() {
                 {/* Cetak Label shares the orders page */}
                 <Route path="/cetak-label" element={<PesananSaya />} />
 
-                {/* Configurable feature routes — gated by effective feature
+                {/* Configurable feature routes - gated by effective feature
                     access so admin-granted staff permissions take effect. */}
                 <Route element={<FeatureGate feature="master_produk" />}>
                   <Route path="/produk/master" element={<MasterProduk />} />
@@ -57,7 +100,7 @@ function App() {
                   <Route path="/integrasi/shopee/callback" element={<ShopeeCallback />} />
                 </Route>
 
-                {/* Settings — available to all authenticated users.
+                {/* Settings - available to all authenticated users.
                     Admin-only sections (user management) are gated inside the page. */}
                 <Route path="/settings" element={<Pengaturan />} />
                 {/* Legacy /users path now lives under Settings */}
@@ -65,10 +108,10 @@ function App() {
               </Route>
             </Route>
 
-            {/* Catch-all — redirect to home */}
+            {/* Catch-all - redirect to home */}
             <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </AuthProvider>
+          </Route>
+        </Routes>
       </BrowserRouter>
     </ThemeProvider>
   );
