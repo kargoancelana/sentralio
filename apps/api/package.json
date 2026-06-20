@@ -13,7 +13,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "db:seed": "bun run src/db/seed.ts",
-    "create-admin": "bun run src/scripts/create-admin.ts"
+    "create-admin": "bun run src/scripts/create-admin.ts",
+    "create-platform-admin": "bun run src/scripts/create-platform-admin.ts"
   },
   "dependencies": {
     "@elysiajs/cors": "^1.1.0",
