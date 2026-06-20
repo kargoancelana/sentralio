@@ -27,6 +27,7 @@ import { permissionsRoutes } from "./modules/auth/permissions.route";
 import { ensureStaffPermissionsLoaded } from "./modules/auth/permissions.service";
 import { originMiddleware } from "./modules/auth/origin.middleware";
 import { platformAuthPublicRoutes, platformAuthProtectedRoutes } from "./modules/platform/platform-auth.route";
+import { platformCompaniesRoutes } from "./modules/platform/platform-companies.route";
 import { usersRoutes } from "./modules/users/users.route";
 import { autoBoostRoutes } from "./modules/auto-boost/auto-boost.route";
 import { startQueues, stopQueues } from "./queue";
@@ -120,6 +121,7 @@ const app = new Elysia()
   // (scope:'platform'), bukan sesi tenant.
   .use(platformAuthPublicRoutes)      // POST /api/platform/auth/login
   .use(platformAuthProtectedRoutes)   // GET /api/platform/auth/me, POST /api/platform/auth/logout
+  .use(platformCompaniesRoutes)       // GET /api/platform/companies, /companies/:id
 
   // ─── Protected routes: require valid session ──────────────────────────────
   // Apply Origin_Middleware then Auth_Middleware to all routes below.

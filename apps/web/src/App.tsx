@@ -14,6 +14,8 @@ import { LaporanKeuangan } from './pages/LaporanKeuangan';
 import { LoginPage } from './pages/Login';
 import { PlatformLogin } from './pages/platform/PlatformLogin';
 import { PlatformDashboard } from './pages/platform/PlatformDashboard';
+import { PlatformCompanies } from './pages/platform/PlatformCompanies';
+import { PlatformCompanyDetail } from './pages/platform/PlatformCompanyDetail';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { PlatformProtectedRoute } from './auth/PlatformProtectedRoute';
 import { RoleGate } from './auth/RoleGate';
@@ -62,6 +64,8 @@ function App() {
             <Route element={<PlatformProtectedRoute />}>
               <Route element={<PlatformLayout />}>
                 <Route path="/platform" element={<PlatformDashboard />} />
+                <Route path="/platform/companies" element={<PlatformCompanies />} />
+                <Route path="/platform/companies/:id" element={<PlatformCompanyDetail />} />
               </Route>
             </Route>
           </Route>
