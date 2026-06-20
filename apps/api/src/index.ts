@@ -26,6 +26,7 @@ import { featureGuardMiddleware } from "./modules/auth/feature-guard.middleware"
 import { permissionsRoutes } from "./modules/auth/permissions.route";
 import { ensureStaffPermissionsLoaded } from "./modules/auth/permissions.service";
 import { originMiddleware } from "./modules/auth/origin.middleware";
+import { platformAuthPublicRoutes, platformAuthProtectedRoutes } from "./modules/platform/platform-auth.route";
 import { usersRoutes } from "./modules/users/users.route";
 import { autoBoostRoutes } from "./modules/auto-boost/auto-boost.route";
 import { startQueues, stopQueues } from "./queue";
@@ -112,6 +113,13 @@ const app = new Elysia()
   }))
 
   .use(authPublicRoutes)   // POST /auth/login
+
+  // ─── Platform portal auth (Super Admin) ──────────────────────────────────
+  // Dimount SEBELUM origin/auth middleware tenant supaya login portal publik
+  // dan route portal dijaga oleh middleware sesi platform-nya sendiri
+  // (scope:'platform'), bukan sesi tenant.
+  .use(platformAuthPublicRoutes)      // POST /api/platform/auth/login
+  .use(platformAuthProtectedRoutes)   // GET /api/platform/auth/me, POST /api/platform/auth/logout
 
   // ─── Protected routes: require valid session ──────────────────────────────
   // Apply Origin_Middleware then Auth_Middleware to all routes below.
