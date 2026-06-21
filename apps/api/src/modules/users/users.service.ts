@@ -79,7 +79,7 @@ export type DrizzleDb = typeof defaultDb;
  * List all users. Never includes password or password_hash.
  * Requirement: 6.1
  */
-export async function listUsers(db: DrizzleDb = defaultDb): Promise<UserListItem[]> {
+export async function listUsers(companyId: number, db: DrizzleDb = defaultDb): Promise<UserListItem[]> {
   const rows = await db
     .select({
       id: users.id,
@@ -88,7 +88,8 @@ export async function listUsers(db: DrizzleDb = defaultDb): Promise<UserListItem
       role: users.role,
       isActive: users.isActive,
     })
-    .from(users);
+    .from(users)
+    .where(eq(users.companyId, companyId));
 
   return rows.map((row) => ({
     id: row.id,
@@ -233,6 +234,7 @@ export async function createUser(
  */
 export async function updateUser(
   id: number,
+  companyId: number,
   data: UpdateUserData,
   db: DrizzleDb = defaultDb,
 ): Promise<UserListItem | null> {
@@ -259,12 +261,12 @@ export async function updateUser(
 
   if (Object.keys(updateData).length === 0) {
     // Nothing to update — just return the current user
-    return getUserById(id, db);
+    return getUserById(id, companyId, db);
   }
 
-  await db.update(users).set(updateData).where(eq(users.id, id));
+  await db.update(users).set(updateData).where(and(eq(users.id, id), eq(users.companyId, companyId)));
 
-  return getUserById(id, db);
+  return getUserById(id, companyId, db);
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -279,15 +281,16 @@ export async function updateUser(
  */
 export async function setUserActive(
   id: number,
+  companyId: number,
   isActive: boolean,
   db: DrizzleDb = defaultDb,
 ): Promise<UserListItem | null> {
   await db
     .update(users)
     .set({ isActive: isActive ? 1 : 0 })
-    .where(eq(users.id, id));
+    .where(and(eq(users.id, id), eq(users.companyId, companyId)));
 
-  return getUserById(id, db);
+  return getUserById(id, companyId, db);
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -298,11 +301,11 @@ export async function setUserActive(
  * Count how many users are currently active admins.
  * Used to prevent deactivating or demoting the last remaining admin.
  */
-export async function countActiveAdmins(db: DrizzleDb = defaultDb): Promise<number> {
+export async function countActiveAdmins(companyId: number, db: DrizzleDb = defaultDb): Promise<number> {
   const rows = await db
     .select({ id: users.id })
     .from(users)
-    .where(and(eq(users.role, 'admin'), eq(users.isActive, 1)));
+    .where(and(eq(users.role, 'admin'), eq(users.isActive, 1), eq(users.companyId, companyId)));
   return rows.length;
 }
 
@@ -312,9 +315,10 @@ export async function countActiveAdmins(db: DrizzleDb = defaultDb): Promise<numb
  */
 export async function getUserPublicById(
   id: number,
+  companyId: number,
   db: DrizzleDb = defaultDb,
 ): Promise<UserListItem | null> {
-  return getUserById(id, db);
+  return getUserById(id, companyId, db);
 }
 
 /**
@@ -326,12 +330,13 @@ export async function getUserPublicById(
  */
 export async function deleteUser(
   id: number,
+  companyId: number,
   db: DrizzleDb = defaultDb,
 ): Promise<UserListItem | null> {
-  const existing = await getUserById(id, db);
+  const existing = await getUserById(id, companyId, db);
   if (!existing) return null;
 
-  await db.delete(users).where(eq(users.id, id));
+  await db.delete(users).where(and(eq(users.id, id), eq(users.companyId, companyId)));
   return existing;
 }
 
@@ -346,6 +351,7 @@ export async function deleteUser(
  */
 async function getUserById(
   id: number,
+  companyId: number,
   db: DrizzleDb = defaultDb,
 ): Promise<UserListItem | null> {
   const rows = await db
@@ -357,7 +363,7 @@ async function getUserById(
       isActive: users.isActive,
     })
     .from(users)
-    .where(eq(users.id, id))
+    .where(and(eq(users.id, id), eq(users.companyId, companyId)))
     .limit(1);
 
   if (rows.length === 0 || !rows[0]) return null;

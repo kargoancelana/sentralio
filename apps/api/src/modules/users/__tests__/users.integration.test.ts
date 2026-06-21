@@ -69,15 +69,15 @@ function makeFakeDb(opts: {
         from(_table: unknown) {
           return {
             // createUser uniqueness check: .where(...).limit(1)
+            // listUsers: .where(companyId) — hasilnya di-await langsung
             where(_cond: unknown) {
               return {
                 limit(_n: number) {
                   return awaitableResult(existingRows);
                 },
+                ...awaitableResult(listRows),
               };
             },
-            // listUsers: no .where() — result is awaited directly
-            ...awaitableResult(listRows),
           };
         },
       };
@@ -407,7 +407,7 @@ describe("GET /users — returns array with only safe fields (no password_hash)"
     ];
 
     const db = makeFakeDb({ listRows: fakeRows });
-    const result = await listUsers(db);
+    const result = await listUsers(1, db);
 
     expect(Array.isArray(result)).toBe(true);
     expect(result.length).toBe(2);
@@ -434,7 +434,7 @@ describe("GET /users — returns array with only safe fields (no password_hash)"
     ];
 
     const db = makeFakeDb({ listRows: fakeRows });
-    const result = await listUsers(db);
+    const result = await listUsers(1, db);
 
     expect(result[0]?.isActive).toBe(true);
     expect(result[1]?.isActive).toBe(false);
@@ -442,7 +442,7 @@ describe("GET /users — returns array with only safe fields (no password_hash)"
 
   test("listUsers returns empty array when no users exist", async () => {
     const db = makeFakeDb({ listRows: [] });
-    const result = await listUsers(db);
+    const result = await listUsers(1, db);
     expect(result).toEqual([]);
   });
 
@@ -452,7 +452,7 @@ describe("GET /users — returns array with only safe fields (no password_hash)"
     ];
 
     const db = makeFakeDb({ listRows: fakeRows });
-    const [user] = await listUsers(db);
+    const [user] = await listUsers(1, db);
 
     expect(user?.id).toBe(42);
     expect(user?.email).toBe("charlie@example.com");

@@ -29,7 +29,7 @@ export const usersRoutes = new Elysia({ prefix: '/users' })
     requireFeature('user_management');
 
     try {
-      const userList = await listUsers();
+      const userList = await listUsers(user.companyId);
       return userList;
     } catch (err: any) {
       set.status = 500;
@@ -139,9 +139,9 @@ export const usersRoutes = new Elysia({ prefix: '/users' })
       }
 
       if (deactivating || demoting) {
-        const target = await getUserPublicById(id);
+        const target = await getUserPublicById(id, user.companyId);
         if (target && target.role === 'admin' && target.isActive) {
-          const activeAdmins = await countActiveAdmins();
+          const activeAdmins = await countActiveAdmins(user.companyId);
           if (activeAdmins <= 1) {
             set.status = 400;
             return {
@@ -155,7 +155,7 @@ export const usersRoutes = new Elysia({ prefix: '/users' })
     }
 
     try {
-      const updated = await updateUser(id, updateData);
+      const updated = await updateUser(id, user.companyId, updateData);
       if (!updated) {
         set.status = 404;
         return { ok: false, error: 'not_found', message: `User ${id} not found` };
@@ -207,9 +207,9 @@ export const usersRoutes = new Elysia({ prefix: '/users' })
       }
 
       // (b) Cannot deactivate the last remaining active admin.
-      const target = await getUserPublicById(id);
+      const target = await getUserPublicById(id, user.companyId);
       if (target && target.role === 'admin' && target.isActive) {
-        const activeAdmins = await countActiveAdmins();
+        const activeAdmins = await countActiveAdmins(user.companyId);
         if (activeAdmins <= 1) {
           set.status = 400;
           return {
@@ -221,7 +221,7 @@ export const usersRoutes = new Elysia({ prefix: '/users' })
       }
     }
 
-    const updated = await setUserActive(id, bodyData.isActive);
+    const updated = await setUserActive(id, user.companyId, bodyData.isActive);
     if (!updated) {
       set.status = 404;
       return { ok: false, error: 'not_found', message: `User ${id} not found` };
@@ -259,13 +259,13 @@ export const usersRoutes = new Elysia({ prefix: '/users' })
     }
 
     // (b) Cannot delete the last remaining active admin.
-    const target = await getUserPublicById(id);
+    const target = await getUserPublicById(id, user.companyId);
     if (!target) {
       set.status = 404;
       return { ok: false, error: 'not_found', message: `User ${id} not found` };
     }
     if (target.role === 'admin' && target.isActive) {
-      const activeAdmins = await countActiveAdmins();
+      const activeAdmins = await countActiveAdmins(user.companyId);
       if (activeAdmins <= 1) {
         set.status = 400;
         return {
@@ -276,7 +276,7 @@ export const usersRoutes = new Elysia({ prefix: '/users' })
       }
     }
 
-    const deleted = await deleteUser(id);
+    const deleted = await deleteUser(id, user.companyId);
     if (!deleted) {
       set.status = 404;
       return { ok: false, error: 'not_found', message: `User ${id} not found` };
