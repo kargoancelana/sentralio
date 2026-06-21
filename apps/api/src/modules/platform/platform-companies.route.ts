@@ -1,8 +1,8 @@
 /**
- * Platform portal companies routes (Super Admin) — prefix /api/platform.
+ * Platform portal companies routes (Super Admin) — prefix /platform.
  *
- *   GET /api/platform/companies       -> list semua company + ringkasan
- *   GET /api/platform/companies/:id   -> detail company + user & toko (read-only)
+ *   GET /platform/companies       -> list semua company + ringkasan
+ *   GET /platform/companies/:id   -> detail company + user & toko (read-only)
  *
  * Guard (derive + onBeforeHandle LOCAL-scope) di-mirror dari
  * platform-auth.route.ts: hanya sesi platform (scope:'platform') yang boleh;
@@ -19,7 +19,7 @@ import { listCompanies, getCompanyDetail } from './platform-companies.service';
 /** Tenant session cookie name — mirror of auth.middleware's local constant. */
 const TENANT_COOKIE_NAME = 'wms_session';
 
-export const platformCompaniesRoutes = new Elysia({ prefix: '/api/platform' })
+export const platformCompaniesRoutes = new Elysia({ prefix: '/platform' })
   .derive(async ({ cookie, set }) => {
     const sessionCookie = cookie[PLATFORM_COOKIE_NAME];
     const cookieValue =

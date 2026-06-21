@@ -1,7 +1,7 @@
 /**
  * Platform_Companies_Service — data tenant untuk portal Super Admin (read-only).
  *
- * Dipakai route /api/platform/companies (list & detail). Semua query GLOBAL
+ * Dipakai route /platform/companies (list & detail). Semua query GLOBAL
  * (lintas company) karena ini sudut pandang Super Admin, BUKAN tenant-scoped.
  *
  * Catatan: kolom sensitif (password_hash, tokens_valid_from, token Shopee)

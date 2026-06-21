@@ -7,7 +7,7 @@ import { createResetToken } from '../auth/password-reset.service';
 /** Tenant session cookie name — mirror of auth.middleware's local constant. */
 const TENANT_COOKIE_NAME = 'wms_session';
 
-export const platformUsersRoutes = new Elysia({ prefix: '/api/platform' })
+export const platformUsersRoutes = new Elysia({ prefix: '/platform' })
   .derive(async ({ cookie, set }) => {
     const sessionCookie = cookie[PLATFORM_COOKIE_NAME];
     const cookieValue =
