@@ -24,6 +24,7 @@ import {
   updatePackingCostEntry,
 } from "./packing-cost.service";
 import { resolveAuditActor, type AuditActor } from "../../utils/audit-actor";
+import { authMiddleware } from "../auth/auth.middleware";
 
 // ─── Helper: map ServiceResult errors to HTTP status codes ────────────────
 
@@ -36,18 +37,20 @@ function mapErrorStatus(message: string): number {
 // ─── Routes ────────────────────────────────────────────────
 
 export const packingCostRoutes = new Elysia({ prefix: "/packing-cost" })
+  .use(authMiddleware)
 
   // ─── POST /packing-cost/entries ────────────────────────────────
   .post(
     "/entries",
     async (ctx) => {
-      const { body, headers, set } = ctx;
+      const { body, headers, set, user } = ctx;
       const userId = resolveAuditActor(
-        (ctx as { user?: AuditActor }).user,
+        user,
         headers as Record<string, string | undefined>,
       );
 
       const result = await createPackingCostEntry({
+        companyId: user.companyId,
         productGroupId: body.productGroupId,
         packingCost: body.packingCost,
         startDate: body.startDate,
@@ -79,7 +82,7 @@ export const packingCostRoutes = new Elysia({ prefix: "/packing-cost" })
   .put(
     "/entries/:id",
     async (ctx) => {
-      const { params, body, headers, set } = ctx;
+      const { params, body, headers, set, user } = ctx;
       const id = Number(params.id);
       if (!Number.isFinite(id) || id <= 0) {
         set.status = 400;
@@ -87,12 +90,13 @@ export const packingCostRoutes = new Elysia({ prefix: "/packing-cost" })
       }
 
       const userId = resolveAuditActor(
-        (ctx as { user?: AuditActor }).user,
+        user,
         headers as Record<string, string | undefined>,
       );
 
       const result = await updatePackingCostEntry({
         id,
+        companyId: user.companyId,
         packingCost: body.packingCost,
         startDate: body.startDate,
         endDate: body.endDate ?? null,
@@ -122,7 +126,7 @@ export const packingCostRoutes = new Elysia({ prefix: "/packing-cost" })
   .delete(
     "/entries/:id",
     async (ctx) => {
-      const { params, headers, set } = ctx;
+      const { params, headers, set, user } = ctx;
       const id = Number(params.id);
       if (!Number.isFinite(id) || id <= 0) {
         set.status = 400;
@@ -130,11 +134,11 @@ export const packingCostRoutes = new Elysia({ prefix: "/packing-cost" })
       }
 
       const userId = resolveAuditActor(
-        (ctx as { user?: AuditActor }).user,
+        user,
         headers as Record<string, string | undefined>,
       );
 
-      const result = await deletePackingCostEntry(id, userId);
+      const result = await deletePackingCostEntry(id, userId, user.companyId);
 
       if (!result.success) {
         set.status = mapErrorStatus(result.message);
@@ -151,14 +155,14 @@ export const packingCostRoutes = new Elysia({ prefix: "/packing-cost" })
   // ─── GET /packing-cost/product-groups/:groupId/history ────────────────
   .get(
     "/product-groups/:groupId/history",
-    async ({ params, set }) => {
+    async ({ params, set, user }) => {
       const groupId = Number(params.groupId);
       if (!Number.isFinite(groupId) || groupId <= 0) {
         set.status = 400;
         return { success: false, message: "Invalid product group id" };
       }
 
-      const result = await getPackingCostHistory(groupId);
+      const result = await getPackingCostHistory(groupId, user.companyId);
 
       if (!result.success) {
         set.status = mapErrorStatus(result.message);
@@ -175,7 +179,7 @@ export const packingCostRoutes = new Elysia({ prefix: "/packing-cost" })
   // ─── GET /packing-cost/product-groups/:groupId/resolve ────────────────
   .get(
     "/product-groups/:groupId/resolve",
-    async ({ params, query, set }) => {
+    async ({ params, query, set, user }) => {
       const groupId = Number(params.groupId);
       if (!Number.isFinite(groupId) || groupId <= 0) {
         set.status = 400;
@@ -191,7 +195,7 @@ export const packingCostRoutes = new Elysia({ prefix: "/packing-cost" })
         return { success: false, message: "Date must be in YYYY-MM-DD format", field: "date" };
       }
 
-      const result = await resolvePackingCost(groupId, targetDate);
+      const result = await resolvePackingCost(groupId, targetDate, user.companyId);
 
       if (!result.success) {
         set.status = mapErrorStatus(result.message);

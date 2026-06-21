@@ -19,6 +19,7 @@ import {
 // ─── Input Interfaces ──────────────────────────────────────────────────────────
 
 export interface CreateHppEntryInput {
+  companyId: number;
   variantId: number;
   hppValue: number;       // Rp 1 – Rp 999,999,999
   startDate: string;      // YYYY-MM-DD
@@ -29,6 +30,7 @@ export interface CreateHppEntryInput {
 
 export interface UpdateHppEntryInput {
   id: number;
+  companyId: number;
   hppValue: number;
   startDate: string;
   endDate?: string | null;
@@ -114,11 +116,16 @@ async function insertAuditLog(params: {
 
 // ─── Variant Existence Check ───────────────────────────────────────────────────
 
-async function assertVariantExists(variantId: number): Promise<ServiceError | null> {
+async function assertVariantExists(variantId: number, companyId: number): Promise<ServiceError | null> {
   const rows = await db
     .select({ id: masterProductVariants.id })
     .from(masterProductVariants)
-    .where(eq(masterProductVariants.id, variantId))
+    .where(
+      and(
+        eq(masterProductVariants.id, variantId),
+        eq(masterProductVariants.companyId, companyId)
+      )
+    )
     .limit(1);
 
   if (rows.length === 0) {
@@ -132,7 +139,7 @@ async function assertVariantExists(variantId: number): Promise<ServiceError | nu
 
 // ─── Fetch Active Entries Helper ───────────────────────────────────────────────
 
-async function fetchActiveEntries(variantId: number): Promise<ExistingEntry[]> {
+async function fetchActiveEntries(variantId: number, companyId: number): Promise<ExistingEntry[]> {
   const rows = await db
     .select({
       id: hppEntries.id,
@@ -144,6 +151,7 @@ async function fetchActiveEntries(variantId: number): Promise<ExistingEntry[]> {
     .where(
       and(
         eq(hppEntries.variantId, variantId),
+        eq(hppEntries.companyId, companyId),
         isNull(hppEntries.deletedAt),
       ),
     );
@@ -197,11 +205,11 @@ export async function createHppEntry(
   if (noteError) return noteError;
 
   // 4. Assert variant exists
-  const variantError = await assertVariantExists(input.variantId);
+  const variantError = await assertVariantExists(input.variantId, input.companyId);
   if (variantError) return variantError;
 
   // 5. Fetch active entries
-  const activeEntries = await fetchActiveEntries(input.variantId);
+  const activeEntries = await fetchActiveEntries(input.variantId, input.companyId);
 
   // 6. Handle auto-close for open-ended entry
   const openEntry = activeEntries.find((e) => e.endDate === null);
@@ -271,6 +279,7 @@ export async function createHppEntry(
 
   // 9. Insert new entry
   const insertResult = await db.insert(hppEntries).values({
+    companyId: input.companyId,
     variantId: input.variantId,
     hppValue: input.hppValue,
     startDate: input.startDate,
@@ -286,6 +295,10 @@ export async function createHppEntry(
     .from(hppEntries)
     .where(eq(hppEntries.id, newId))
     .limit(1);
+
+  if (!newEntry) {
+    throw new Error("Failed to retrieve created HPP entry");
+  }
 
   // 11. Audit log for insert
   await insertAuditLog({
@@ -346,7 +359,7 @@ export async function updateHppEntry(
   const [existing] = await db
     .select()
     .from(hppEntries)
-    .where(and(eq(hppEntries.id, input.id), isNull(hppEntries.deletedAt)))
+    .where(and(eq(hppEntries.id, input.id), eq(hppEntries.companyId, input.companyId), isNull(hppEntries.deletedAt)))
     .limit(1);
 
   if (!existing) {
@@ -357,7 +370,7 @@ export async function updateHppEntry(
   }
 
   // 5. Fetch all active entries for the same variant and check overlap (excluding self)
-  const activeEntries = await fetchActiveEntries(existing.variantId);
+  const activeEntries = await fetchActiveEntries(existing.variantId, input.companyId);
   const newPeriod = { startDate: input.startDate, endDate: input.endDate ?? null };
   const overlapResult = checkOverlap(newPeriod, activeEntries, input.id);
 
@@ -384,7 +397,7 @@ export async function updateHppEntry(
       note: input.note ?? null,
       updatedAt: new Date(),
     })
-    .where(eq(hppEntries.id, input.id));
+    .where(and(eq(hppEntries.id, input.id), eq(hppEntries.companyId, input.companyId)));
 
   // 7. Fetch updated row
   const [updated] = await db
@@ -392,6 +405,10 @@ export async function updateHppEntry(
     .from(hppEntries)
     .where(eq(hppEntries.id, input.id))
     .limit(1);
+
+  if (!updated) {
+    throw new Error("Failed to retrieve updated HPP entry");
+  }
 
   // 8. Audit log for update
   await insertAuditLog({
@@ -425,12 +442,13 @@ export async function updateHppEntry(
 export async function deleteHppEntry(
   id: number,
   userId: string,
+  companyId: number,
 ): Promise<ServiceResult<{ id: number }>> {
   // Fetch existing entry (must exist and not already be deleted)
   const [existing] = await db
     .select()
     .from(hppEntries)
-    .where(and(eq(hppEntries.id, id), isNull(hppEntries.deletedAt)))
+    .where(and(eq(hppEntries.id, id), eq(hppEntries.companyId, companyId), isNull(hppEntries.deletedAt)))
     .limit(1);
 
   if (!existing) {
@@ -445,7 +463,7 @@ export async function deleteHppEntry(
   await db
     .update(hppEntries)
     .set({ deletedAt, updatedAt: deletedAt })
-    .where(eq(hppEntries.id, id));
+    .where(and(eq(hppEntries.id, id), eq(hppEntries.companyId, companyId)));
 
   // Audit log for delete
   await insertAuditLog({
@@ -501,12 +519,12 @@ function deserialiseAuditLog(
  *
  * Requirements: 4.1, 4.2, 4.3
  */
-export async function getHppHistory(variantId: number): Promise<
+export async function getHppHistory(variantId: number, companyId: number): Promise<
   ServiceResult<
     Array<
       typeof hppEntries.$inferSelect & {
         auditLogs: Array<
-          typeof costAuditLog.$inferSelect & {
+          Omit<typeof costAuditLog.$inferSelect, "previousValues" | "newValues"> & {
             previousValues: Record<string, unknown> | null;
             newValues: Record<string, unknown> | null;
           }
@@ -516,14 +534,19 @@ export async function getHppHistory(variantId: number): Promise<
   >
 > {
   // Assert variant exists
-  const variantError = await assertVariantExists(variantId);
+  const variantError = await assertVariantExists(variantId, companyId);
   if (variantError) return variantError;
 
   // Fetch all entries (including deleted), sorted by startDate DESC, max 100
   const entries = await db
     .select()
     .from(hppEntries)
-    .where(eq(hppEntries.variantId, variantId))
+    .where(
+      and(
+        eq(hppEntries.variantId, variantId),
+        eq(hppEntries.companyId, companyId),
+      ),
+    )
     .orderBy(desc(hppEntries.startDate))
     .limit(100);
 
@@ -550,7 +573,7 @@ export async function getHppHistory(variantId: number): Promise<
   // frontend iterates the string character-by-character.
   const auditLogsByEntryId = new Map<
     number,
-    Array<typeof costAuditLog.$inferSelect & {
+    Array<Omit<typeof costAuditLog.$inferSelect, "previousValues" | "newValues"> & {
       previousValues: Record<string, unknown> | null;
       newValues: Record<string, unknown> | null;
     }>
@@ -587,9 +610,10 @@ export async function getHppHistory(variantId: number): Promise<
 export async function resolveHpp(
   variantId: number,
   targetDate: string,
+  companyId: number,
 ): Promise<ServiceResult<HppResolutionResult>> {
   // Assert variant exists
-  const variantError = await assertVariantExists(variantId);
+  const variantError = await assertVariantExists(variantId, companyId);
   if (variantError) return variantError;
 
   // Fetch all active (non-deleted) entries for the variant
@@ -599,6 +623,7 @@ export async function resolveHpp(
     .where(
       and(
         eq(hppEntries.variantId, variantId),
+        eq(hppEntries.companyId, companyId),
         isNull(hppEntries.deletedAt),
       ),
     );
@@ -644,8 +669,8 @@ export async function resolveHpp(
       return b.startDate > a.startDate ? 1 : -1;
     });
 
-  if (pastEntries.length > 0) {
-    const fallbackEntry = pastEntries[0];
+  const [fallbackEntry] = pastEntries;
+  if (fallbackEntry) {
     return {
       success: true,
       data: {

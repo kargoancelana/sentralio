@@ -808,7 +808,7 @@ async function getProfitSummaryUncached(
 
   // Single-path resolution via Cost_Resolver — no fallback, bubble exceptions
   const ordersForResolve = buildOrdersForResolve(orders);
-  const resolvedMap = await Cost_Resolver_resolveOrders(ordersForResolve);
+  const resolvedMap = await Cost_Resolver_resolveOrders(ordersForResolve, companyId);
 
   let unmappedOrderCount = 0;
   let unmappedItemCount = 0;
@@ -943,7 +943,7 @@ export async function getOrderProfitList(
 
   // Single-path batch resolution — bubble exceptions
   const ordersForResolve = buildOrdersForResolve(fetchedOrders);
-  const resolvedMap = await Cost_Resolver_resolveOrders(ordersForResolve);
+  const resolvedMap = await Cost_Resolver_resolveOrders(ordersForResolve, companyId);
 
   const orderResults = fetchedOrders.map((order) => {
     const resolved = resolvedMap.get(order.orderSn);
@@ -1079,7 +1079,7 @@ async function getShopPerformanceUncached(
 
   // Single-path batch resolution — bubble exceptions
   const ordersForResolve = buildOrdersForResolve(fetchedOrders);
-  const resolvedMap = await Cost_Resolver_resolveOrders(ordersForResolve);
+  const resolvedMap = await Cost_Resolver_resolveOrders(ordersForResolve, companyId);
 
   const shopOrderGroups = fetchedOrders.map((order) => {
     const resolved = resolvedMap.get(order.orderSn);
@@ -1172,7 +1172,7 @@ async function getProductPerformanceUncached(
 
   // Single-path batch resolution — bubble exceptions
   const ordersForResolve = buildOrdersForResolve(fetchedOrders);
-  const resolvedMap = await Cost_Resolver_resolveOrders(ordersForResolve);
+  const resolvedMap = await Cost_Resolver_resolveOrders(ordersForResolve, companyId);
 
   // Collect all item groups with resolved costs
   const productItemGroups: Array<{
@@ -1214,6 +1214,7 @@ async function getProductPerformanceUncached(
           .innerJoin(productGroups, eq(products.groupId, productGroups.id))
           .where(
             and(
+              eq(products.companyId, companyId),
               eq(products.shopId, order.shopId),
               eq(products.modelSku, item.modelSku),
             ),

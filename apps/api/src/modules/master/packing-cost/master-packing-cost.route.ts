@@ -27,6 +27,7 @@ import {
   updateMasterPackingCost,
 } from "./master-packing-cost.service";
 import { resolveAuditActor, type AuditActor } from "../../../utils/audit-actor";
+import { authMiddleware } from "../../auth/auth.middleware";
 
 // ─── Helper: map ServiceResult errors to HTTP status codes ────────────────
 
@@ -39,14 +40,15 @@ function mapErrorStatus(message: string): number {
 // ─── Routes ────────────────────────────────────────────────
 
 export const masterPackingCostRoutes = new Elysia({ prefix: "/master-packing-cost" })
+  .use(authMiddleware)
 
   // ─── POST /master-packing-cost/master-products/:masterProductId/entries ───
   .post(
     "/master-products/:masterProductId/entries",
     async (ctx) => {
-      const { params, body, headers, set } = ctx;
+      const { params, body, headers, set, user } = ctx;
       const userId = resolveAuditActor(
-        (ctx as { user?: AuditActor }).user,
+        user,
         headers as Record<string, string | undefined>,
       );
 
@@ -58,6 +60,7 @@ export const masterPackingCostRoutes = new Elysia({ prefix: "/master-packing-cos
 
       // Req 14.11: userId derived from the authenticated session, body.userId ignored
       const result = await createMasterPackingCost({
+        companyId: user.companyId,
         masterProductId,
         packingCost: body.packingCost,
         startDate: body.startDate,
@@ -91,9 +94,9 @@ export const masterPackingCostRoutes = new Elysia({ prefix: "/master-packing-cos
   .put(
     "/entries/:id",
     async (ctx) => {
-      const { params, body, headers, set } = ctx;
+      const { params, body, headers, set, user } = ctx;
       const userId = resolveAuditActor(
-        (ctx as { user?: AuditActor }).user,
+        user,
         headers as Record<string, string | undefined>,
       );
 
@@ -106,6 +109,7 @@ export const masterPackingCostRoutes = new Elysia({ prefix: "/master-packing-cos
       // Req 14.11: userId derived from the authenticated session, body.userId ignored
       const result = await updateMasterPackingCost({
         id,
+        companyId: user.companyId,
         packingCost: body.packingCost,
         startDate: body.startDate,
         endDate: body.endDate ?? null,
@@ -137,9 +141,9 @@ export const masterPackingCostRoutes = new Elysia({ prefix: "/master-packing-cos
   .delete(
     "/entries/:id",
     async (ctx) => {
-      const { params, headers, set } = ctx;
+      const { params, headers, set, user } = ctx;
       const userId = resolveAuditActor(
-        (ctx as { user?: AuditActor }).user,
+        user,
         headers as Record<string, string | undefined>,
       );
 
@@ -149,7 +153,7 @@ export const masterPackingCostRoutes = new Elysia({ prefix: "/master-packing-cos
         return { success: false, message: "Invalid entry id" };
       }
 
-      const result = await deleteMasterPackingCost(id, userId);
+      const result = await deleteMasterPackingCost(id, userId, user.companyId);
 
       if (!result.success) {
         // Req 14.8: not-found → 404
@@ -168,14 +172,15 @@ export const masterPackingCostRoutes = new Elysia({ prefix: "/master-packing-cos
   // ─── GET /master-packing-cost/master-products/:masterProductId/history ────
   .get(
     "/master-products/:masterProductId/history",
-    async ({ params, set }) => {
+    async (ctx) => {
+      const { params, set, user } = ctx;
       const masterProductId = Number(params.masterProductId);
       if (!Number.isFinite(masterProductId) || masterProductId <= 0) {
         set.status = 400;
         return { success: false, message: "Invalid masterProductId" };
       }
 
-      const result = await getMasterPackingCostHistory(masterProductId);
+      const result = await getMasterPackingCostHistory(masterProductId, user.companyId);
 
       if (!result.success) {
         // Req 14.8: not-found → 404
@@ -194,7 +199,8 @@ export const masterPackingCostRoutes = new Elysia({ prefix: "/master-packing-cos
   // ─── GET /master-packing-cost/master-products/:masterProductId/resolve ────
   .get(
     "/master-products/:masterProductId/resolve",
-    async ({ params, query, set }) => {
+    async (ctx) => {
+      const { params, query, set, user } = ctx;
       const masterProductId = Number(params.masterProductId);
       if (!Number.isFinite(masterProductId) || masterProductId <= 0) {
         set.status = 400;
@@ -211,7 +217,7 @@ export const masterPackingCostRoutes = new Elysia({ prefix: "/master-packing-cos
         };
       }
 
-      const result = await resolveMasterPackingCost(masterProductId, dateParam);
+      const result = await resolveMasterPackingCost(masterProductId, dateParam, user.companyId);
 
       if (!result.success) {
         set.status = mapErrorStatus(result.message);

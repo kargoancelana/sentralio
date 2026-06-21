@@ -24,6 +24,7 @@ import {
   updateHppEntry,
 } from "./hpp.service";
 import { resolveAuditActor, type AuditActor } from "../../utils/audit-actor";
+import { authMiddleware } from "../auth/auth.middleware";
 
 // ─── Helper: map ServiceResult errors to HTTP status codes ────────────────
 
@@ -36,18 +37,20 @@ function mapErrorStatus(message: string): number {
 // ─── Routes ────────────────────────────────────────────────
 
 export const hppRoutes = new Elysia({ prefix: "/hpp" })
+  .use(authMiddleware)
 
   // ─── POST /hpp/entries ───────────────────────────────────────
   .post(
     "/entries",
     async (ctx) => {
-      const { body, headers, set } = ctx;
+      const { body, headers, set, user } = ctx;
       const userId = resolveAuditActor(
-        (ctx as { user?: AuditActor }).user,
+        user,
         headers as Record<string, string | undefined>,
       );
 
       const result = await createHppEntry({
+        companyId: user.companyId,
         variantId: body.variantId,
         hppValue: body.hppValue,
         startDate: body.startDate,
@@ -79,7 +82,7 @@ export const hppRoutes = new Elysia({ prefix: "/hpp" })
   .put(
     "/entries/:id",
     async (ctx) => {
-      const { params, body, headers, set } = ctx;
+      const { params, body, headers, set, user } = ctx;
       const id = Number(params.id);
       if (!Number.isFinite(id) || id <= 0) {
         set.status = 400;
@@ -87,12 +90,13 @@ export const hppRoutes = new Elysia({ prefix: "/hpp" })
       }
 
       const userId = resolveAuditActor(
-        (ctx as { user?: AuditActor }).user,
+        user,
         headers as Record<string, string | undefined>,
       );
 
       const result = await updateHppEntry({
         id,
+        companyId: user.companyId,
         hppValue: body.hppValue,
         startDate: body.startDate,
         endDate: body.endDate ?? null,
@@ -122,7 +126,7 @@ export const hppRoutes = new Elysia({ prefix: "/hpp" })
   .delete(
     "/entries/:id",
     async (ctx) => {
-      const { params, headers, set } = ctx;
+      const { params, headers, set, user } = ctx;
       const id = Number(params.id);
       if (!Number.isFinite(id) || id <= 0) {
         set.status = 400;
@@ -130,11 +134,11 @@ export const hppRoutes = new Elysia({ prefix: "/hpp" })
       }
 
       const userId = resolveAuditActor(
-        (ctx as { user?: AuditActor }).user,
+        user,
         headers as Record<string, string | undefined>,
       );
 
-      const result = await deleteHppEntry(id, userId);
+      const result = await deleteHppEntry(id, userId, user.companyId);
 
       if (!result.success) {
         set.status = mapErrorStatus(result.message);
@@ -151,14 +155,14 @@ export const hppRoutes = new Elysia({ prefix: "/hpp" })
   // ─── GET /hpp/variants/:variantId/history ─────────────────────────
   .get(
     "/variants/:variantId/history",
-    async ({ params, set }) => {
+    async ({ params, set, user }) => {
       const variantId = Number(params.variantId);
       if (!Number.isFinite(variantId) || variantId <= 0) {
         set.status = 400;
         return { success: false, message: "Invalid variant id" };
       }
 
-      const result = await getHppHistory(variantId);
+      const result = await getHppHistory(variantId, user.companyId);
 
       if (!result.success) {
         set.status = mapErrorStatus(result.message);
@@ -175,7 +179,7 @@ export const hppRoutes = new Elysia({ prefix: "/hpp" })
   // ─── GET /hpp/variants/:variantId/resolve ─────────────────────────
   .get(
     "/variants/:variantId/resolve",
-    async ({ params, query, set }) => {
+    async ({ params, query, set, user }) => {
       const variantId = Number(params.variantId);
       if (!Number.isFinite(variantId) || variantId <= 0) {
         set.status = 400;
@@ -191,7 +195,7 @@ export const hppRoutes = new Elysia({ prefix: "/hpp" })
         return { success: false, message: "Date must be in YYYY-MM-DD format", field: "date" };
       }
 
-      const result = await resolveHpp(variantId, targetDate);
+      const result = await resolveHpp(variantId, targetDate, user.companyId);
 
       if (!result.success) {
         set.status = mapErrorStatus(result.message);

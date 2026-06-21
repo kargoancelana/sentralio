@@ -20,6 +20,7 @@ import {
 // ─── Input Interfaces ──────────────────────────────────────────────────────────
 
 export interface CreatePackingCostEntryInput {
+  companyId: number;
   productGroupId: number;
   packingCost: number;    // Rp 0 – Rp 999,999,999
   startDate: string;      // YYYY-MM-DD
@@ -30,6 +31,7 @@ export interface CreatePackingCostEntryInput {
 
 export interface UpdatePackingCostEntryInput {
   id: number;
+  companyId: number;
   packingCost: number;
   startDate: string;
   endDate?: string | null;
@@ -116,11 +118,16 @@ async function insertAuditLog(params: {
 
 // ─── Product Group Existence Check ────────────────────────────────────────────
 
-async function assertProductGroupExists(productGroupId: number): Promise<ServiceError | null> {
+async function assertProductGroupExists(productGroupId: number, companyId: number): Promise<ServiceError | null> {
   const rows = await db
     .select({ id: productGroups.id })
     .from(productGroups)
-    .where(eq(productGroups.id, productGroupId))
+    .where(
+      and(
+        eq(productGroups.id, productGroupId),
+        eq(productGroups.companyId, companyId),
+      ),
+    )
     .limit(1);
 
   if (rows.length === 0) {
@@ -134,7 +141,7 @@ async function assertProductGroupExists(productGroupId: number): Promise<Service
 
 // ─── Fetch Active Entries for Overlap Check ────────────────────────────────────
 
-async function fetchActiveEntries(productGroupId: number): Promise<ExistingEntry[]> {
+async function fetchActiveEntries(productGroupId: number, companyId: number): Promise<ExistingEntry[]> {
   const rows = await db
     .select({
       id: packingCostEntries.id,
@@ -146,6 +153,7 @@ async function fetchActiveEntries(productGroupId: number): Promise<ExistingEntry
     .where(
       and(
         eq(packingCostEntries.productGroupId, productGroupId),
+        eq(packingCostEntries.companyId, companyId),
         isNull(packingCostEntries.deletedAt),
       ),
     );
@@ -179,7 +187,7 @@ export async function createPackingCostEntry(
   input: CreatePackingCostEntryInput,
 ): Promise<ServiceResult<{ id: number }>> {
   // 1. Validate product group existence
-  const groupError = await assertProductGroupExists(input.productGroupId);
+  const groupError = await assertProductGroupExists(input.productGroupId, input.companyId);
   if (groupError) return groupError;
 
   // 2. Validate field values
@@ -199,7 +207,7 @@ export async function createPackingCostEntry(
   if (noteError) return noteError;
 
   // 3. Fetch active entries
-  const activeEntries = await fetchActiveEntries(input.productGroupId);
+  const activeEntries = await fetchActiveEntries(input.productGroupId, input.companyId);
 
   // 4. Determine auto-close for any existing open-ended entry
   const openEndedEntry = activeEntries.find((e) => e.endDate === null);
@@ -256,6 +264,7 @@ export async function createPackingCostEntry(
 
   // 6. Insert the new entry
   const insertResult = await db.insert(packingCostEntries).values({
+    companyId: input.companyId,
     productGroupId: input.productGroupId,
     packingCost: input.packingCost,
     startDate: input.startDate,
@@ -340,19 +349,19 @@ export async function updatePackingCostEntry(
     .where(
       and(
         eq(packingCostEntries.id, input.id),
+        eq(packingCostEntries.companyId, input.companyId),
         isNull(packingCostEntries.deletedAt),
       ),
     )
     .limit(1);
 
-  if (existing.length === 0) {
+  const [entry] = existing;
+  if (!entry) {
     return {
       success: false,
       message: `Entry with id=${input.id} not found`,
     };
   }
-
-  const entry = existing[0];
 
   // 2. Validate field values
   const costError = validatePackingCostValue(input.packingCost);
@@ -371,7 +380,7 @@ export async function updatePackingCostEntry(
   if (noteError) return noteError;
 
   // 3. Fetch active entries for overlap check (excluding self)
-  const activeEntries = await fetchActiveEntries(entry.productGroupId);
+  const activeEntries = await fetchActiveEntries(entry.productGroupId, input.companyId);
 
   const overlapResult = checkOverlap(
     { startDate: input.startDate, endDate: input.endDate ?? null },
@@ -412,7 +421,7 @@ export async function updatePackingCostEntry(
       note: input.note ?? null,
       updatedAt: new Date(),
     })
-    .where(eq(packingCostEntries.id, input.id));
+    .where(and(eq(packingCostEntries.id, input.id), eq(packingCostEntries.companyId, input.companyId)));
 
   // 6. Insert audit log
   const newValues: Record<string, unknown> = {
@@ -451,6 +460,7 @@ export async function updatePackingCostEntry(
 export async function deletePackingCostEntry(
   id: number,
   userId: string,
+  companyId: number,
 ): Promise<ServiceResult<{ id: number }>> {
   // 1. Fetch existing entry
   const existing = await db
@@ -459,26 +469,27 @@ export async function deletePackingCostEntry(
     .where(
       and(
         eq(packingCostEntries.id, id),
+        eq(packingCostEntries.companyId, companyId),
         isNull(packingCostEntries.deletedAt),
       ),
     )
     .limit(1);
 
-  if (existing.length === 0) {
+  const [entry] = existing;
+  if (!entry) {
     return {
       success: false,
       message: `Entry with id=${id} not found`,
     };
   }
 
-  const entry = existing[0];
   const now = new Date();
 
   // 2. Soft-delete
   await db
     .update(packingCostEntries)
     .set({ deletedAt: now, updatedAt: now })
-    .where(eq(packingCostEntries.id, id));
+    .where(and(eq(packingCostEntries.id, id), eq(packingCostEntries.companyId, companyId)));
 
   // 3. Re-open any entry that was auto-closed by this entry (Requirement 8.2)
   // Find entries where autoClosedBy = id (the entry being deleted)
@@ -488,6 +499,7 @@ export async function deletePackingCostEntry(
     .where(
       and(
         eq(packingCostEntries.autoClosedBy, id),
+        eq(packingCostEntries.companyId, companyId),
         isNull(packingCostEntries.deletedAt),
       ),
     );
@@ -500,7 +512,7 @@ export async function deletePackingCostEntry(
         autoClosedBy: null,
         updatedAt: now,
       })
-      .where(eq(packingCostEntries.id, autoClosedEntry.id));
+      .where(and(eq(packingCostEntries.id, autoClosedEntry.id), eq(packingCostEntries.companyId, companyId)));
   }
 
   // 4. Insert audit log
@@ -533,7 +545,10 @@ export async function deletePackingCostEntry(
  *
  * Requirements: 9.1, 9.2, 9.3
  */
-export async function getPackingCostHistory(productGroupId: number): Promise<
+export async function getPackingCostHistory(
+  productGroupId: number,
+  companyId: number,
+): Promise<
   ServiceResult<
     Array<{
       id: number;
@@ -561,7 +576,12 @@ export async function getPackingCostHistory(productGroupId: number): Promise<
   const entries = await db
     .select()
     .from(packingCostEntries)
-    .where(eq(packingCostEntries.productGroupId, productGroupId))
+    .where(
+      and(
+        eq(packingCostEntries.productGroupId, productGroupId),
+        eq(packingCostEntries.companyId, companyId),
+      ),
+    )
     .orderBy(desc(packingCostEntries.startDate))
     .limit(100);
 
@@ -644,6 +664,7 @@ export async function getPackingCostHistory(productGroupId: number): Promise<
 export async function resolvePackingCost(
   productGroupId: number,
   targetDate: string,
+  companyId: number,
 ): Promise<ServiceResult<PackingCostResolutionResult>> {
   // Fetch all active (non-deleted) entries for this product group
   const activeEntries = await db
@@ -652,6 +673,7 @@ export async function resolvePackingCost(
     .where(
       and(
         eq(packingCostEntries.productGroupId, productGroupId),
+        eq(packingCostEntries.companyId, companyId),
         isNull(packingCostEntries.deletedAt),
       ),
     )
@@ -700,8 +722,8 @@ export async function resolvePackingCost(
       return 0;
     });
 
-  if (fallbackEntries.length > 0) {
-    const fallbackEntry = fallbackEntries[0];
+  const [fallbackEntry] = fallbackEntries;
+  if (fallbackEntry) {
     return {
       success: true,
       data: {
