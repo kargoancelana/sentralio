@@ -22,6 +22,7 @@ import { RoleGate } from './auth/RoleGate';
 import { FeatureGate } from './auth/FeatureGate';
 import { Pengaturan } from './pages/Pengaturan';
 import { AutoBoost } from './pages/AutoBoost';
+import { ResetPassword } from './pages/ResetPassword';
 import './styles/globals.css';
 import './styles/hpp-layout.css';
 
@@ -55,6 +56,8 @@ function App() {
     <ThemeProvider>
       <BrowserRouter>
         <Routes>
+          <Route path="/reset-password" element={<ResetPassword />} />
+
           {/* Portal Super Admin (/platform) - auth context terisolasi */}
           <Route element={<PlatformAuthLayout />}>
             {/* Public portal route */}
