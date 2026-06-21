@@ -21,6 +21,7 @@ import {
 // ─── Input Interfaces ──────────────────────────────────────────────────────────
 
 export interface CreateMasterPackingCostInput {
+  companyId: number;
   masterProductId: number;
   packingCost: number;        // Rp 0 – Rp 999,999,999
   startDate: string;          // YYYY-MM-DD
@@ -31,6 +32,7 @@ export interface CreateMasterPackingCostInput {
 
 export interface UpdateMasterPackingCostInput {
   id: number;
+  companyId: number;
   packingCost: number;
   startDate: string;
   endDate?: string | null;
@@ -131,11 +133,16 @@ async function insertAuditLog(
 
 // ─── Master Product Existence Check ───────────────────────────────────────────
 
-async function assertMasterProductExists(masterProductId: number): Promise<ServiceError | null> {
+async function assertMasterProductExists(masterProductId: number, companyId: number): Promise<ServiceError | null> {
   const rows = await db
     .select({ id: masterProducts.id })
     .from(masterProducts)
-    .where(eq(masterProducts.id, masterProductId))
+    .where(
+      and(
+        eq(masterProducts.id, masterProductId),
+        eq(masterProducts.companyId, companyId),
+      ),
+    )
     .limit(1);
 
   if (rows.length === 0) {
@@ -149,7 +156,7 @@ async function assertMasterProductExists(masterProductId: number): Promise<Servi
 
 // ─── Fetch Active Entries Helper ───────────────────────────────────────────────
 
-async function fetchActiveEntries(masterProductId: number): Promise<ExistingEntry[]> {
+async function fetchActiveEntries(masterProductId: number, companyId: number): Promise<ExistingEntry[]> {
   const rows = await db
     .select({
       id: masterPackingCostEntries.id,
@@ -161,6 +168,7 @@ async function fetchActiveEntries(masterProductId: number): Promise<ExistingEntr
     .where(
       and(
         eq(masterPackingCostEntries.masterProductId, masterProductId),
+        eq(masterPackingCostEntries.companyId, companyId),
         isNull(masterPackingCostEntries.deletedAt),
       ),
     );
@@ -221,11 +229,11 @@ export async function createMasterPackingCost(
   if (noteError) return noteError;
 
   // 5. Assert master product exists
-  const masterProductError = await assertMasterProductExists(input.masterProductId);
+  const masterProductError = await assertMasterProductExists(input.masterProductId, input.companyId);
   if (masterProductError) return masterProductError;
 
   // 6. Fetch active entries
-  const activeEntries = await fetchActiveEntries(input.masterProductId);
+  const activeEntries = await fetchActiveEntries(input.masterProductId, input.companyId);
 
   // 7. Handle auto-close for open-ended entry
   const openEntry = activeEntries.find((e) => e.endDate === null);
@@ -286,6 +294,7 @@ export async function createMasterPackingCost(
 
         // 9b. Insert new entry
         const insertResult = await tx.insert(masterPackingCostEntries).values({
+          companyId: input.companyId,
           masterProductId: input.masterProductId,
           packingCost: input.packingCost,
           startDate: input.startDate,
@@ -318,6 +327,7 @@ export async function createMasterPackingCost(
       } else {
         // 9b. Insert new entry (no auto-close)
         const insertResult = await tx.insert(masterPackingCostEntries).values({
+          companyId: input.companyId,
           masterProductId: input.masterProductId,
           packingCost: input.packingCost,
           startDate: input.startDate,
@@ -410,6 +420,7 @@ export async function updateMasterPackingCost(
     .where(
       and(
         eq(masterPackingCostEntries.id, input.id),
+        eq(masterPackingCostEntries.companyId, input.companyId),
         isNull(masterPackingCostEntries.deletedAt),
       ),
     )
@@ -423,7 +434,7 @@ export async function updateMasterPackingCost(
   }
 
   // 6. Fetch all active entries for the same master product and check overlap (excluding self)
-  const activeEntries = await fetchActiveEntries(existing.masterProductId);
+  const activeEntries = await fetchActiveEntries(existing.masterProductId, input.companyId);
   const newPeriod = { startDate: input.startDate, endDate: input.endDate ?? null };
   const overlapResult = checkOverlap(newPeriod, activeEntries, input.id);
 
@@ -453,7 +464,7 @@ export async function updateMasterPackingCost(
           note: input.note ?? null,
           updatedAt: new Date(),
         })
-        .where(eq(masterPackingCostEntries.id, input.id));
+        .where(and(eq(masterPackingCostEntries.id, input.id), eq(masterPackingCostEntries.companyId, input.companyId)));
 
       // 7b. Fetch updated row
       const [updated] = await tx
@@ -501,6 +512,7 @@ export async function updateMasterPackingCost(
 export async function deleteMasterPackingCost(
   id: number,
   userId: string,
+  companyId: number,
 ): Promise<ServiceResult<{ id: number }>> {
   // Validate userId
   const userIdError = validateUserId(userId);
@@ -513,6 +525,7 @@ export async function deleteMasterPackingCost(
     .where(
       and(
         eq(masterPackingCostEntries.id, id),
+        eq(masterPackingCostEntries.companyId, companyId),
         isNull(masterPackingCostEntries.deletedAt),
       ),
     )
@@ -534,7 +547,7 @@ export async function deleteMasterPackingCost(
       await tx
         .update(masterPackingCostEntries)
         .set({ deletedAt, updatedAt: deletedAt })
-        .where(eq(masterPackingCostEntries.id, id));
+        .where(and(eq(masterPackingCostEntries.id, id), eq(masterPackingCostEntries.companyId, companyId)));
 
       // Audit log for delete
       await insertAuditLog(tx, {
@@ -604,12 +617,15 @@ function deserialiseAuditLog(
  *
  * Requirements: 9.4
  */
-export async function getMasterPackingCostHistory(masterProductId: number): Promise<
+export async function getMasterPackingCostHistory(
+  masterProductId: number,
+  companyId: number,
+): Promise<
   ServiceResult<
     Array<
       typeof masterPackingCostEntries.$inferSelect & {
         auditLogs: Array<
-          typeof costAuditLog.$inferSelect & {
+          Omit<typeof costAuditLog.$inferSelect, "previousValues" | "newValues"> & {
             previousValues: Record<string, unknown> | null;
             newValues: Record<string, unknown> | null;
           }
@@ -619,14 +635,19 @@ export async function getMasterPackingCostHistory(masterProductId: number): Prom
   >
 > {
   // Assert master product exists
-  const masterProductError = await assertMasterProductExists(masterProductId);
+  const masterProductError = await assertMasterProductExists(masterProductId, companyId);
   if (masterProductError) return masterProductError;
 
   // Fetch all entries (including deleted), sorted by startDate DESC
   const entries = await db
     .select()
     .from(masterPackingCostEntries)
-    .where(eq(masterPackingCostEntries.masterProductId, masterProductId))
+    .where(
+      and(
+        eq(masterPackingCostEntries.masterProductId, masterProductId),
+        eq(masterPackingCostEntries.companyId, companyId),
+      ),
+    )
     .orderBy(desc(masterPackingCostEntries.startDate));
 
   if (entries.length === 0) {
@@ -681,6 +702,7 @@ export async function getMasterPackingCostHistory(masterProductId: number): Prom
 export async function resolveMasterPackingCost(
   masterProductId: number,
   targetDate: string,
+  companyId: number,
 ): Promise<ServiceResult<MasterPackingCostResolution>> {
   // Fetch all active (non-deleted) entries for the master product
   const activeEntries = await db
@@ -689,6 +711,7 @@ export async function resolveMasterPackingCost(
     .where(
       and(
         eq(masterPackingCostEntries.masterProductId, masterProductId),
+        eq(masterPackingCostEntries.companyId, companyId),
         isNull(masterPackingCostEntries.deletedAt),
       ),
     );

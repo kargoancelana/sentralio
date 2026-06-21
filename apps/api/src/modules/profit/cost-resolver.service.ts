@@ -30,6 +30,7 @@ import { resolveMasterPackingCost } from "../master/packing-cost/master-packing-
  * Input untuk resolusi single item — identitas Shopee yang stabil.
  */
 export interface ItemResolveContext {
+  companyId: number;
   shopId: number;
   itemId: string | null;   // shopee_order_items.item_id
   modelId: string | null;  // shopee_order_items.model_id
@@ -146,6 +147,7 @@ export async function resolveItemVariant(ctx: ItemResolveContext): Promise<ItemM
       .from(products)
       .where(
         and(
+          eq(products.companyId, ctx.companyId),
           eq(products.shopId, ctx.shopId),
           eq(products.shopeeItemId, ctx.itemId),
           eq(products.shopeeModelId, ctx.modelId),
@@ -191,7 +193,12 @@ export async function resolveItemVariant(ctx: ItemResolveContext): Promise<ItemM
       masterProductId: masterProductVariants.masterProductId,
     })
     .from(masterProductVariants)
-    .where(eq(masterProductVariants.sku, modelSkuForLookup))
+    .where(
+      and(
+        eq(masterProductVariants.companyId, ctx.companyId),
+        eq(masterProductVariants.sku, modelSkuForLookup),
+      ),
+    )
     .limit(1);
 
   if (variantRows.length === 0) {
@@ -234,6 +241,7 @@ export async function resolveItemVariant(ctx: ItemResolveContext): Promise<ItemM
 export async function resolvePackingCostForOrder(
   uniqueMasterIds: Set<number>,
   orderDate: string,
+  companyId: number,
 ): Promise<OrderPackingCostResult> {
   // Step 1: Empty case (semua item unmapped)
   if (uniqueMasterIds.size === 0) {
@@ -249,7 +257,7 @@ export async function resolvePackingCostForOrder(
   //                 for masters processed so far
   const candidates: number[] = [];
   for (const masterProductId of uniqueMasterIds) {
-    const result = await resolveMasterPackingCost(masterProductId, orderDate);
+    const result = await resolveMasterPackingCost(masterProductId, orderDate, companyId);
     if (result.success) {
       candidates.push(result.data.packingCost); // 0 jika no entry covers orderDate
     } else {
@@ -289,12 +297,13 @@ export async function resolvePackingCostForOrder(
  *
  * Requirements: 6.1–6.5, 7.1–7.5
  */
-export async function resolveOrder(input: OrderForResolve): Promise<ResolvedOrder> {
+export async function resolveOrder(input: OrderForResolve, companyId: number): Promise<ResolvedOrder> {
   // Step 1: Resolve mapping for every item
   // LOOP INVARIANT: itemMappings[0..k] correspond to input.items[0..k]
   const itemMappings: ItemMapping[] = [];
   for (const item of input.items) {
     const mapping = await resolveItemVariant({
+      companyId,
       shopId: input.shopId,
       itemId: item.itemId,
       modelId: item.modelId,
@@ -311,7 +320,7 @@ export async function resolveOrder(input: OrderForResolve): Promise<ResolvedOrde
     let hppFound = false;
 
     if (mapping.variantId !== null) {
-      const hppResult = await resolveHpp(mapping.variantId, input.orderDate);
+      const hppResult = await resolveHpp(mapping.variantId, input.orderDate, companyId);
       if (hppResult.success) {
         hppPerUnit = hppResult.data.hppValue;
         hppFound = hppResult.data.source === "active"; // hanya active counts as 'found'
@@ -336,7 +345,7 @@ export async function resolveOrder(input: OrderForResolve): Promise<ResolvedOrde
   }
 
   // Step 4: Resolve packing cost per order (MAX)
-  const packingCost = await resolvePackingCostForOrder(uniqueMasterIds, input.orderDate);
+  const packingCost = await resolvePackingCostForOrder(uniqueMasterIds, input.orderDate, companyId);
 
   // Step 5: Compute hasUnresolvedHpp
   // items kosong → hasUnresolvedHpp:false (no items means no unresolved items)
@@ -370,6 +379,7 @@ export async function resolveOrder(input: OrderForResolve): Promise<ResolvedOrde
  */
 export async function resolveOrders(
   orders: OrderForResolve[],
+  companyId: number,
 ): Promise<Map<string, ResolvedOrder>> {
   if (orders.length === 0) return new Map();
 
@@ -415,7 +425,12 @@ export async function resolveOrders(
         modelSku: products.modelSku,
       })
       .from(products)
-      .where(or(...conditions));
+      .where(
+        and(
+          eq(products.companyId, companyId),
+          or(...conditions),
+        ),
+      );
 
     for (const row of productRows) {
       const sku = row.modelSku?.trim();
@@ -466,7 +481,12 @@ export async function resolveOrders(
         sku: masterProductVariants.sku,
       })
       .from(masterProductVariants)
-      .where(inArray(masterProductVariants.sku, Array.from(distinctSkus)));
+      .where(
+        and(
+          eq(masterProductVariants.companyId, companyId),
+          inArray(masterProductVariants.sku, Array.from(distinctSkus)),
+        ),
+      );
 
     for (const row of variantRows) {
       variantBySku.set(row.sku, { id: row.id, masterProductId: row.masterProductId });
@@ -496,7 +516,7 @@ export async function resolveOrders(
       if (cached !== undefined) {
         candidates.push(cached);
       } else {
-        const result = await resolveMasterPackingCost(masterProductId, orderDate);
+        const result = await resolveMasterPackingCost(masterProductId, orderDate, companyId);
         const cost = result.success ? result.data.packingCost : 0;
         packingCache.set(cacheKey, cost);
         candidates.push(cost);
@@ -549,7 +569,7 @@ export async function resolveOrders(
           hppPerUnit = cached.hppValue;
           hppFound = cached.hppFound;
         } else {
-          const hppResult = await resolveHpp(variantId, order.orderDate);
+          const hppResult = await resolveHpp(variantId, order.orderDate, companyId);
           if (hppResult.success) {
             hppPerUnit = hppResult.data.hppValue;
             hppFound = hppResult.data.source === "active";
