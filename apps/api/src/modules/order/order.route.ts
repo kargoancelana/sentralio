@@ -4,7 +4,8 @@ import { shopeeOrders, shopeeOrderItems, shopeeCredentials } from "../../db/sche
 import { syncShopeeOrdersService } from "../../services/order.service";
 import { shipSingleOrder, shipBatchOrders, fetchAndUpdateTrackingNumber } from "../../services/shipment.service";
 import { getConnectedShopIdSet } from "../../services/active-shops";
-import { desc, eq, inArray } from "drizzle-orm";
+import { authMiddleware } from "../auth/auth.middleware";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
 // Order SN validation regex (alphanumeric, max 100 chars)
 const ORDER_SN_REGEX = /^[A-Za-z0-9_-]{1,100}$/;
@@ -33,15 +34,17 @@ function getErrorStatusCode(error: string): number {
 }
 
 export const orderRoutes = new Elysia({ prefix: "/orders" })
-  
+  .use(authMiddleware)
   // Get order list from local DB with items
   // Optimized: 2 queries instead of N+1, items only for active orders
-  .get("/", async () => {
+  .get("/", async ({ user }) => {
     // Only show orders from connected shops (soft-disconnect hides the rest).
     const connectedShopIds = await getConnectedShopIdSet();
 
-    // Query 1: Get all orders, then drop any from disconnected shops.
-    const allRecords = await db.select().from(shopeeOrders).orderBy(desc(shopeeOrders.createTime));
+    // Query 1: Get this company's orders, then drop any from disconnected shops.
+    const allRecords = await db.select().from(shopeeOrders)
+      .where(eq(shopeeOrders.companyId, user.companyId))
+      .orderBy(desc(shopeeOrders.createTime));
     const records = allRecords.filter(o => connectedShopIds.has(o.shopId));
 
     // Query 2: Get items for active/visible orders (READY_TO_SHIP, PROCESSED, SHIPPED, TO_CONFIRM_RECEIVE)
@@ -77,7 +80,7 @@ export const orderRoutes = new Elysia({ prefix: "/orders" })
   // Sync orders from Shopee (Last 15 days)
   // Supports filtering by order_status for faster sync (e.g., "READY_TO_SHIP,PROCESSED,UNPAID")
   // CRITICAL FIX: Uses update_time for manual sync to catch status changes on old orders
-  .post("/sync", async ({ body }) => {
+  .post("/sync", async ({ body, user }) => {
     const { shop_id, days_back, cursor, shop_index = 0, order_status, time_range_field } = body as { 
       shop_id?: number, 
       days_back?: number, 
@@ -89,10 +92,18 @@ export const orderRoutes = new Elysia({ prefix: "/orders" })
     
     let shopsToSync = [];
     if (shop_id) {
-      shopsToSync = [{ shopId: shop_id }];
+      // Verifikasi toko milik company pemanggil sebelum sync (cegah lintas-company).
+      shopsToSync = await db.select({ shopId: shopeeCredentials.shopId }).from(shopeeCredentials)
+        .where(and(
+          eq(shopeeCredentials.companyId, user.companyId),
+          eq(shopeeCredentials.shopId, shop_id),
+        ));
     } else {
       shopsToSync = await db.select({ shopId: shopeeCredentials.shopId }).from(shopeeCredentials)
-        .where(eq(shopeeCredentials.status, "connected"));
+        .where(and(
+          eq(shopeeCredentials.companyId, user.companyId),
+          eq(shopeeCredentials.status, "connected"),
+        ));
     }
 
     if (shopsToSync.length === 0) {
@@ -373,7 +384,7 @@ export const orderRoutes = new Elysia({ prefix: "/orders" })
   })
 
   // Mark order label as printed / not printed
-  .patch("/:orderSn/label-printed", async ({ params, body, set }) => {
+  .patch("/:orderSn/label-printed", async ({ params, body, set, user }) => {
     const { orderSn } = params;
     const { printed } = body as { printed: boolean };
 
@@ -397,7 +408,7 @@ export const orderRoutes = new Elysia({ prefix: "/orders" })
 
       await db.update(shopeeOrders)
         .set(updateData)
-        .where(eq(shopeeOrders.orderSn, orderSn));
+        .where(and(eq(shopeeOrders.orderSn, orderSn), eq(shopeeOrders.companyId, user.companyId)));
 
       return {
         success: true,
@@ -425,7 +436,7 @@ export const orderRoutes = new Elysia({ prefix: "/orders" })
   })
 
   // Mark batch orders label as printed
-  .patch("/batch/label-printed", async ({ body, set }) => {
+  .patch("/batch/label-printed", async ({ body, set, user }) => {
     const { order_sns, printed } = body as { order_sns: string[]; printed: boolean };
 
     if (!Array.isArray(order_sns) || order_sns.length === 0) {
@@ -444,7 +455,7 @@ export const orderRoutes = new Elysia({ prefix: "/orders" })
       for (const orderSn of order_sns) {
         await db.update(shopeeOrders)
           .set(updateData)
-          .where(eq(shopeeOrders.orderSn, orderSn));
+          .where(and(eq(shopeeOrders.orderSn, orderSn), eq(shopeeOrders.companyId, user.companyId)));
       }
 
       return {
