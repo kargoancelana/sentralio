@@ -122,9 +122,9 @@ const app = new Elysia()
   // Dimount SEBELUM origin/auth middleware tenant supaya login portal publik
   // dan route portal dijaga oleh middleware sesi platform-nya sendiri
   // (scope:'platform'), bukan sesi tenant.
-  .use(platformAuthPublicRoutes)      // POST /api/platform/auth/login
-  .use(platformAuthProtectedRoutes)   // GET /api/platform/auth/me, POST /api/platform/auth/logout
-  .use(platformCompaniesRoutes)       // GET /api/platform/companies, /companies/:id
+  .use(platformAuthPublicRoutes)      // POST /platform/auth/login
+  .use(platformAuthProtectedRoutes)   // GET /platform/auth/me, POST /platform/auth/logout
+  .use(platformCompaniesRoutes)       // GET /platform/companies, /companies/:id
   .use(platformUsersRoutes)
 
   // ─── Protected routes: require valid session ──────────────────────────────

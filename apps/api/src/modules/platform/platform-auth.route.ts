@@ -1,9 +1,9 @@
 /**
- * Platform portal auth routes (Super Admin) — prefix /api/platform/auth.
+ * Platform portal auth routes (Super Admin) — prefix /platform/auth.
  *
- *   POST /api/platform/auth/login   (public)
- *   GET  /api/platform/auth/me      (butuh platform_session)
- *   POST /api/platform/auth/logout  (butuh platform_session; stateless clear)
+ *   POST /platform/auth/login   (public)
+ *   GET  /platform/auth/me      (butuh platform_session)
+ *   POST /platform/auth/logout  (butuh platform_session; stateless clear)
  *
  * Routes terlindungi pakai derive + onBeforeHandle LOCAL-scope (default) di
  * instance ini sendiri, jadi TIDAK bocor ke route tenant. Mount kedua instance
@@ -22,7 +22,7 @@ const TENANT_COOKIE_NAME = 'wms_session';
 function extractIp(request: Request, server: { requestIP?: (req: Request) => { address: string } | null } | null): string {
   const xForwardedFor = request.headers.get('x-forwarded-for');
   if (xForwardedFor) {
-    const first = xForwardedFor.split(',')[0].trim();
+    const first = xForwardedFor.split(',')[0]?.trim();
     if (first) return first;
   }
 
@@ -38,7 +38,7 @@ function extractIp(request: Request, server: { requestIP?: (req: Request) => { a
 }
 
 // ── Public (tanpa middleware) ─────────────────────────────────
-export const platformAuthPublicRoutes = new Elysia({ prefix: '/api/platform/auth' })
+export const platformAuthPublicRoutes = new Elysia({ prefix: '/platform/auth' })
   .post('/login', async ({ request, body, set, server }) => {
     const ip = extractIp(request, server as Parameters<typeof extractIp>[1]);
 
@@ -76,7 +76,7 @@ export const platformAuthPublicRoutes = new Elysia({ prefix: '/api/platform/auth
   });
 
 // ── Protected (butuh platform_session) ────────────────────────
-export const platformAuthProtectedRoutes = new Elysia({ prefix: '/api/platform/auth' })
+export const platformAuthProtectedRoutes = new Elysia({ prefix: '/platform/auth' })
   .derive(async ({ cookie, set }) => {
     const sessionCookie = cookie[PLATFORM_COOKIE_NAME];
     const cookieValue =
