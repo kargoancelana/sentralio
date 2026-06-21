@@ -1,5 +1,7 @@
 import { Elysia } from "elysia";
 import { getSingleLabel, getBatchLabels, getBatchLabelsOptimized } from "../../services/label.service";
+import { authMiddleware } from "../auth/auth.middleware";
+import { isOrderOwnedByCompany, filterOrderSnsOwnedByCompany } from "./order-ownership";
 
 // Order SN validation regex (alphanumeric, max 100 chars)
 const ORDER_SN_REGEX = /^[A-Za-z0-9_-]{1,100}$/;
@@ -39,12 +41,13 @@ function getErrorStatusCode(error: string): number {
  * Label printing routes
  */
 export const labelRoutes = new Elysia({ prefix: "/orders" })
+  .use(authMiddleware)
 
   // ─── Shopee Default Labels ──────────────────────────────────────────────
 
   // Optimized batch endpoint — uses batch APIs (6-8 calls for 50 orders)
   // Returns a single merged PDF for all orders
-  .post("/shipping-labels/batch-download", async ({ body, set }) => {
+  .post("/shipping-labels/batch-download", async ({ body, set, user }) => {
     const startTime = Date.now();
     try {
       if (!body || typeof body !== 'object') {
@@ -84,6 +87,12 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
           success: false,
           error: `Format order_sn tidak valid untuk: ${invalidOrderSns.slice(0, 5).join(', ')}`
         };
+      }
+
+      const ownedSet = await filterOrderSnsOwnedByCompany(order_sns as string[], user.companyId);
+      if (ownedSet.size !== new Set(order_sns as string[]).size) {
+        set.status = 404;
+        return { success: false, error: "Order tidak ditemukan" };
       }
 
       // Task 5.3: Call service and return proper response structure
@@ -137,7 +146,7 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
         return {
           success: false,
           error: result.failedOrders.length > 0
-            ? result.failedOrders[0].error
+            ? result.failedOrders[0]?.error
             : "Gagal mengambil label batch",
           failedOrders: result.failedOrders
         };
@@ -150,7 +159,7 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
     }
   })
 
-  .post("/shipping-labels/batch", async ({ body, set }) => {
+  .post("/shipping-labels/batch", async ({ body, set, user }) => {
     try {
       if (!body || typeof body !== 'object') {
         set.status = 400;
@@ -193,7 +202,13 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
         };
       }
 
-      const results = await getBatchLabels(order_sns);
+      const ownedSet = await filterOrderSnsOwnedByCompany(order_sns as string[], user.companyId);
+      if (ownedSet.size !== new Set(order_sns as string[]).size) {
+        set.status = 404;
+        return { success: false, error: "Order tidak ditemukan" };
+      }
+
+      const results = await getBatchLabels(order_sns as string[]);
       const successful = results.filter(r => r.success).length;
       const failed = results.filter(r => !r.success).length;
 
@@ -221,7 +236,7 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
     }
   })
 
-  .get("/:orderSn/shipping-label", async ({ params, set }) => {
+  .get("/:orderSn/shipping-label", async ({ params, set, user }) => {
     const { orderSn } = params;
     const startTime = Date.now();
 
@@ -231,6 +246,10 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
     }
 
     try {
+      if (!(await isOrderOwnedByCompany(orderSn, user.companyId))) {
+        set.status = 404;
+        return { success: false, error: "Order tidak ditemukan" };
+      }
       const result = await getSingleLabel(orderSn);
       const elapsed = Date.now() - startTime;
 
@@ -264,7 +283,7 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
   // ─── Custom Label Data (Frontend Rendering) ─────────────────────────────
   // Returns JSON — frontend renders the label in browser + window.print()
 
-  .get("/:orderSn/label-data", async ({ params, set }) => {
+  .get("/:orderSn/label-data", async ({ params, set, user }) => {
     const { orderSn } = params;
     const startTime = Date.now();
 
@@ -274,6 +293,10 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
     }
 
     try {
+      if (!(await isOrderOwnedByCompany(orderSn, user.companyId))) {
+        set.status = 404;
+        return { success: false, error: "Order tidak ditemukan" };
+      }
       const { getLabelData } = await import("../../services/label-data.service");
       const result = await getLabelData(orderSn);
       const elapsed = Date.now() - startTime;
@@ -293,7 +316,7 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
     }
   })
 
-  .post("/label-data/batch", async ({ body, set }) => {
+  .post("/label-data/batch", async ({ body, set, user }) => {
     const startTime = Date.now();
     try {
       if (!body || typeof body !== 'object') {
@@ -326,6 +349,12 @@ export const labelRoutes = new Elysia({ prefix: "/orders" })
       if (invalidSns.length > 0) {
         set.status = 422;
         return { success: false, error: `Format order_sn tidak valid: ${invalidSns.slice(0, 3).join(', ')}` };
+      }
+
+      const ownedSet = await filterOrderSnsOwnedByCompany(order_sns as string[], user.companyId);
+      if (ownedSet.size !== new Set(order_sns as string[]).size) {
+        set.status = 404;
+        return { success: false, error: "Order tidak ditemukan" };
       }
 
       const { getBatchLabelData } = await import("../../services/label-data.service");

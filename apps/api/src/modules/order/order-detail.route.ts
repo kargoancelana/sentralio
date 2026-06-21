@@ -1,5 +1,7 @@
 import { Elysia } from "elysia";
 import { getOrderDetail } from "../../services/order-detail.service";
+import { authMiddleware } from "../auth/auth.middleware";
+import { isOrderOwnedByCompany } from "./order-ownership";
 
 /**
  * Validates Shopee order SN format.
@@ -29,12 +31,19 @@ export function isValidOrderSn(orderSn: string): boolean {
  *
  * **Validates: Requirements 8.1, 8.6, 8.7, 8.8, 8.9, 11.2**
  */
-export const orderDetailRoutes = new Elysia({ prefix: "/orders" }).get(
+export const orderDetailRoutes = new Elysia({ prefix: "/orders" })
+  .use(authMiddleware)
+  .get(
   "/:orderSn/detail",
-  async ({ params, query, set }) => {
+  async ({ params, query, set, user }) => {
     if (!isValidOrderSn(params.orderSn)) {
       set.status = 400;
       return { success: false, error: "Order SN tidak valid" };
+    }
+
+    if (!(await isOrderOwnedByCompany(params.orderSn, user.companyId))) {
+      set.status = 404;
+      return { success: false, error: "Order tidak ditemukan" };
     }
 
     const refresh = query.refresh === "1" || query.refresh === "true";
