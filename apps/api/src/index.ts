@@ -21,6 +21,7 @@ import { ensureAllTokensFresh } from "./services/shopee-auth";
 import { backgroundSyncService } from "./services/background-sync.service";
 import { EscrowSyncService } from "./services/escrow-sync.service";
 import { authPublicRoutes, authProtectedRoutes } from "./modules/auth/auth.route";
+import { passwordResetPublicRoutes } from "./modules/auth/password-reset.route";
 import { authMiddleware } from "./modules/auth/auth.middleware";
 import { featureGuardMiddleware } from "./modules/auth/feature-guard.middleware";
 import { permissionsRoutes } from "./modules/auth/permissions.route";
@@ -28,6 +29,7 @@ import { ensureStaffPermissionsLoaded } from "./modules/auth/permissions.service
 import { originMiddleware } from "./modules/auth/origin.middleware";
 import { platformAuthPublicRoutes, platformAuthProtectedRoutes } from "./modules/platform/platform-auth.route";
 import { platformCompaniesRoutes } from "./modules/platform/platform-companies.route";
+import { platformUsersRoutes } from "./modules/platform/platform-users.route";
 import { usersRoutes } from "./modules/users/users.route";
 import { autoBoostRoutes } from "./modules/auto-boost/auto-boost.route";
 import { startQueues, stopQueues } from "./queue";
@@ -114,6 +116,7 @@ const app = new Elysia()
   }))
 
   .use(authPublicRoutes)   // POST /auth/login
+  .use(passwordResetPublicRoutes)
 
   // ─── Platform portal auth (Super Admin) ──────────────────────────────────
   // Dimount SEBELUM origin/auth middleware tenant supaya login portal publik
@@ -122,6 +125,7 @@ const app = new Elysia()
   .use(platformAuthPublicRoutes)      // POST /api/platform/auth/login
   .use(platformAuthProtectedRoutes)   // GET /api/platform/auth/me, POST /api/platform/auth/logout
   .use(platformCompaniesRoutes)       // GET /api/platform/companies, /companies/:id
+  .use(platformUsersRoutes)
 
   // ─── Protected routes: require valid session ──────────────────────────────
   // Apply Origin_Middleware then Auth_Middleware to all routes below.

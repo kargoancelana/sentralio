@@ -1,4 +1,4 @@
-import { int, mysqlTable, timestamp, varchar, text, uniqueIndex, index, bigint, date, primaryKey, mysqlEnum, mediumtext } from "drizzle-orm/mysql-core";
+import { int, mysqlTable, timestamp, varchar, text, uniqueIndex, index, bigint, date, primaryKey, mysqlEnum, mediumtext, char } from "drizzle-orm/mysql-core";
 
 export const companyStatusEnum = mysqlEnum("status", ["pending", "active", "suspended", "expired"]);
 
@@ -421,3 +421,15 @@ export const autoBoostLog = mysqlTable("auto_boost_log", {
   idxCompany: index("idx_auto_boost_log_company").on(t.companyId),
 }));
 
+export const passwordResetTokens = mysqlTable("password_reset_tokens", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: char("token_hash", { length: 64 }).notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdByAdminId: int("created_by_admin_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => ({
+  uniqPasswordResetTokenHash: uniqueIndex("uniq_password_reset_token_hash").on(t.tokenHash),
+  idxPasswordResetUser: index("idx_password_reset_user").on(t.userId),
+}));
