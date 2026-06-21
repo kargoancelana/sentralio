@@ -17,6 +17,7 @@ import {
   getProductPerformance,
   getShopeeDeductions,
 } from "./profit.service";
+import { authMiddleware } from "../auth/auth.middleware";
 
 // ─── Validation Helpers ───────────────────────────────────────────────────────
 
@@ -81,11 +82,12 @@ function validatePagination(
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 export const profitRoutes = new Elysia({ prefix: "/profit" })
+  .use(authMiddleware)
 
   // ─── GET /profit/summary ──────────────────────────────────────────────────
   .get(
     "/summary",
-    async ({ query, set }) => {
+    async ({ query, set, user }) => {
       console.log("[profit/summary] Handler called");
       try {
         const dateError = validateDateRange(query.start_date, query.end_date);
@@ -101,6 +103,7 @@ export const profitRoutes = new Elysia({ prefix: "/profit" })
         }
 
         return await getProfitSummary({
+          companyId: user.companyId,
           startDate: query.start_date!,
           endDate: query.end_date!,
           shopId,
@@ -123,7 +126,7 @@ export const profitRoutes = new Elysia({ prefix: "/profit" })
   // ─── GET /profit/orders ───────────────────────────────────────────────────
   .get(
     "/orders",
-    async ({ query, set }) => {
+    async ({ query, set, user }) => {
       try {
         const dateError = validateDateRange(query.start_date, query.end_date);
         if (dateError) {
@@ -144,6 +147,7 @@ export const profitRoutes = new Elysia({ prefix: "/profit" })
         }
 
         return await getOrderProfitList({
+          companyId: user.companyId,
           startDate: query.start_date!,
           endDate: query.end_date!,
           shopId,
@@ -169,7 +173,7 @@ export const profitRoutes = new Elysia({ prefix: "/profit" })
   // ─── GET /profit/products ─────────────────────────────────────────────────
   .get(
     "/products",
-    async ({ query, set }) => {
+    async ({ query, set, user }) => {
       try {
         const dateError = validateDateRange(query.start_date, query.end_date);
         if (dateError) {
@@ -196,6 +200,7 @@ export const profitRoutes = new Elysia({ prefix: "/profit" })
         }
 
         return await getProductPerformance({
+          companyId: user.companyId,
           startDate: query.start_date!,
           endDate: query.end_date!,
           shopId,
@@ -221,7 +226,7 @@ export const profitRoutes = new Elysia({ prefix: "/profit" })
   // ─── GET /profit/deductions ───────────────────────────────────────────────
   .get(
     "/deductions",
-    async ({ query, set }) => {
+    async ({ query, set, user }) => {
       try {
         const dateError = validateDateRange(query.start_date, query.end_date);
         if (dateError) {
@@ -236,6 +241,7 @@ export const profitRoutes = new Elysia({ prefix: "/profit" })
         }
 
         return await getShopeeDeductions({
+          companyId: user.companyId,
           startDate: query.start_date!,
           endDate: query.end_date!,
           shopId,
