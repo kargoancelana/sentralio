@@ -104,6 +104,7 @@ class AutoBoostScheduler {
             .where(eq(autoBoostQueue.id, item.id));
             
           await db.insert(autoBoostLog).values({
+            companyId: config.companyId,
             shopId,
             shopeeItemId: item.shopeeItemId,
             status: "success",
@@ -118,6 +119,7 @@ class AutoBoostScheduler {
         const nowAt = new Date();
         for (const item of picked) {
           await db.insert(autoBoostLog).values({
+            companyId: config.companyId,
             shopId,
             shopeeItemId: item.shopeeItemId,
             status: "failed",
