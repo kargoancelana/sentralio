@@ -9,6 +9,8 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { platformFetch, PlatformApiError } from '../../lib/platformApi';
 import { companyStatusBadge } from './companyStatus';
+import { Modal } from '../../components/ui/Modal';
+import { useToast } from '../../components/ui/Toast';
 
 interface CompanyUser {
   id: number;
@@ -53,17 +55,43 @@ function formatDate(iso: string): string {
   });
 }
 
+function formatDateTime(isoOrTimestamp: string | number): string {
+  const d = new Date(isoOrTimestamp);
+  if (Number.isNaN(d.getTime())) return '-';
+  return d.toLocaleString('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
 export function PlatformCompanyDetail() {
   const { id } = useParams();
   const [company, setCompany] = useState<CompanyDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
 
+  // Reset password states
+  const [resettingUserId, setResettingUserId] = useState<number | null>(null);
+  const [resetResult, setResetResult] = useState<{
+    resetUrl: string;
+    expiresAt: number;
+    userName: string;
+    email: string;
+  } | null>(null);
+
+  const toast = useToast();
+
   useEffect(() => {
     let active = true;
-    setCompany(null);
-    setError(null);
-    setNotFound(false);
+    Promise.resolve().then(() => {
+      setCompany(null);
+      setError(null);
+      setNotFound(false);
+    });
 
     platformFetch<CompanyDetailResponse>(`/companies/${id}`)
       .then((res) => {
@@ -81,6 +109,33 @@ export function PlatformCompanyDetail() {
       active = false;
     };
   }, [id]);
+
+  const handleResetPassword = async (u: CompanyUser) => {
+    if (resettingUserId !== null) return;
+    setResettingUserId(u.id);
+    try {
+      const res = await platformFetch<{ ok: boolean; resetUrl: string; expiresAt: number }>(
+        `/companies/${id}/users/${u.id}/reset-password`,
+        { method: 'POST' }
+      );
+      if (res.ok) {
+        setResetResult({
+          resetUrl: res.resetUrl,
+          expiresAt: res.expiresAt,
+          userName: u.name,
+          email: u.email,
+        });
+      }
+    } catch (err) {
+      if (err instanceof PlatformApiError && err.status === 404) {
+        toast('User tidak ditemukan.', 'error');
+      } else {
+        toast('Gagal membuat link reset.', 'error');
+      }
+    } finally {
+      setResettingUserId(null);
+    }
+  };
 
   if (notFound) {
     return (
@@ -130,6 +185,7 @@ export function PlatformCompanyDetail() {
               <th>Role</th>
               <th>Aktif</th>
               <th>Dibuat</th>
+              <th>Aksi</th>
             </tr>
           </thead>
           <tbody>
@@ -141,6 +197,16 @@ export function PlatformCompanyDetail() {
                 <td>{u.role}</td>
                 <td>{u.isActive ? 'Ya' : 'Tidak'}</td>
                 <td>{formatDate(u.createdAt)}</td>
+                <td>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    disabled={resettingUserId === u.id}
+                    onClick={() => handleResetPassword(u)}
+                  >
+                    {resettingUserId === u.id ? 'Memproses...' : 'Reset password'}
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -172,6 +238,51 @@ export function PlatformCompanyDetail() {
           </tbody>
         </table>
       )}
+
+      <Modal
+        open={resetResult !== null}
+        onClose={() => setResetResult(null)}
+        title="Reset Password"
+        footer={
+          <button className="btn btn-ghost btn-sm" onClick={() => setResetResult(null)}>
+            Tutup
+          </button>
+        }
+      >
+        {resetResult && (
+          <div>
+            <p className="form-hint" style={{ color: 'var(--text1)', marginBottom: '12px' }}>
+              Link reset password untuk <strong>{resetResult.userName}</strong> ({resetResult.email}):
+            </p>
+            <div className="form-group" style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+              <input
+                type="text"
+                readOnly
+                value={resetResult.resetUrl}
+                onClick={(e) => (e.target as HTMLInputElement).select()}
+                className="form-input"
+                style={{ flex: 1 }}
+              />
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  navigator.clipboard.writeText(resetResult.resetUrl);
+                  toast('Link reset password berhasil disalin.', 'success');
+                }}
+              >
+                Salin link
+              </button>
+            </div>
+            <p className="form-hint" style={{ color: 'var(--text2)', marginBottom: '8px' }}>
+              Berlaku sampai: <strong>{formatDateTime(resetResult.expiresAt)}</strong>
+            </p>
+            <p className="form-hint" style={{ fontStyle: 'italic' }}>
+              Catatan: Kasih link ini ke user. Berlaku 1 jam, sekali pakai.
+            </p>
+          </div>
+        )}
+      </Modal>
     </section>
   );
 }
