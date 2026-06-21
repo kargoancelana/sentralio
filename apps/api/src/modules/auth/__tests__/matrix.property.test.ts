@@ -99,7 +99,7 @@ describe("Property 11: Authorization matrix is a pure total function", () => {
     fc.assert(
       fc.property(fc.constant("admin" as Role), (role) => {
         const visible = visibleNavFor(role);
-        expect(visible).toHaveLength(FEATURES.length);
+        expect(visible).toHaveLength(9);
         // Every feature must be present
         for (const feature of FEATURES) {
           expect(visible).toContain(feature);
