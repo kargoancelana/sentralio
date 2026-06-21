@@ -5,6 +5,7 @@ import { syncShopeeOrdersService } from "../../services/order.service";
 import { shipSingleOrder, shipBatchOrders, fetchAndUpdateTrackingNumber } from "../../services/shipment.service";
 import { getConnectedShopIdSet } from "../../services/active-shops";
 import { authMiddleware } from "../auth/auth.middleware";
+import { isOrderOwnedByCompany, filterOrderSnsOwnedByCompany } from "./order-ownership";
 import { and, desc, eq, inArray } from "drizzle-orm";
 
 // Order SN validation regex (alphanumeric, max 100 chars)
@@ -115,7 +116,11 @@ export const orderRoutes = new Elysia({ prefix: "/orders" })
     }
 
     try {
-      const currentShopId = shopsToSync[shop_index].shopId;
+      const shopToSync = shopsToSync[shop_index];
+      if (!shopToSync) {
+        throw new Error("Shop not found at index");
+      }
+      const currentShopId = shopToSync.shopId;
       
       // CRITICAL FIX: Use update_time for manual sync to catch status changes
       // When orders change status (READY_TO_SHIP → SHIPPED), their update_time changes
@@ -175,7 +180,7 @@ export const orderRoutes = new Elysia({ prefix: "/orders" })
   })
 
   // Ship single order
-  .post("/ship/:orderSn", async ({ params, body, set }) => {
+  .post("/ship/:orderSn", async ({ params, body, set, user }) => {
     const { orderSn } = params;
     const { shipment_method } = body as { shipment_method: 'pickup' | 'dropoff' };
 
@@ -198,6 +203,10 @@ export const orderRoutes = new Elysia({ prefix: "/orders" })
     }
 
     try {
+      if (!(await isOrderOwnedByCompany(orderSn, user.companyId))) {
+        set.status = 404;
+        return { success: false, message: "Order tidak ditemukan" };
+      }
       const result = await shipSingleOrder(orderSn, shipment_method);
 
       if (result.success) {
@@ -243,7 +252,7 @@ export const orderRoutes = new Elysia({ prefix: "/orders" })
   })
 
   // Ship multiple orders in batch
-  .post("/ship/batch", async ({ body, set }) => {
+  .post("/ship/batch", async ({ body, set, user }) => {
     const { order_sns, shipment_method } = body as { order_sns: string[]; shipment_method: 'pickup' | 'dropoff' };
 
     // Validate request body
@@ -292,6 +301,11 @@ export const orderRoutes = new Elysia({ prefix: "/orders" })
     }
 
     try {
+      const ownedSet = await filterOrderSnsOwnedByCompany(order_sns, user.companyId);
+      if (ownedSet.size !== new Set(order_sns).size) {
+        set.status = 404;
+        return { success: false, message: "Order tidak ditemukan" };
+      }
       const results = await shipBatchOrders(order_sns, shipment_method);
 
       const successful = results.filter(r => r.success).length;
@@ -337,7 +351,7 @@ export const orderRoutes = new Elysia({ prefix: "/orders" })
   })
 
   // Fetch tracking number for PROCESSED order
-  .get("/:orderSn/tracking-number", async ({ params, set }) => {
+  .get("/:orderSn/tracking-number", async ({ params, set, user }) => {
     const { orderSn } = params;
 
     // Validate order SN format
@@ -350,6 +364,10 @@ export const orderRoutes = new Elysia({ prefix: "/orders" })
     }
 
     try {
+      if (!(await isOrderOwnedByCompany(orderSn, user.companyId))) {
+        set.status = 404;
+        return { success: false, message: "Order tidak ditemukan" };
+      }
       const trackingNumber = await fetchAndUpdateTrackingNumber(orderSn);
 
       if (trackingNumber) {
