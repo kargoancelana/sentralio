@@ -138,6 +138,7 @@ import { getConnectedShopIds } from "../../services/active-shops";
 // ─── Exported Query Params Interface ──────────────────────────────────────────
 
 export interface ProfitQueryParams {
+  companyId: number;
   startDate: string; // YYYY-MM-DD
   endDate: string;   // YYYY-MM-DD
   shopId?: number;
@@ -240,6 +241,7 @@ export interface FetchedOrderFees {
  * Requirements: 4.1, 4.2, 4.3
  */
 export async function fetchCompletedOrders(
+  companyId: number,
   range: ProfitDateRange,
   shopId?: number,
 ): Promise<FetchedOrder[]> {
@@ -250,13 +252,13 @@ export async function fetchCompletedOrders(
   // fees and re-resolving costs. The heavy cost is downstream cost-resolution,
   // so we additionally cache the FINAL endpoint responses (see responseCache
   // helper) — this fetch cache mainly helps repeated calls within one request.
-  const cacheKey = `${startDate}|${endDate}|${shopId ?? 'all'}`;
+  const cacheKey = `${companyId}|${startDate}|${endDate}|${shopId ?? 'all'}`;
   const cached = completedOrdersCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < COMPLETED_ORDERS_TTL_MS) {
     return cached.data;
   }
 
-  const data = await fetchCompletedOrdersUncached(range, shopId);
+  const data = await fetchCompletedOrdersUncached(companyId, range, shopId);
   completedOrdersCache.set(cacheKey, { data, ts: Date.now() });
   return data;
 }
@@ -291,6 +293,7 @@ async function withResponseCache<T>(key: string, producer: () => Promise<T>): Pr
 }
 
 async function fetchCompletedOrdersUncached(
+  companyId: number,
   range: ProfitDateRange,
   shopId?: number,
 ): Promise<FetchedOrder[]> {
@@ -304,6 +307,7 @@ async function fetchCompletedOrdersUncached(
   console.log(`[fetchCompletedOrders] WIB range ${startDate}..${endDate} → UTC ${startUtc}..${endUtc}`);
 
   const conditions = [
+    eq(shopeeOrders.companyId, companyId),
     eq(shopeeOrders.orderStatus, "COMPLETED"),
     isNotNull(shopeeOrders.escrowReleaseTime),
     sql`${shopeeOrders.escrowReleaseTime} >= ${startUtc}`,
@@ -452,6 +456,7 @@ export function buildOrderCostInput(
  * Requirements: 4.1, 4.2, 4.3
  */
 async function fetchOrdersInRange(
+  companyId: number,
   startDate: string,
   endDate: string,
   shopId?: number,
@@ -461,6 +466,7 @@ async function fetchOrdersInRange(
   const { startUtc, endUtc } = wibDateRangeToUtcLiterals(startDate, endDate);
 
   const conditions = [
+    eq(shopeeOrders.companyId, companyId),
     eq(shopeeOrders.orderStatus, "COMPLETED"),
     isNotNull(shopeeOrders.escrowReleaseTime),
     sql`${shopeeOrders.escrowReleaseTime} >= ${startUtc}`,
@@ -645,9 +651,17 @@ async function fetchShopNames(shopIds: number[]): Promise<Map<number, string>> {
  * 
  * Requirements: 5.2, 5.3
  */
-async function resolveAdsShopIds(callerShopId?: number): Promise<number[]> {
+async function resolveAdsShopIds(companyId: number, callerShopId?: number): Promise<number[]> {
   if (callerShopId !== undefined) {
-    return [callerShopId];
+    // Verify the shop belongs to the caller's company before counting its ad spend.
+    const owned = await db
+      .select({ shopId: shopeeCredentials.shopId })
+      .from(shopeeCredentials)
+      .where(and(
+        eq(shopeeCredentials.companyId, companyId),
+        eq(shopeeCredentials.shopId, callerShopId),
+      ));
+    return owned.map((r) => r.shopId);
   }
   
   // Only connected shops contribute ad cost when no specific shop is requested
@@ -655,7 +669,10 @@ async function resolveAdsShopIds(callerShopId?: number): Promise<number[]> {
   const rows = await db
     .select({ shopId: shopeeCredentials.shopId })
     .from(shopeeCredentials)
-    .where(eq(shopeeCredentials.status, "connected"));
+    .where(and(
+      eq(shopeeCredentials.companyId, companyId),
+      eq(shopeeCredentials.status, "connected"),
+    ));
   
   return rows.map((r) => r.shopId);
 }
@@ -685,12 +702,13 @@ interface AdsCostOutcome {
  * Requirements: 1.5, 5.6, 11.4
  */
 async function computeTotalAdCostSafely(
+  companyId: number,
   callerShopId: number | undefined,
   startDate: string,
   endDate: string,
 ): Promise<AdsCostOutcome> {
   try {
-    const shopIds = await resolveAdsShopIds(callerShopId);
+    const shopIds = await resolveAdsShopIds(companyId, callerShopId);
     const result = await getTotalAdsExpense(shopIds, startDate, endDate);
     
     // Validate result.total is finite and non-negative
@@ -750,19 +768,19 @@ async function computeTotalAdCostSafely(
 export async function getProfitSummary(
   params: ProfitQueryParams,
 ): Promise<ProfitSummaryResponse> {
-  const key = `summary|${params.startDate}|${params.endDate}|${params.shopId ?? 'all'}`;
+  const key = `summary|${params.companyId}|${params.startDate}|${params.endDate}|${params.shopId ?? 'all'}`;
   return withResponseCache(key, () => getProfitSummaryUncached(params));
 }
 
 async function getProfitSummaryUncached(
   params: ProfitQueryParams,
 ): Promise<ProfitSummaryResponse> {
-  const { startDate, endDate, shopId } = params;
+  const { companyId, startDate, endDate, shopId } = params;
 
   // Compute ads cost BEFORE checking orders.length (Requirement 1.4)
-  const adsOutcome = await computeTotalAdCostSafely(shopId, startDate, endDate);
+  const adsOutcome = await computeTotalAdCostSafely(companyId, shopId, startDate, endDate);
 
-  const orders = await fetchCompletedOrders({ startDate, endDate }, shopId);
+  const orders = await fetchCompletedOrders(companyId, { startDate, endDate }, shopId);
 
   if (orders.length === 0) {
     return {
@@ -863,11 +881,11 @@ async function getProfitSummaryUncached(
 export async function getOrderProfitList(
   params: ProfitQueryParams & { page?: number; limit?: number },
 ): Promise<PaginatedOrderProfitResponse> {
-  const { startDate, endDate, shopId } = params;
+  const { companyId, startDate, endDate, shopId } = params;
   const page = params.page ?? 1;
   const limit = params.limit ?? 20;
 
-  const allOrders = await fetchOrdersInRange(startDate, endDate, shopId);
+  const allOrders = await fetchOrdersInRange(companyId, startDate, endDate, shopId);
   const total = allOrders.length;
   const totalPages = Math.ceil(total / limit);
   const paginatedOrders = allOrders.slice((page - 1) * limit, page * limit);
@@ -997,16 +1015,16 @@ export async function getOrderProfitList(
 export async function getShopPerformance(
   params: Omit<ProfitQueryParams, "shopId"> & { sortBy?: string },
 ): Promise<ShopPerformanceResponse> {
-  const key = `shops|${params.startDate}|${params.endDate}|${params.sortBy ?? 'revenue'}`;
+  const key = `shops|${params.companyId}|${params.startDate}|${params.endDate}|${params.sortBy ?? 'revenue'}`;
   return withResponseCache(key, () => getShopPerformanceUncached(params));
 }
 
 async function getShopPerformanceUncached(
   params: Omit<ProfitQueryParams, "shopId"> & { sortBy?: string },
 ): Promise<ShopPerformanceResponse> {
-  const { startDate, endDate, sortBy } = params;
+  const { companyId, startDate, endDate, sortBy } = params;
 
-  const orders = await fetchOrdersInRange(startDate, endDate);
+  const orders = await fetchOrdersInRange(companyId, startDate, endDate);
 
   if (orders.length === 0) {
     return {
@@ -1100,16 +1118,16 @@ async function getShopPerformanceUncached(
 export async function getProductPerformance(
   params: ProfitQueryParams & { groupBy?: GroupByLevel; sortBy?: string },
 ): Promise<ProductPerformanceResponse> {
-  const key = `products|${params.startDate}|${params.endDate}|${params.shopId ?? 'all'}|${params.groupBy ?? 'msku'}|${params.sortBy ?? 'netProfit'}`;
+  const key = `products|${params.companyId}|${params.startDate}|${params.endDate}|${params.shopId ?? 'all'}|${params.groupBy ?? 'msku'}|${params.sortBy ?? 'netProfit'}`;
   return withResponseCache(key, () => getProductPerformanceUncached(params));
 }
 
 async function getProductPerformanceUncached(
   params: ProfitQueryParams & { groupBy?: GroupByLevel; sortBy?: string },
 ): Promise<ProductPerformanceResponse> {
-  const { startDate, endDate, shopId, groupBy = "msku", sortBy } = params;
+  const { companyId, startDate, endDate, shopId, groupBy = "msku", sortBy } = params;
 
-  const orders = await fetchOrdersInRange(startDate, endDate, shopId);
+  const orders = await fetchOrdersInRange(companyId, startDate, endDate, shopId);
 
   if (orders.length === 0) {
     return {
@@ -1243,9 +1261,9 @@ async function getProductPerformanceUncached(
 export async function getShopeeDeductions(
   params: ProfitQueryParams,
 ): Promise<ShopeeDeductionsResponse> {
-  const { startDate, endDate, shopId } = params;
+  const { companyId, startDate, endDate, shopId } = params;
 
-  const orders = await fetchOrdersInRange(startDate, endDate, shopId);
+  const orders = await fetchOrdersInRange(companyId, startDate, endDate, shopId);
 
   if (orders.length === 0) {
     return {
