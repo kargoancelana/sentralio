@@ -2,7 +2,7 @@ import { eq, inArray } from "drizzle-orm";
 import { db } from "../db/client";
 import { shopeeOrders } from "../db/schema";
 import { getValidToken } from "./shopee-auth";
-import { shipShopeeOrder, getShopeeOrderDetails, getShipmentList, searchPackageList } from "./shopee-raw";
+import { shipShopeeOrder, getShopeeOrderDetails, searchPackageList } from "./shopee-raw";
 import { getTrackingNumber as getTrackingNumberFromLogistics, getShippingParameter, getMassTrackingNumber } from "./shopee-label";
 
 /**
