@@ -15,6 +15,9 @@
 import { api } from '../lib/api';
 import type { LabelData } from '../types/label';
 import type { PDFDocument as PDFDoc } from 'pdf-lib';
+// Task 5: bundle barcode/QR libraries locally instead of loading from CDN
+import jsBarcodeSource from 'jsbarcode/dist/JsBarcode.all.min.js?raw';
+import qriousSource from 'qrious/dist/qrious.min.js?raw';
 
 // ─── Shared types ──────────────────────────────────
 export interface PickingItem {
@@ -364,6 +367,9 @@ export async function printCustomLabels(
 <head>
   <meta charset="UTF-8">
   <title>Label Pengiriman (${labels.length} label)</title>
+  <!-- Task 5: bundled locally, no CDN dependency -->
+  <script>${jsBarcodeSource}<\/script>
+  <script>${qriousSource}<\/script>
   <style>${LABEL_CSS}
     body { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 16px; background: #f3f4f6; }
     .label-container, .picking-list-container { box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
@@ -401,18 +407,7 @@ export async function printCustomLabels(
     </svg>
   </button>
   <script>
-    var scriptsLoaded = 0;
-    var totalScripts = 2;
     var renderDone = false;
-
-    function tryRender() {
-      scriptsLoaded++;
-      if (scriptsLoaded >= totalScripts && !renderDone) {
-        renderDone = true;
-        renderBarcodes();
-        setTimeout(function() { renderQRCodes(); }, 100);
-      }
-    }
 
     function renderBarcodes() {
       if (typeof JsBarcode === 'undefined') return;
@@ -438,15 +433,11 @@ export async function printCustomLabels(
       });
     }
 
-    var s1 = document.createElement('script');
-    s1.src = 'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js';
-    s1.onload = tryRender; s1.onerror = tryRender;
-    document.head.appendChild(s1);
-
-    var s2 = document.createElement('script');
-    s2.src = 'https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js';
-    s2.onload = tryRender; s2.onerror = tryRender;
-    document.head.appendChild(s2);
+    if (!renderDone) {
+      renderDone = true;
+      renderBarcodes();
+      setTimeout(function() { renderQRCodes(); }, 100);
+    }
   <\/script>
 </body>
 </html>`;
