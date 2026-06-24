@@ -27,6 +27,8 @@ interface OrderRecord {
   totalAmount: number;
   buyerUsername: string | null;
   shippingCarrier: string | null;
+  trackingNumber: string | null;
+  packageNumber: string | null;
   payTime: Date | null;
   createTime: Date;
   updatedAt: Date;
@@ -1996,7 +1998,7 @@ export async function shipBatchOrders(
             if (trackingNumber) {
               try {
                 await db.update(shopeeOrders)
-                  .set({ trackingNumber, updatedAt: new Date() })
+                  .set({ trackingNumber, packageNumber: packageNumber, updatedAt: new Date() })
                   .where(eq(shopeeOrders.orderSn, orderSn));
 
                 // Update ShipmentResult object with tracking number

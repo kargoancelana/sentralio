@@ -1,0 +1,1 @@
+ALTER TABLE `shopee_orders` ADD `package_number` varchar(100);

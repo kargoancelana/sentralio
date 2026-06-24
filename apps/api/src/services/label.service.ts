@@ -229,6 +229,7 @@ export interface OrderRecord {
   buyerUsername: string | null;
   shippingCarrier: string | null;
   trackingNumber: string | null;  // Explicit declaration (was accessed via cast before)
+  packageNumber: string | null;   // Persisted from batch ship via package_number column
   payTime: Date | null;
   createTime: Date;
   updatedAt: Date;
@@ -785,24 +786,33 @@ export async function getSingleLabel(orderSn: string): Promise<LabelResult> {
       }
     }
 
-    // Step 3c: Get package_number from Shopee order details
+    // Step 3c: Get package_number from DB or Shopee order details
+    // If packageNumber was persisted during batch ship, skip the API call entirely.
     // For Indonesian orders, Shopee wraps orders in packages. ALL logistics document APIs
     // require package_number - without it, create_shipping_document fails with tracking_number_invalid
-    let packageNumber: string | undefined;
-    try {
-      const { getShopeeOrderDetails } = await import("./shopee-raw");
-      const orderDetails = await getShopeeOrderDetails(shopId, [orderSn]);
-      const orderDetail = orderDetails?.response?.order_list?.[0] || orderDetails?.result?.order_list?.[0];
-      
-      // package_list contains the package_number for packaged orders
-      if (orderDetail?.package_list?.length > 0) {
-        packageNumber = orderDetail.package_list[0].package_number;
-        console.log('[label-service] Package number found:', packageNumber);
-      } else {
-        console.log('[label-service] No package_list in order details, order may not be packaged');
+    let packageNumber: string | undefined = order.packageNumber || undefined;
+    if (packageNumber) {
+      console.log('[label-service] Package number from DB (skipping get_order_detail):', packageNumber);
+    } else {
+      try {
+        const { getShopeeOrderDetails } = await import("./shopee-raw");
+        const orderDetails = await getShopeeOrderDetails(shopId, [orderSn]);
+        const orderDetail = orderDetails?.response?.order_list?.[0] || orderDetails?.result?.order_list?.[0];
+        
+        // package_list contains the package_number for packaged orders
+        if (orderDetail?.package_list?.length > 0) {
+          packageNumber = orderDetail.package_list[0].package_number;
+          console.log('[label-service] Package number found from get_order_detail:', packageNumber);
+          // Persist to DB for future reuse
+          await db.update(shopeeOrders)
+            .set({ packageNumber, updatedAt: new Date() })
+            .where(eq(shopeeOrders.orderSn, orderSn));
+        } else {
+          console.log('[label-service] No package_list in order details, order may not be packaged');
+        }
+      } catch (pkgError: any) {
+        console.warn('[label-service] Could not fetch package_number from order details:', pkgError.message);
       }
-    } catch (pkgError: any) {
-      console.warn('[label-service] Could not fetch package_number from order details:', pkgError.message);
     }
 
     // Step 3d: Get tracking number (ensure AWB exists)
