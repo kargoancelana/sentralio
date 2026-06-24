@@ -470,11 +470,10 @@ export const orderRoutes = new Elysia({ prefix: "/orders" })
         updateData.labelPrintedAt = new Date();
       }
 
-      for (const orderSn of order_sns) {
-        await db.update(shopeeOrders)
-          .set(updateData)
-          .where(and(eq(shopeeOrders.orderSn, orderSn), eq(shopeeOrders.companyId, user.companyId)));
-      }
+      // Task 6: single UPDATE WHERE order_sn IN (...) instead of N sequential queries
+      await db.update(shopeeOrders)
+        .set(updateData)
+        .where(and(inArray(shopeeOrders.orderSn, order_sns), eq(shopeeOrders.companyId, user.companyId)));
 
       return {
         success: true,
