@@ -1,0 +1,328 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1780700000000,
+      "tag": "0000_init",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1780700000001,
+      "tag": "0001_living_zeigeist",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1780700000002,
+      "tag": "0002_handy_baron_strucker",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1780700000003,
+      "tag": "0003_dry_silhouette",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1780700000004,
+      "tag": "0004_flimsy_power_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1780700000005,
+      "tag": "0005_luxuriant_gertrude_yorkes",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1780700000006,
+      "tag": "0006_concerned_puck",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1780700000007,
+      "tag": "0007_mature_proemial_gods",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1780700000008,
+      "tag": "0008_shocking_ozymandias",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1780700000009,
+      "tag": "0009_even_joseph",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1780700000010,
+      "tag": "0010_damp_enchantress",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "5",
+      "when": 1780700000011,
+      "tag": "0011_sync_state_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1780700000012,
+      "tag": "0012_label_cache_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "5",
+      "when": 1780700000013,
+      "tag": "0013_label_printed_column",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "5",
+      "when": 1780700000014,
+      "tag": "0014_label_url_to_text",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "5",
+      "when": 1780700000015,
+      "tag": "0015_shop_contact_info",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "5",
+      "when": 1780700000016,
+      "tag": "0016_order_items_model_sku",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1780700000017,
+      "tag": "0017_label_data_json_cache",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1780700000018,
+      "tag": "0018_order_items_item_model_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "5",
+      "when": 1780700000019,
+      "tag": "0019_hpp_packing_cost_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "5",
+      "when": 1780700000020,
+      "tag": "0020_shopee_order_fees",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "5",
+      "when": 1780700000021,
+      "tag": "0021_escrow_release_time",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "5",
+      "when": 1780700000022,
+      "tag": "0022_ams_commission_fee",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "5",
+      "when": 1780700000023,
+      "tag": "0023_drc_adjustable_refund",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "5",
+      "when": 1780700000024,
+      "tag": "0024_seller_return_refund",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "5",
+      "when": 1780700000025,
+      "tag": "0025_master_packing_cost_entries",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "5",
+      "when": 1780700000026,
+      "tag": "0026_shopee_ads_daily_expense",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "5",
+      "when": 1780700000027,
+      "tag": "0027_fresh_mephisto",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "5",
+      "when": 1780700000028,
+      "tag": "0028_final_shipping_fee",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "5",
+      "when": 1780700000029,
+      "tag": "0029_unique_order_items",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "5",
+      "when": 1780700000030,
+      "tag": "0030_user_auth",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "5",
+      "when": 1780700000031,
+      "tag": "0031_user_tokens_valid_from",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "5",
+      "when": 1780700000032,
+      "tag": "0032_staff_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "5",
+      "when": 1780700000033,
+      "tag": "0033_master_image_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "5",
+      "when": 1780700000034,
+      "tag": "0034_order_ship_by_date",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "5",
+      "when": 1780700000035,
+      "tag": "0035_shop_connection_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "5",
+      "when": 1781609944878,
+      "tag": "0036_fast_jigsaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "5",
+      "when": 1781746494691,
+      "tag": "0037_living_lionheart",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "5",
+      "when": 1781767457893,
+      "tag": "0038_bored_prodigy",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "5",
+      "when": 1781789115916,
+      "tag": "0039_bouncy_ego",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "5",
+      "when": 1781825803111,
+      "tag": "0040_warm_slapstick",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "5",
+      "when": 1781826802262,
+      "tag": "0041_boring_namora",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "5",
+      "when": 1781828953920,
+      "tag": "0042_chemical_phil_sheldon",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "5",
+      "when": 1781831142648,
+      "tag": "0043_unusual_cardiac",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "5",
+      "when": 1781832508740,
+      "tag": "0044_fixed_smasher",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "5",
+      "when": 1781934008171,
+      "tag": "0045_unique_vision",
+      "breakpoints": true
+    }
+  ]
+}
