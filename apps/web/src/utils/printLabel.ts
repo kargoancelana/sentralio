@@ -477,11 +477,13 @@ export async function printCustomLabels(
  * @param pdfUrl - Single PDF data URL or array of URLs
  * @param orderSn - Single order SN or array
  * @param onPrintComplete - Optional callback after the print tab is opened
+ * @param localOrders - Optional local order data to build picking list without API call (Task 4 optimisation)
  */
 export async function printOfficialLabels(
   pdfUrl: string | string[],
   orderSn: string | string[],
-  onPrintComplete?: () => void
+  onPrintComplete?: () => void,
+  localOrders?: Array<{ orderSn: string; items?: Array<{ sku?: string | null; modelSku?: string | null; name?: string | null; itemName?: string | null; variantName?: string | null; modelName?: string | null; qty: number }> }>
 ): Promise<void> {
   const pdfUrls = Array.isArray(pdfUrl) ? pdfUrl : [pdfUrl];
   const orderSns = Array.isArray(orderSn) ? orderSn : [orderSn];
@@ -521,23 +523,37 @@ export async function printOfficialLabels(
   }
 
   // ─── PICKING LIST — DO NOT REMOVE ───────────────────────────────────────────
-  // Blok ini dipulihkan dari faed36b9^ setelah PR #66 menghapusnya.
-  // Jangan hapus atau pindahkan — regression akan membuat lembar picking list
-  // hilang dari cetak label asli batch. Lihat prompt fix regresi picking list.
+  // Dipulihkan dari faed36b9^ (PR #145 fix regresi). Jangan hapus — regression
+  // akan menghilangkan lembar picking list dari cetak label resmi batch.
+  // Task 4: gunakan data lokal (localOrders) jika tersedia → skip API call.
+  // Output picking list IDENTIK baik pakai data lokal maupun API.
   // ─────────────────────────────────────────────────────────────────────────────
 
-  // Fetch picking items for the orders
   let pickingItems: PickingItem[] = [];
-  try {
-    const result = await api.orderLabelDataBatch(orderSns);
-    if (result.success && result.data) {
-      const items = result.data.results.filter((r: any) => r.success && r.data).map((r: any) => r.data);
-      if (items.length > 0) {
-        pickingItems = aggregatePickingItems(items);
+  if (localOrders && localOrders.length > 0) {
+    // Task 4: gunakan data lokal, tidak perlu API call ke /label-data/batch
+    const normalized = localOrders.map(o => ({
+      items: (o.items || []).map(it => ({
+        sku: (it.sku ?? it.modelSku ?? '').toString(),
+        name: (it.name ?? it.itemName ?? '').toString(),
+        variantName: (it.variantName ?? it.modelName ?? it.name ?? it.itemName ?? '').toString(),
+        qty: Number(it.qty) || 0,
+      })),
+    }));
+    pickingItems = aggregatePickingItems(normalized);
+  } else {
+    // Fallback: fetch dari API saat localOrders tidak tersedia
+    try {
+      const result = await api.orderLabelDataBatch(orderSns);
+      if (result.success && result.data) {
+        const items = result.data.results.filter((r: any) => r.success && r.data).map((r: any) => r.data);
+        if (items.length > 0) {
+          pickingItems = aggregatePickingItems(items);
+        }
       }
+    } catch {
+      // Picking list is optional — proceed without it
     }
-  } catch {
-    // Picking list is optional — proceed without it
   }
 
   // Append picking list page(s) using pdf-lib text drawing
