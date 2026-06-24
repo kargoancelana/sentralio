@@ -116,6 +116,7 @@ export const shopeeOrders = mysqlTable("shopee_orders", {
   buyerUsername: varchar("buyer_username", { length: 255 }),
   shippingCarrier: varchar("shipping_carrier", { length: 100 }),
   trackingNumber: varchar("tracking_number", { length: 100 }),
+  packageNumber: varchar("package_number", { length: 100 }),
   // Shopee ship-by deadline (unix seconds). 0 means Shopee is holding the order
   // ("tertunda"/Menunggu) — it cannot be processed yet even though order_status
   // is READY_TO_SHIP. A non-zero value means the order is genuinely shippable.

@@ -693,10 +693,15 @@ export function PesananSaya() {
 
       if (allUrls.length > 0) {
         const orderSnList = [...selectedLabelOrders];
+        // Task 4: pass local order data to skip /label-data/batch API call for picking list
+        const localOrderData = orderSnList.map(sn => {
+          const order = (ordersData?.data || []).find((o: any) => o.orderSn === sn);
+          return { orderSn: sn, items: order?.items || [] };
+        });
         await printOfficialLabels(allUrls, orderSnList, async () => {
           toast(`${selectedLabelOrders.length - allFailedOrders.length} label asli dibuka di tab baru`, 'success');
           await refetch();
-        });
+        }, localOrderData);
       } else {
         toast('Tidak ada label resmi yang berhasil diambil', 'error');
       }

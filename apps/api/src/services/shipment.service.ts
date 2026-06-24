@@ -1,8 +1,8 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "../db/client";
 import { shopeeOrders } from "../db/schema";
 import { getValidToken } from "./shopee-auth";
-import { shipShopeeOrder, getShopeeOrderDetails, getShipmentList, searchPackageList } from "./shopee-raw";
+import { shipShopeeOrder, getShopeeOrderDetails, searchPackageList } from "./shopee-raw";
 import { getTrackingNumber as getTrackingNumberFromLogistics, getShippingParameter, getMassTrackingNumber } from "./shopee-label";
 
 /**
@@ -27,6 +27,8 @@ interface OrderRecord {
   totalAmount: number;
   buyerUsername: string | null;
   shippingCarrier: string | null;
+  trackingNumber: string | null;
+  packageNumber: string | null;
   payTime: Date | null;
   createTime: Date;
   updatedAt: Date;
@@ -1379,33 +1381,53 @@ export async function shipBatchOrders(
   });
 
   // ── PHASE 1: VALIDATION ──
-  // Filter out orders that don't meet eligibility criteria before processing
-  // Build orderShopIdMap during validation to cache shopId lookups
+  // Single batch query replaces N sequential validateOrderEligibility calls.
+  // Results/error messages are identical to the per-order path (Task 1).
   // **Validates: Requirements 3.1, 8.1, 8.2, 10.1**
   const eligibleOrders: Array<{ orderSn: string; shopId: number }> = [];
-  const orderShopIdMap = new Map<string, number>(); // orderSn -> shopId (cached for later use)
-  
-  for (const orderSn of orderSns) {
-    const validation = await validateOrderEligibility(orderSn);
-    if (validation.valid) {
-      const shopId = validation.order!.shopId;
-      eligibleOrders.push({ orderSn, shopId });
-      orderShopIdMap.set(orderSn, shopId);
-    } else {
-      // Check if order is already shipped (PROCESSED/SHIPPED) — report as success, not failure
-      const order = validation.order;
-      if (order && (order.orderStatus === 'PROCESSED' || order.orderStatus === 'SHIPPED' || order.orderStatus === 'TO_CONFIRM_RECEIVE')) {
-        results.push({
-          success: true,
-          orderSn,
-          message: 'Order sudah berhasil dikirim sebelumnya'
-        });
+  const orderShopIdMap = new Map<string, number>();
+
+  const ELIGIBLE_STATUSES_FOR_SHIP = ['READY_TO_SHIP'];
+  const ALREADY_SHIPPED_STATUSES = ['PROCESSED', 'SHIPPED', 'TO_CONFIRM_RECEIVE'];
+
+  try {
+    const rows = await db.select().from(shopeeOrders).where(inArray(shopeeOrders.orderSn, orderSns));
+    const byOrderSn = new Map<string, typeof rows[0]>();
+    for (const r of rows) byOrderSn.set(r.orderSn, r);
+
+    for (const orderSn of orderSns) {
+      const order = byOrderSn.get(orderSn);
+      if (!order) {
+        results.push({ success: false, orderSn, error: `Order ${orderSn} tidak ditemukan dalam database` });
+        continue;
+      }
+      if (ALREADY_SHIPPED_STATUSES.includes(order.orderStatus)) {
+        results.push({ success: true, orderSn, message: 'Order sudah berhasil dikirim sebelumnya' });
+        continue;
+      }
+      if (!ELIGIBLE_STATUSES_FOR_SHIP.includes(order.orderStatus)) {
+        results.push({ success: false, orderSn, error: `Order ${orderSn} tidak dapat diatur pengiriman: status saat ini adalah ${order.orderStatus}` });
+        continue;
+      }
+      eligibleOrders.push({ orderSn, shopId: order.shopId });
+      orderShopIdMap.set(orderSn, order.shopId);
+    }
+  } catch (batchValidationErr: any) {
+    // Fallback: per-order sequential validation if batch query fails
+    console.warn('[shipment-service] batch validation failed, falling back per-order:', batchValidationErr.message);
+    for (const orderSn of orderSns) {
+      const validation = await validateOrderEligibility(orderSn);
+      if (validation.valid) {
+        const shopId = validation.order!.shopId;
+        eligibleOrders.push({ orderSn, shopId });
+        orderShopIdMap.set(orderSn, shopId);
       } else {
-        results.push({
-          success: false,
-          orderSn,
-          error: validation.error
-        });
+        const order = validation.order;
+        if (order && ALREADY_SHIPPED_STATUSES.includes(order.orderStatus)) {
+          results.push({ success: true, orderSn, message: 'Order sudah berhasil dikirim sebelumnya' });
+        } else {
+          results.push({ success: false, orderSn, error: validation.error });
+        }
       }
     }
   }
@@ -1996,7 +2018,7 @@ export async function shipBatchOrders(
             if (trackingNumber) {
               try {
                 await db.update(shopeeOrders)
-                  .set({ trackingNumber, updatedAt: new Date() })
+                  .set({ trackingNumber, packageNumber: packageNumber, updatedAt: new Date() })
                   .where(eq(shopeeOrders.orderSn, orderSn));
 
                 // Update ShipmentResult object with tracking number

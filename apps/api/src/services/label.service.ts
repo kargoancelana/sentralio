@@ -30,7 +30,8 @@ import { LabelError, LabelErrorType, mapErrorToUserMessage, determineErrorType }
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * @deprecated since v2 — only referenced by classifyChunkFreshness (deprecated).
+ * @deprecated since v2 — only referenced by classifyChunkFreshness (removed in Task 3 cleanup).
+ * Retained as a named constant so the 24h threshold is discoverable if needed.
  */
 const STALE_SHIP_THRESHOLD_MS = 86_400_000;
 
@@ -50,7 +51,7 @@ const POLL_BACKOFF_MS: readonly number[] = [300, 500, 800, 1200, 1500, 2000];
 const BG_DOWNLOAD_TIMEOUT_MS = 30_000;
 
 /**
- * @deprecated since v2 — only referenced by classifyChunkFreshness (deprecated).
+ * @deprecated since v2 — was used by classifyChunkFreshness (removed in Task 3 cleanup).
  */
 const STALE_QUERY_TIMEOUT_MS = 2_000;
 
@@ -124,12 +125,6 @@ function getPollIntervals(context: 'createPoll' | 'single'): number[] {
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal types (file-local, not exported)
 // ─────────────────────────────────────────────────────────────────────────────
-
-type FreshnessDecision = {
-  action: 'wait_5s' | 'skip_to_fallback';
-  freshCount: number;
-  staleCount: number;
-};
 
 type BackgroundCacheResult = 'success' | 'failure';
 
@@ -229,6 +224,7 @@ export interface OrderRecord {
   buyerUsername: string | null;
   shippingCarrier: string | null;
   trackingNumber: string | null;  // Explicit declaration (was accessed via cast before)
+  packageNumber: string | null;   // Persisted from batch ship via package_number column
   payTime: Date | null;
   createTime: Date;
   updatedAt: Date;
@@ -370,76 +366,6 @@ async function batchValidateLabelEligibility(orderSns: string[]): Promise<Array<
 }
 
 /**
- * @deprecated since v2 (label-print-v2) — the wait_5s strategy was removed because Shopee
- * typically requires > 15 s to auto-generate labels after init_logistic_batch, so a 5-second
- * delay never enables the fast-path retry to succeed. ALL [FALLBACK_REQUIRED] chunks now
- * route directly to createPollAndDownload. This function is retained for ATC test
- * compatibility and is safe to delete in a follow-up cleanup spec.
- *
- * Classify a chunk of orders as fresh or stale based on their `updatedAt` timestamp.
- *
- * Runs a single batch DB query wrapped in a 2-second timeout. If all orders in the
- * chunk are older than `STALE_SHIP_THRESHOLD_MS` (24 h), returns `skip_to_fallback` so
- * the 5-second retry delay can be skipped. If any order is fresh, NULL, or missing,
- * returns `wait_5s` (conservative).
- *
- * On DB exception or query timeout, falls back to conservative `wait_5s` with
- * `freshCount = chunk.length` and `staleCount = 0`.
- *
- * @param chunk - Array of `{ order_sn, package_number }` objects from the failing fast-path chunk
- * @returns FreshnessDecision — action, freshCount, staleCount
- *
- * **Validates: Requirements 2.1, 2.4, 2.5**
- */
-async function classifyChunkFreshness(
-  chunk: Array<{ order_sn: string; package_number: string }>
-): Promise<FreshnessDecision> {
-  try {
-    const orderSns = chunk.map(o => o.order_sn);
-
-    // Requirement 2.5: exactly one batch DB query per chunk, wrapped in a 2s timeout
-    const rows = await raceWithTimeout(
-      db.select({ orderSn: shopeeOrders.orderSn, updatedAt: shopeeOrders.updatedAt })
-        .from(shopeeOrders)
-        .where(inArray(shopeeOrders.orderSn, orderSns)),
-      STALE_QUERY_TIMEOUT_MS
-    );
-
-    const now = Date.now();
-    const updatedMap = new Map<string, Date>(
-      rows.map(r => [r.orderSn, r.updatedAt] as [string, Date])
-    );
-
-    let freshCount = 0;
-    let staleCount = 0;
-
-    for (const o of chunk) {
-      const updatedAt = updatedMap.get(o.order_sn);
-      if (!updatedAt) {
-        // Requirement 2.4: NULL or missing updatedAt → treat as fresh (conservative)
-        freshCount++;
-      } else {
-        const ageMs = now - updatedAt.getTime();
-        if (ageMs > STALE_SHIP_THRESHOLD_MS) {
-          staleCount++;
-        } else {
-          freshCount++;
-        }
-      }
-    }
-
-    // Requirement 2.3: only skip delay when every order in the chunk is stale
-    return {
-      action: freshCount === 0 ? 'skip_to_fallback' : 'wait_5s',
-      freshCount,
-      staleCount,
-    };
-  } catch {
-    // Requirement 2.4: exception or timeout → conservative (treat entire chunk as fresh)
-    return { action: 'wait_5s', freshCount: chunk.length, staleCount: 0 };
-  }
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // v2: Fast-Path Chunk Processing
 // ─────────────────────────────────────────────────────────────────────────────
@@ -785,24 +711,33 @@ export async function getSingleLabel(orderSn: string): Promise<LabelResult> {
       }
     }
 
-    // Step 3c: Get package_number from Shopee order details
+    // Step 3c: Get package_number from DB or Shopee order details
+    // If packageNumber was persisted during batch ship, skip the API call entirely.
     // For Indonesian orders, Shopee wraps orders in packages. ALL logistics document APIs
     // require package_number - without it, create_shipping_document fails with tracking_number_invalid
-    let packageNumber: string | undefined;
-    try {
-      const { getShopeeOrderDetails } = await import("./shopee-raw");
-      const orderDetails = await getShopeeOrderDetails(shopId, [orderSn]);
-      const orderDetail = orderDetails?.response?.order_list?.[0] || orderDetails?.result?.order_list?.[0];
-      
-      // package_list contains the package_number for packaged orders
-      if (orderDetail?.package_list?.length > 0) {
-        packageNumber = orderDetail.package_list[0].package_number;
-        console.log('[label-service] Package number found:', packageNumber);
-      } else {
-        console.log('[label-service] No package_list in order details, order may not be packaged');
+    let packageNumber: string | undefined = order.packageNumber || undefined;
+    if (packageNumber) {
+      console.log('[label-service] Package number from DB (skipping get_order_detail):', packageNumber);
+    } else {
+      try {
+        const { getShopeeOrderDetails } = await import("./shopee-raw");
+        const orderDetails = await getShopeeOrderDetails(shopId, [orderSn]);
+        const orderDetail = orderDetails?.response?.order_list?.[0] || orderDetails?.result?.order_list?.[0];
+        
+        // package_list contains the package_number for packaged orders
+        if (orderDetail?.package_list?.length > 0) {
+          packageNumber = orderDetail.package_list[0].package_number;
+          console.log('[label-service] Package number found from get_order_detail:', packageNumber);
+          // Persist to DB for future reuse
+          await db.update(shopeeOrders)
+            .set({ packageNumber, updatedAt: new Date() })
+            .where(eq(shopeeOrders.orderSn, orderSn));
+        } else {
+          console.log('[label-service] No package_list in order details, order may not be packaged');
+        }
+      } catch (pkgError: any) {
+        console.warn('[label-service] Could not fetch package_number from order details:', pkgError.message);
       }
-    } catch (pkgError: any) {
-      console.warn('[label-service] Could not fetch package_number from order details:', pkgError.message);
     }
 
     // Step 3d: Get tracking number (ensure AWB exists)
