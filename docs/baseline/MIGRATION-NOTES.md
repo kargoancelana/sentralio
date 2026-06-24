@@ -30,17 +30,14 @@ Contoh bahaya:
 
 **Migration add-only (tambah kolom / tabel / index baru) tidak terpengaruh.**
 
-### Tabel referensi nama legacy (sampel)
+### Tabel referensi FK yang beda nama (hanya 2)
 
-| Nama di drizzle-generated baseline | Nama asli di prod |
-|------------------------------------|-------------------|
-| `hpp_entries_company_id_companies_id_fk` | `idx_hpp_entries_company` |
-| `hpp_entries_variant_id_master_product_variants_id_fk` | `idx_hpp_variant` |
-| `master_packing_cost_entries_company_id_companies_id_fk` | `idx_master_packing_cost_entries_company` |
-| `fk_master_packing_master_product` (sama) | `fk_master_packing_master_product` |
-| `auto_boost_config_company_id_companies_id_fk` | `idx_auto_boost_config_company` |
+Semua FK `*_company_id_companies_id_fk`, semua index `idx_*`, dan semua `uniq_*` sudah **identik** antara baseline dan prod — tidak perlu di-map. Hanya 2 FK custom di bawah yang namanya berbeda; migration yang DROP/RENAME salah satunya wajib pakai nama prod dari `prod-actual-schema.sql`.
 
-Daftar lengkap: lihat `docs/baseline/prod-actual-schema.sql`.
+| Objek | Nama di baseline (schema.ts auto) | Nama ASLI di prod |
+|-------|-----------------------------------|-------------------|
+| FK `master_packing_cost_entries.master_product_id` → `master_products` | `master_packing_cost_entries_master_product_id_master_products_id_fk` | `fk_master_packing_master_product` |
+| FK `password_reset_tokens.user_id` → `users` | `password_reset_tokens_user_id_users_id_fk` | `fk_password_reset_user` |
 
 ---
 
