@@ -111,76 +111,76 @@ export const shopeePushRoutes = new Elysia()
       set.status = 200;
 
       // ── 6. Proses async (setImmediate agar tidak blocking response) ──
-    setImmediate(async () => {
-      try {
-        // Validasi shop — harus ada di credentials dan status connected
-        const credRows = await db
-          .select({ companyId: shopeeCredentials.companyId, status: shopeeCredentials.status })
-          .from(shopeeCredentials)
-          .where(eq(shopeeCredentials.shopId, shopId))
-          .limit(1);
+      setImmediate(async () => {
+        try {
+          // Validasi shop — harus ada di credentials dan status connected
+          const credRows = await db
+            .select({ companyId: shopeeCredentials.companyId, status: shopeeCredentials.status })
+            .from(shopeeCredentials)
+            .where(eq(shopeeCredentials.shopId, shopId))
+            .limit(1);
 
-        const cred = credRows[0];
-        if (!cred) {
-          console.warn(`[shopee-push] shop_id=${shopId} tidak ditemukan di credentials, skip`);
-          return;
-        }
-        if (cred.status !== "connected") {
-          console.warn(`[shopee-push] shop_id=${shopId} status=${cred.status}, skip`);
-          return;
-        }
-        const companyId = cred.companyId;
-
-        if (code === PUSH_CODE_ORDER_STATUS) {
-          // code 3: Order Status Push
-          const orderSn: string = data.ordersn ?? data.order_sn;
-          const newStatus: string = data.status;
-          if (!orderSn) {
-            console.warn("[shopee-push] code=3 tanpa ordersn, skip");
+          const cred = credRows[0];
+          if (!cred) {
+            console.warn(`[shopee-push] shop_id=${shopId} tidak ditemukan di credentials, skip`);
             return;
           }
-          console.log(`[shopee-push] code=3 order_sn=${orderSn} status=${newStatus} shopId=${shopId}`);
-
-          // Enqueue targeted sync supaya semua field ter-update lengkap
-          await pushSyncQueue.add(
-            `push-order-${orderSn}`,
-            { shopId, orderSn, companyId, type: "order_status" },
-            { attempts: 3, backoff: { type: "exponential", delay: 5000 }, removeOnComplete: 100, removeOnFail: 200, jobId: `order-status-${orderSn}` }
-          );
-
-        } else if (code === PUSH_CODE_TRACKING) {
-          // code 4: TrackingNo Push
-          const orderSn: string = data.ordersn ?? data.order_sn;
-          const trackingNumber: string | undefined = data.tracking_no ?? data.tracking_number;
-          const packageNumber: string | undefined = data.package_number;
-
-          if (!orderSn) {
-            console.warn("[shopee-push] code=4 tanpa ordersn, skip");
+          if (cred.status !== "connected") {
+            console.warn(`[shopee-push] shop_id=${shopId} status=${cred.status}, skip`);
             return;
           }
-          console.log(`[shopee-push] code=4 order_sn=${orderSn} tracking=${trackingNumber} pkg=${packageNumber} shopId=${shopId}`);
+          const companyId = cred.companyId;
 
-          // Update tracking + package_number langsung (tidak perlu full sync)
-          const updatePayload: Record<string, any> = { updatedAt: new Date() };
-          if (trackingNumber) updatePayload.trackingNumber = trackingNumber;
-          if (packageNumber)  updatePayload.packageNumber  = packageNumber;
+          if (code === PUSH_CODE_ORDER_STATUS) {
+            // code 3: Order Status Push
+            const orderSn: string = data.ordersn ?? data.order_sn;
+            const newStatus: string = data.status;
+            if (!orderSn) {
+              console.warn("[shopee-push] code=3 tanpa ordersn, skip");
+              return;
+            }
+            console.log(`[shopee-push] code=3 order_sn=${orderSn} status=${newStatus} shopId=${shopId}`);
 
-          await db.update(shopeeOrders)
-            .set(updatePayload)
-            .where(eq(shopeeOrders.orderSn, orderSn));
+            // Enqueue targeted sync supaya semua field ter-update lengkap
+            await pushSyncQueue.add(
+              `push-order-${orderSn}`,
+              { shopId, orderSn, companyId, type: "order_status" },
+              { attempts: 3, backoff: { type: "exponential", delay: 5000 }, removeOnComplete: 100, removeOnFail: 200, jobId: `order-status-${orderSn}` }
+            );
 
-          console.log(`[shopee-push] tracking updated for ${orderSn}`);
+          } else if (code === PUSH_CODE_TRACKING) {
+            // code 4: TrackingNo Push
+            const orderSn: string = data.ordersn ?? data.order_sn;
+            const trackingNumber: string | undefined = data.tracking_no ?? data.tracking_number;
+            const packageNumber: string | undefined = data.package_number;
 
-        } else {
-          // code lain (product push 8/11/13/16/22/27, dll) — abaikan
-          console.log(`[shopee-push] code=${code} diabaikan (out of scope)`);
+            if (!orderSn) {
+              console.warn("[shopee-push] code=4 tanpa ordersn, skip");
+              return;
+            }
+            console.log(`[shopee-push] code=4 order_sn=${orderSn} tracking=${trackingNumber} pkg=${packageNumber} shopId=${shopId}`);
+
+            // Update tracking + package_number langsung (tidak perlu full sync)
+            const updatePayload: Record<string, any> = { updatedAt: new Date() };
+            if (trackingNumber) updatePayload.trackingNumber = trackingNumber;
+            if (packageNumber)  updatePayload.packageNumber  = packageNumber;
+
+            await db.update(shopeeOrders)
+              .set(updatePayload)
+              .where(eq(shopeeOrders.orderSn, orderSn));
+
+            console.log(`[shopee-push] tracking updated for ${orderSn}`);
+
+          } else {
+            // code lain (product push 8/11/13/16/22/27, dll) — abaikan
+            console.log(`[shopee-push] code=${code} diabaikan (out of scope)`);
+          }
+        } catch (err: any) {
+          console.error("[shopee-push] Error saat proses async:", err.message);
         }
-      } catch (err: any) {
-        console.error("[shopee-push] Error saat proses async:", err.message);
-      }
-    });
+      });
 
-    return "";
+      return "";
   },
   {
     // Paksa Elysia agar tidak parse body sebagai JSON — simpan sebagai string
