@@ -15,6 +15,13 @@
       "when": 1782306347609,
       "tag": "0001_jazzy_grey_gargoyle",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1782394922202,
+      "tag": "0002_oval_garia",
+      "breakpoints": true
     }
   ]
 }
