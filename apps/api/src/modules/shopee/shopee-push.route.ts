@@ -14,11 +14,12 @@ import { eq } from "drizzle-orm";
 import { db } from "../../db/client";
 import { shopeeCredentials, shopeeOrders } from "../../db/schema";
 import { env } from "../../config/env";
-import { pushSyncQueue } from "../../queue";
+import { pushSyncQueue, labelDownloadQueue } from "../../queue";
 
 // Push code definitions (Shopee Open Platform)
 const PUSH_CODE_ORDER_STATUS = 3;
 const PUSH_CODE_TRACKING    = 4;
+const PUSH_CODE_SHIPPING_DOCUMENT = 15;
 
 /**
  * Verify Shopee Push signature (HMAC-SHA256).
@@ -150,6 +151,30 @@ export const shopeePushRoutes = new Elysia()
               .where(eq(shopeeOrders.orderSn, orderSn));
 
             console.log(`[shopee-push] tracking updated for ${orderSn}`);
+
+          } else if (code === PUSH_CODE_SHIPPING_DOCUMENT) {
+            // code 15: Shipping Document (AWB/label) Status Push
+            const orderSn: string = data.ordersn ?? data.order_sn;
+            const status: string = data.status;
+            const packageNumber: string | undefined = data.package_number;
+
+            if (!orderSn) {
+              console.warn("[shopee-push] code=15 tanpa ordersn, skip");
+              return;
+            }
+            console.log(`[shopee-push] code=15 order_sn=${orderSn} status=${status} pkg=${packageNumber} shopId=${shopId}`);
+
+            if (status === "READY") {
+              // Pre-fetch + cache label biar pas user print langsung instant.
+              await labelDownloadQueue.add(
+                `push-label-${orderSn}`,
+                { shopId, orderSn, companyId, packageNumber },
+                { attempts: 5, backoff: { type: "exponential", delay: 10000 }, removeOnComplete: 100, removeOnFail: 200, jobId: `label-download-${orderSn}` }
+              );
+              console.log(`[shopee-push] code=15 enqueued label-download untuk ${orderSn}`);
+            } else {
+              console.log(`[shopee-push] code=15 status=${status} (bukan READY), skip`);
+            }
 
           } else {
             // code lain (product push 8/11/13/16/22/27, dll) — abaikan
