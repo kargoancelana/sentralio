@@ -365,7 +365,6 @@ async function batchValidateLabelEligibility(orderSns: string[]): Promise<Array<
   }
 }
 
-/**
 // ─────────────────────────────────────────────────────────────────────────────
 // v2: Fast-Path Chunk Processing
 // ─────────────────────────────────────────────────────────────────────────────
