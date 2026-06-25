@@ -15,6 +15,7 @@ import { platformMe } from './platform-auth.service';
 import { buildPlatformClearCookie, PLATFORM_COOKIE_NAME } from './platform-cookie';
 import { hasValidTenantScope } from '../auth/scope-guard';
 import { listCompanies, getCompanyDetail } from './platform-companies.service';
+import { getCompanySubscriptions, assignSubscription, cancelSubscription } from './platform-subscriptions.service';
 
 /** Tenant session cookie name — mirror of auth.middleware's local constant. */
 const TENANT_COOKIE_NAME = 'wms_session';
@@ -85,4 +86,75 @@ export const platformCompaniesRoutes = new Elysia({ prefix: '/platform' })
 
     set.status = 200;
     return { ok: true, company: detail };
+  })
+
+  // GET /companies/:id/subscriptions
+  .get('/companies/:id/subscriptions', async ({ params, set }) => {
+    const id = Number(params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      set.status = 400;
+      return { ok: false, error: 'invalid_id' };
+    }
+
+    const { items, current } = await getCompanySubscriptions(id);
+    set.status = 200;
+    return { ok: true, subscriptions: items, current };
+  })
+
+  // POST /companies/:id/subscriptions
+  .post('/companies/:id/subscriptions', async ({ params, body, set }) => {
+    const id = Number(params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      set.status = 400;
+      return { ok: false, error: 'invalid_id' };
+    }
+
+    const { planId } = (body ?? {}) as { planId?: unknown };
+    if (typeof planId !== 'number' || !Number.isInteger(planId) || planId <= 0) {
+      set.status = 400;
+      return { ok: false, error: 'invalid_plan_id' };
+    }
+
+    const result = await assignSubscription({ companyId: id, planId, now: new Date() });
+
+    if (result.kind === 'company_not_found') {
+      set.status = 404;
+      return { ok: false, error: 'company_not_found' };
+    }
+    if (result.kind === 'plan_invalid') {
+      set.status = 400;
+      return { ok: false, error: 'invalid_plan' };
+    }
+
+    set.status = 201;
+    return { ok: true, subscription: result.subscription };
+  })
+
+  // POST /companies/:id/subscriptions/:subId/cancel
+  .post('/companies/:id/subscriptions/:subId/cancel', async ({ params, set }) => {
+    const id = Number(params.id);
+    const subId = Number(params.subId);
+
+    if (!Number.isInteger(id) || id <= 0 || !Number.isInteger(subId) || subId <= 0) {
+      set.status = 400;
+      return { ok: false, error: 'invalid_id' };
+    }
+
+    const result = await cancelSubscription({
+      companyId: id,
+      subscriptionId: subId,
+      now: new Date(),
+    });
+
+    if (result.kind === 'not_found') {
+      set.status = 404;
+      return { ok: false, error: 'not_found' };
+    }
+    if (result.kind === 'not_active') {
+      set.status = 400;
+      return { ok: false, error: 'not_active' };
+    }
+
+    set.status = 200;
+    return { ok: true, subscription: result.subscription };
   });

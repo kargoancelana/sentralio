@@ -45,6 +45,26 @@ interface CompanyDetailResponse {
   company: CompanyDetail;
 }
 
+interface SubscriptionItem {
+  id: number;
+  companyId: number;
+  planId: number;
+  planName: string;
+  status: 'active' | 'expired' | 'cancelled';
+  startsAt: string;
+  endsAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface PlanOption {
+  id: number;
+  name: string;
+  durationDays: number;
+  price: number;
+  isActive: boolean;
+}
+
 function formatDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '-';
@@ -83,6 +103,14 @@ export function PlatformCompanyDetail() {
     email: string;
   } | null>(null);
 
+  // Subscription states
+  const [subscriptions, setSubscriptions] = useState<SubscriptionItem[]>([]);
+  const [currentSub, setCurrentSub] = useState<SubscriptionItem | null>(null);
+  const [plans, setPlans] = useState<PlanOption[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState<number | ''>('');
+  const [assigning, setAssigning] = useState(false);
+  const [cancelTarget, setCancelTarget] = useState<SubscriptionItem | null>(null);
+
   const toast = useToast();
 
   useEffect(() => {
@@ -109,6 +137,74 @@ export function PlatformCompanyDetail() {
       active = false;
     };
   }, [id]);
+
+  // Fetch subscriptions
+  const reloadSubscriptions = () => {
+    platformFetch<{ ok: boolean; subscriptions: SubscriptionItem[]; current: SubscriptionItem | null }>(
+      `/companies/${id}/subscriptions`
+    )
+      .then((res) => {
+        setSubscriptions(res.subscriptions);
+        setCurrentSub(res.current);
+      })
+      .catch(() => { /* silent — main error state sudah ada di atas */ });
+  };
+
+  useEffect(() => {
+    if (!id) return;
+    reloadSubscriptions();
+    platformFetch<{ ok: boolean; plans: PlanOption[] }>('/plans')
+      .then((res) => {
+        setPlans(res.plans.filter((p) => p.isActive));
+      })
+      .catch(() => { /* silent */ });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  const handleAssign = async () => {
+    if (selectedPlanId === '' || assigning) return;
+    setAssigning(true);
+    try {
+      await platformFetch(`/companies/${id}/subscriptions`, {
+        method: 'POST',
+        body: JSON.stringify({ planId: selectedPlanId }),
+      });
+      toast('Langganan berhasil di-assign.', 'success');
+      reloadSubscriptions();
+      setSelectedPlanId('');
+    } catch (err) {
+      if (err instanceof PlatformApiError) {
+        const msg =
+          err.message === 'invalid_plan'
+            ? 'Plan tidak valid / nonaktif.'
+            : err.message || 'Gagal assign langganan.';
+        toast(msg, 'error');
+      } else {
+        toast('Gagal assign langganan.', 'error');
+      }
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  const handleConfirmCancel = async () => {
+    if (!cancelTarget) return;
+    try {
+      await platformFetch(`/companies/${id}/subscriptions/${cancelTarget.id}/cancel`, {
+        method: 'POST',
+      });
+      toast('Langganan berhasil dibatalkan.', 'success');
+      reloadSubscriptions();
+    } catch (err) {
+      if (err instanceof PlatformApiError) {
+        toast(err.message || 'Gagal membatalkan langganan.', 'error');
+      } else {
+        toast('Gagal membatalkan langganan.', 'error');
+      }
+    } finally {
+      setCancelTarget(null);
+    }
+  };
 
   const handleResetPassword = async (u: CompanyUser) => {
     if (resettingUserId !== null) return;
@@ -171,6 +267,88 @@ export function PlatformCompanyDetail() {
       <p className="platform-company-detail__meta">
         Slug: {company.slug} &middot; Dibuat: {formatDate(company.createdAt)}
       </p>
+
+      {/* ── Section Langganan ── */}
+      <h2>Langganan</h2>
+
+      {/* Current subscription */}
+      <div style={{ marginBottom: '1rem' }}>
+        {currentSub ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+            <span>
+              <strong>{currentSub.planName}</strong>
+              {' — '}
+              <span className={`badge badge--${currentSub.status}`}>{currentSub.status}</span>
+              {' — '}
+              {formatDate(currentSub.startsAt)} s/d {formatDate(currentSub.endsAt)}
+            </span>
+            {currentSub.status === 'active' && (
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setCancelTarget(currentSub)}
+              >
+                Batalkan langganan
+              </button>
+            )}
+          </div>
+        ) : (
+          <p className="platform-empty">Belum ada langganan aktif.</p>
+        )}
+      </div>
+
+      {/* Form assign plan */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+        <select
+          value={selectedPlanId}
+          onChange={(e) => setSelectedPlanId(e.target.value === '' ? '' : Number(e.target.value))}
+          style={{ padding: '0.4rem 0.6rem', minWidth: '240px' }}
+        >
+          <option value="">— Pilih plan —</option>
+          {plans.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name} — {p.durationDays} hari — Rp {p.price.toLocaleString('id-ID')}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="btn"
+          disabled={selectedPlanId === '' || assigning}
+          onClick={() => void handleAssign()}
+        >
+          {assigning ? 'Memproses...' : 'Assign Plan'}
+        </button>
+      </div>
+
+      {/* Riwayat langganan */}
+      {subscriptions.length > 0 && (
+        <>
+          <h3 style={{ marginBottom: '0.5rem' }}>Riwayat</h3>
+          <table className="platform-table" style={{ marginBottom: '1.5rem' }}>
+            <thead>
+              <tr>
+                <th>Plan</th>
+                <th>Status</th>
+                <th>Mulai</th>
+                <th>Berakhir</th>
+                <th>Dibuat</th>
+              </tr>
+            </thead>
+            <tbody>
+              {subscriptions.map((s) => (
+                <tr key={s.id}>
+                  <td>{s.planName}</td>
+                  <td>{s.status}</td>
+                  <td>{formatDate(s.startsAt)}</td>
+                  <td>{formatDate(s.endsAt)}</td>
+                  <td>{formatDate(s.createdAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
 
       <h2>User ({company.users.length})</h2>
       {company.users.length === 0 ? (
@@ -238,6 +416,37 @@ export function PlatformCompanyDetail() {
           </tbody>
         </table>
       )}
+
+      <Modal
+        open={cancelTarget !== null}
+        onClose={() => setCancelTarget(null)}
+        title="Batalkan Langganan"
+        footer={
+          <>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void handleConfirmCancel()}
+            >
+              Ya, Batalkan
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setCancelTarget(null)}
+            >
+              Batal
+            </button>
+          </>
+        }
+      >
+        {cancelTarget && (
+          <p>
+            Yakin ingin membatalkan langganan <strong>{cancelTarget.planName}</strong>
+            {' '}(berlaku s/d {formatDate(cancelTarget.endsAt)})?
+          </p>
+        )}
+      </Modal>
 
       <Modal
         open={resetResult !== null}
