@@ -69,6 +69,39 @@ export const shopeePushRoutes = new Elysia()
 
       // ── Verifikasi signature (cuma buat mutusin proses/enggak, BUKAN HTTP status) ──
       const authHeader = request.headers.get("Authorization") ?? undefined;
+
+      // ===== TEMP DEBUG SIGNATURE — HAPUS SETELAH DIAGNOSA SELESAI =====
+      {
+        const baseString = `${callbackUrl}|${rawBody}`;
+        const expectedKeyAsUtf8 = createHmac("sha256", partnerKey)
+          .update(baseString, "utf8")
+          .digest("hex");
+        let expectedKeyAsHexDecoded = "";
+        try {
+          expectedKeyAsHexDecoded = createHmac("sha256", Buffer.from(partnerKey, "hex"))
+            .update(baseString, "utf8")
+            .digest("hex");
+        } catch {
+          expectedKeyAsHexDecoded = "(gagal decode hex)";
+        }
+        console.warn(
+          "[shopee-push][DEBUG-SIG] " +
+            JSON.stringify({
+              callbackUrl,
+              partnerKeyLen: partnerKey.length,
+              partnerKeyHead: partnerKey.slice(0, 6),
+              rawBodyLen: rawBody.length,
+              rawBodyHead: rawBody.slice(0, 100),
+              received: authHeader ?? null,
+              expectedKeyAsUtf8,
+              expectedKeyAsHexDecoded,
+              matchKeyAsUtf8: authHeader === expectedKeyAsUtf8,
+              matchKeyAsHexDecoded: authHeader === expectedKeyAsHexDecoded,
+            })
+        );
+      }
+      // ===== END TEMP DEBUG =====
+
       if (!verifyPushSignature(rawBody, authHeader, callbackUrl, partnerKey)) {
         console.warn("[shopee-push] signature invalid -- ack 200 tanpa proses payload");
         return "";
