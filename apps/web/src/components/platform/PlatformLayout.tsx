@@ -24,6 +24,9 @@ export function PlatformLayout() {
           <NavLink to="/platform/companies">
             Companies
           </NavLink>
+          <NavLink to="/platform/plans">
+            Plans
+          </NavLink>
         </nav>
       </aside>
       <div className="platform-shell__main">
