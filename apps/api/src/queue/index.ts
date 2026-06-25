@@ -4,12 +4,13 @@ import { allQueues, productsSyncQueue } from "./queues";
 import { startOnboardingWorker } from "./onboarding.worker";
 import { startGapSyncWorker } from "./gap-sync.worker";
 import { startProductsSyncWorker } from "./products-sync.worker";
+import { startPushSyncWorker } from "./push-sync.worker";
 
 let workers: Worker[] = [];
 
 export async function startQueues() {
   console.log("[queue] Starting workers...");
-  workers = [startOnboardingWorker(), startGapSyncWorker(), startProductsSyncWorker()];
+  workers = [startOnboardingWorker(), startGapSyncWorker(), startProductsSyncWorker(), startPushSyncWorker()];
   console.log(`[queue] ${workers.length} worker(s) started`);
 
   console.log("[queue] Scheduling recurring jobs...");
