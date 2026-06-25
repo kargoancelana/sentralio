@@ -6,5 +6,6 @@ export const onboardingQueue = new Queue("onboarding", { connection, defaultJobO
 export const gapSyncQueue = new Queue("gap-sync", { connection, defaultJobOptions });
 export const productsSyncQueue = new Queue("products-sync", { connection, defaultJobOptions });
 export const pushSyncQueue = new Queue("push-sync", { connection, defaultJobOptions });
+export const labelDownloadQueue = new Queue("label-download", { connection, defaultJobOptions });
 
-export const allQueues = [onboardingQueue, gapSyncQueue, productsSyncQueue, pushSyncQueue];
+export const allQueues = [onboardingQueue, gapSyncQueue, productsSyncQueue, pushSyncQueue, labelDownloadQueue];

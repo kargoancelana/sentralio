@@ -5,12 +5,13 @@ import { startOnboardingWorker } from "./onboarding.worker";
 import { startGapSyncWorker } from "./gap-sync.worker";
 import { startProductsSyncWorker } from "./products-sync.worker";
 import { startPushSyncWorker } from "./push-sync.worker";
+import { startLabelDownloadWorker } from "./label-download.worker";
 
 let workers: Worker[] = [];
 
 export async function startQueues() {
   console.log("[queue] Starting workers...");
-  workers = [startOnboardingWorker(), startGapSyncWorker(), startProductsSyncWorker(), startPushSyncWorker()];
+  workers = [startOnboardingWorker(), startGapSyncWorker(), startProductsSyncWorker(), startPushSyncWorker(), startLabelDownloadWorker()];
   console.log(`[queue] ${workers.length} worker(s) started`);
 
   console.log("[queue] Scheduling recurring jobs...");
@@ -29,4 +30,4 @@ export async function stopQueues() {
   console.log("[queue] Stopped");
 }
 
-export { onboardingQueue, gapSyncQueue, productsSyncQueue, pushSyncQueue } from "./queues";
+export { onboardingQueue, gapSyncQueue, productsSyncQueue, pushSyncQueue, labelDownloadQueue } from "./queues";
