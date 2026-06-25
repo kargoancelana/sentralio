@@ -95,6 +95,11 @@ export const env = {
   syncDelayMs: Number(process.env.SYNC_DELAY_MS ?? 300),
   syncTimeoutMs: Number(process.env.SYNC_TIMEOUT_MS ?? 10000),
   shopeeRedirectUrl: process.env.SHOPEE_REDIRECT_URL || "",
+  // Shopee Push (webhook) — optional, beda dari PARTNER_KEY OAuth.
+  // Ambil dari "Live Push Partner Key" di Shopee Console > Push Mechanism.
+  // Kalau belum diset, webhook tetap bisa diverifikasi pakai PARTNER_KEY reguler.
+  shopeePushPartnerKey: process.env.SHOPEE_PUSH_PARTNER_KEY || process.env.PARTNER_KEY || "",
+  shopeeWebhookCallbackUrl: process.env.SHOPEE_WEBHOOK_CALLBACK_URL || "",
   // Auth
   authJwtSecret: jwtSecret,
   authAllowedOrigins: rawAllowedOrigins,

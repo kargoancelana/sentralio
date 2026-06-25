@@ -65,3 +65,39 @@ migration di-generate di lokal lalu di-commit bersama perubahan schema, sehingga
 
 Tanpa langkah ini, kode akan merujuk kolom yang belum ada di DB → Unknown column
 → 500 error → UI terlihat kosong (persis bug yang memicu issue ini).
+
+---
+
+## Shopee Push Webhook
+
+### Caddy / reverse proxy
+
+Endpoint webhook: `POST /shopee/webhook`
+
+Pastikan path di-proxy ke API (port 3000), **bukan** frontend SPA. Tambahkan rule berikut **sebelum** catch-all SPA di Caddyfile:
+
+```caddy
+handle /api/* {
+    uri strip_prefix /api
+    reverse_proxy localhost:3000
+}
+```
+
+URL yang didaftarkan ke Shopee Console: `https://sentralio.my.id/api/shopee/webhook`
+
+### Env yang dibutuhkan
+
+```
+# "Live Push Partner Key" dari Shopee Console > Push Mechanism
+# Kosongkan jika sama dengan PARTNER_KEY (fallback otomatis).
+SHOPEE_PUSH_PARTNER_KEY=
+
+# URL callback persis seperti yang didaftarkan di Shopee Console
+SHOPEE_WEBHOOK_CALLBACK_URL=https://sentralio.my.id/api/shopee/webhook
+```
+
+### Verifikasi
+
+1. Set callback URL di Shopee Console > Push Mechanism
+2. Klik **Verify** — harus dapat 2xx
+3. Test push → cek log API: `[shopee-push] Push received: { code: 3, ... }`

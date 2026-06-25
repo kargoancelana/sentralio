@@ -5,5 +5,6 @@ import { defaultJobOptions } from "./job-options";
 export const onboardingQueue = new Queue("onboarding", { connection, defaultJobOptions });
 export const gapSyncQueue = new Queue("gap-sync", { connection, defaultJobOptions });
 export const productsSyncQueue = new Queue("products-sync", { connection, defaultJobOptions });
+export const pushSyncQueue = new Queue("push-sync", { connection, defaultJobOptions });
 
-export const allQueues = [onboardingQueue, gapSyncQueue, productsSyncQueue];
+export const allQueues = [onboardingQueue, gapSyncQueue, productsSyncQueue, pushSyncQueue];
