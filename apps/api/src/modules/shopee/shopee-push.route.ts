@@ -70,59 +70,6 @@ export const shopeePushRoutes = new Elysia()
       // ── Verifikasi signature (cuma buat mutusin proses/enggak, BUKAN HTTP status) ──
       const authHeader = request.headers.get("Authorization") ?? undefined;
 
-      // ===== TEMP DEBUG SIGNATURE — HAPUS SETELAH DIAGNOSA SELESAI =====
-      {
-        const hostHeader = request.headers.get("Host") ?? "";
-        let reqPath = "";
-        try { reqPath = new URL(request.url).pathname; } catch { reqPath = request.url; }
-
-        // Kandidat KEY
-        const keyVariants: Array<{ name: string; key: any }> = [
-          { name: "envAsUtf8", key: partnerKey },
-        ];
-        if (/^[0-9a-fA-F]+$/.test(partnerKey) && partnerKey.length % 2 === 0) {
-          keyVariants.push({ name: "envHexDecoded", key: Buffer.from(partnerKey, "hex") });
-        }
-
-        // Kandidat URL
-        const noSlash = callbackUrl.replace(/\/+$/, "");
-        const urlVariants: Array<{ name: string; url: string }> = [
-          { name: "envCallbackUrl", url: callbackUrl },
-          { name: "envNoTrailingSlash", url: noSlash },
-          { name: "envWithTrailingSlash", url: noSlash + "/" },
-          { name: "reconHttpsHostPath", url: "https://" + hostHeader + reqPath },
-          { name: "reconHttpsHostApiPath", url: "https://" + hostHeader + "/api" + reqPath },
-          { name: "reconHttpHostPath", url: "http://" + hostHeader + reqPath },
-        ];
-
-        const matches: Record<string, boolean> = {};
-        for (const kv of keyVariants) {
-          for (const uv of urlVariants) {
-            const sig = createHmac("sha256", kv.key)
-              .update(uv.url + "|" + rawBody, "utf8")
-              .digest("hex");
-            matches[kv.name + "__" + uv.name] = authHeader === sig;
-          }
-        }
-
-        console.warn(
-          "[shopee-push][DEBUG-SIG] " +
-            JSON.stringify({
-              callbackUrl,
-              hostHeader,
-              requestUrl: request.url,
-              reqPath,
-              partnerKeyLen: partnerKey.length,
-              rawBodyLen: rawBody.length,
-              rawBody,
-              receivedAuth: authHeader ?? null,
-              receivedAuthLen: authHeader ? authHeader.length : 0,
-              matches,
-            })
-        );
-      }
-      // ===== END TEMP DEBUG =====
-
       if (!verifyPushSignature(rawBody, authHeader, callbackUrl, partnerKey)) {
         console.warn("[shopee-push] signature invalid -- ack 200 tanpa proses payload");
         return "";
