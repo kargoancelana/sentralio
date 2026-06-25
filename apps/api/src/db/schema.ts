@@ -434,3 +434,38 @@ export const passwordResetTokens = mysqlTable("password_reset_tokens", {
   uniqPasswordResetTokenHash: uniqueIndex("uniq_password_reset_token_hash").on(t.tokenHash),
   idxPasswordResetUser: index("idx_password_reset_user").on(t.userId),
 }));
+
+// ─── Subscription & Plans (Fase 3) ─────────────────────────────
+
+export const plans = mysqlTable("plans", {
+  id: int("id").primaryKey().autoincrement(),
+  name: varchar("name", { length: 255 }).notNull(),
+  durationDays: int("duration_days").notNull(),        // 30 | 60 | 365 (divalidasi di layer CRUD nanti)
+  price: int("price").notNull().default(0),            // Rupiah
+  maxShops: int("max_shops").notNull().default(1),     // limit toko Shopee per company
+  maxUsers: int("max_users").notNull().default(1),     // limit user per company
+  featuresJson: text("features_json"),                 // JSON string opsional (list fitur/flag)
+  isActive: int("is_active").notNull().default(1),     // 1=true, 0=false
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+});
+
+export const subscriptionStatusEnum = mysqlEnum("status", ["active", "expired", "cancelled"]);
+
+// Langganan per company. Renewal = bikin ROW BARU (riwayat dipertahankan).
+// Subscription "aktif" sekarang = row company ini dgn status 'active' & ends_at terjauh (logika enforcement Fase 3.3).
+// CATATAN: companyId TANPA .default(1) — tabel baru, tiap row selalu dibuat dgn companyId eksplisit.
+export const subscriptions = mysqlTable("subscriptions", {
+  id: int("id").primaryKey().autoincrement(),
+  companyId: int("company_id").notNull().references(() => companies.id),
+  planId: int("plan_id").notNull().references(() => plans.id),
+  status: subscriptionStatusEnum.notNull().default("active"),
+  startsAt: timestamp("starts_at").notNull(),
+  endsAt: timestamp("ends_at").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+}, (t) => ({
+  idxCompany: index("idx_subscriptions_company").on(t.companyId),
+  idxCompanyStatus: index("idx_subscriptions_company_status").on(t.companyId, t.status),
+  idxEndsAt: index("idx_subscriptions_ends_at").on(t.endsAt),
+}));
