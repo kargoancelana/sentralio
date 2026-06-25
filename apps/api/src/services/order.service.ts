@@ -1,5 +1,5 @@
 import { db } from "../db/client";
-import { shopeeOrders, shopeeOrderItems } from "../db/schema";
+import { shopeeOrders, shopeeOrderItems, shopeeCredentials } from "../db/schema";
 import { getShopeeOrderList, getShopeeOrderDetails } from "./shopee-raw";
 import { eq } from "drizzle-orm";
 import { aggregateOrderItems, collectRawItems } from "./order-items.util";
@@ -102,6 +102,16 @@ export async function syncShopeeOrdersIncremental(
 ) {
 
   let totalSynced = 0;
+
+  // Resolve companyId dari shopeeCredentials — SEKALI sebelum loop order.
+  // Tanpa ini semua order masuk ke default company_id=1 dan bocor antar-tenant.
+  const credRows = await db.select({ companyId: shopeeCredentials.companyId })
+    .from(shopeeCredentials).where(eq(shopeeCredentials.shopId, shopId)).limit(1);
+  const companyId = credRows[0]?.companyId;
+  if (!companyId) {
+    console.warn(`[order-sync] Skip shopId=${shopId}: kredensial ngga ketemu`);
+    return { success: true, syncedCount: 0, has_more: false, next_cursor: "" };
+  }
 
   console.log(`[order-sync] Fetching orders:`, {
     shopId,
@@ -209,6 +219,7 @@ export async function syncShopeeOrdersIncremental(
         }
 
         const orderPayload = {
+          companyId,
           shopId,
           orderSn: order.order_sn,
           orderStatus: finalOrderStatus,
@@ -258,6 +269,7 @@ export async function syncShopeeOrdersIncremental(
         if (aggregatedItems.length > 0) {
           for (const item of aggregatedItems) {
             const itemPayload = {
+              companyId,
               orderSn: order.order_sn,
               itemId: item.itemId,
               modelId: item.modelId,
