@@ -73,7 +73,7 @@ const app = new Elysia()
       } catch {
         pathname = req.url;
       }
-      return pathname.endsWith('/health') || pathname.endsWith('/resolve');
+      return pathname.endsWith('/health') || pathname.endsWith('/resolve') || pathname.endsWith('/shopee/webhook');
     }
   }))
   .onError(({ code, error, set }) => {

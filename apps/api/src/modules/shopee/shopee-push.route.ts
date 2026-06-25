@@ -50,54 +50,67 @@ function verifyPushSignature(
 }
 
 export const shopeePushRoutes = new Elysia()
-  .post("/shopee/webhook", async ({ request, set }) => {
-    // ── 1. Baca raw body (diperlukan untuk verifikasi signature) ──
-    let rawBody: string;
-    try {
-      rawBody = await request.text();
-    } catch {
-      set.status = 400;
-      return "";
-    }
+  .post(
+    "/shopee/webhook",
+    async ({ body, request, set }) => {
+      // ── 1. Ambil raw body ──
+      // Elysia dengan type:'text' menaruh body mentah sebagai string di `body`.
+      // Fallback ke request.text() untuk jaga-jaga.
+      let rawBody: string;
+      if (typeof body === "string") {
+        rawBody = body;
+      } else {
+        try {
+          rawBody = await request.text();
+        } catch {
+          set.status = 400;
+          return "";
+        }
+      }
 
-    // ── 2. Verifikasi signature ──
-    const authHeader = request.headers.get("Authorization") ?? undefined;
-    const partnerKey = env.shopeePushPartnerKey;
-    const callbackUrl = env.shopeeWebhookCallbackUrl;
+      // ── 2. Cek konfigurasi ──
+      const partnerKey = env.shopeePushPartnerKey;
+      const callbackUrl = env.shopeeWebhookCallbackUrl;
 
-    if (!partnerKey) {
-      // Key belum dikonfigurasi — log warning, tetap balas 200 supaya
-      // Shopee bisa menyelesaikan verifikasi awal endpoint.
-      console.warn("[shopee-push] SHOPEE_PUSH_PARTNER_KEY belum diset, skip signature check");
-    } else if (!callbackUrl) {
-      console.warn("[shopee-push] SHOPEE_WEBHOOK_CALLBACK_URL belum diset, skip signature check");
-    } else {
+      if (!partnerKey || !callbackUrl) {
+        // Config belum lengkap — balas 200 agar Shopee Console bisa verifikasi
+        // endpoint, TAPI jangan proses / sentuh DB sama sekali.
+        console.warn(
+          "[shopee-push] Konfigurasi belum lengkap " +
+          `(partnerKey=${!!partnerKey}, callbackUrl=${!!callbackUrl}), ` +
+          "balas 200 tanpa proses payload"
+        );
+        set.status = 200;
+        return "";
+      }
+
+      // ── 3. Verifikasi signature ──
+      const authHeader = request.headers.get("Authorization") ?? undefined;
       if (!verifyPushSignature(rawBody, authHeader, callbackUrl, partnerKey)) {
         console.warn("[shopee-push] Invalid signature — request ditolak");
         set.status = 401;
         return "";
       }
-    }
 
-    // ── 3. Parse payload ──
-    let payload: any;
-    try {
-      payload = JSON.parse(rawBody);
-    } catch {
-      set.status = 400;
-      return "";
-    }
+      // ── 4. Parse payload ──
+      let payload: any;
+      try {
+        payload = JSON.parse(rawBody);
+      } catch {
+        set.status = 400;
+        return "";
+      }
 
-    const code: number = payload.code;
-    const shopId: number = payload.shop_id ?? payload.shopid;
-    const data: any = payload.data ?? {};
+      const code: number = payload.code;
+      const shopId: number = payload.shop_id ?? payload.shopid;
+      const data: any = payload.data ?? {};
 
-    console.log("[shopee-push] Push received:", { code, shopId, data });
+      console.log("[shopee-push] Push received:", { code, shopId, data });
 
-    // ── 4. Balas 200 DULU, proses async ──
-    set.status = 200;
+      // ── 5. Balas 200 DULU, proses async ──
+      set.status = 200;
 
-    // ── 5. Proses async (setImmediate agar tidak blocking response) ──
+      // ── 6. Proses async (setImmediate agar tidak blocking response) ──
     setImmediate(async () => {
       try {
         // Validasi shop — harus ada di credentials dan status connected
@@ -168,4 +181,10 @@ export const shopeePushRoutes = new Elysia()
     });
 
     return "";
-  });
+  },
+  {
+    // Paksa Elysia agar tidak parse body sebagai JSON — simpan sebagai string
+    // mentah supaya signature HMAC-SHA256 bisa diverifikasi atas raw bytes.
+    type: "text",
+  }
+);

@@ -29,4 +29,4 @@ export async function stopQueues() {
   console.log("[queue] Stopped");
 }
 
-export { onboardingQueue, gapSyncQueue, productsSyncQueue } from "./queues";
+export { onboardingQueue, gapSyncQueue, productsSyncQueue, pushSyncQueue } from "./queues";
