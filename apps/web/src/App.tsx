@@ -16,6 +16,7 @@ import { PlatformLogin } from './pages/platform/PlatformLogin';
 import { PlatformDashboard } from './pages/platform/PlatformDashboard';
 import { PlatformCompanies } from './pages/platform/PlatformCompanies';
 import { PlatformCompanyDetail } from './pages/platform/PlatformCompanyDetail';
+import { PlatformPlans } from './pages/platform/PlatformPlans';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { PlatformProtectedRoute } from './auth/PlatformProtectedRoute';
 import { RoleGate } from './auth/RoleGate';
@@ -69,6 +70,7 @@ function App() {
                 <Route path="/platform" element={<PlatformDashboard />} />
                 <Route path="/platform/companies" element={<PlatformCompanies />} />
                 <Route path="/platform/companies/:id" element={<PlatformCompanyDetail />} />
+                <Route path="/platform/plans" element={<PlatformPlans />} />
               </Route>
             </Route>
           </Route>
