@@ -72,31 +72,52 @@ export const shopeePushRoutes = new Elysia()
 
       // ===== TEMP DEBUG SIGNATURE — HAPUS SETELAH DIAGNOSA SELESAI =====
       {
-        const baseString = `${callbackUrl}|${rawBody}`;
-        const expectedKeyAsUtf8 = createHmac("sha256", partnerKey)
-          .update(baseString, "utf8")
-          .digest("hex");
-        let expectedKeyAsHexDecoded = "";
-        try {
-          expectedKeyAsHexDecoded = createHmac("sha256", Buffer.from(partnerKey, "hex"))
-            .update(baseString, "utf8")
-            .digest("hex");
-        } catch {
-          expectedKeyAsHexDecoded = "(gagal decode hex)";
+        const hostHeader = request.headers.get("Host") ?? "";
+        let reqPath = "";
+        try { reqPath = new URL(request.url).pathname; } catch { reqPath = request.url; }
+
+        // Kandidat KEY
+        const keyVariants: Array<{ name: string; key: any }> = [
+          { name: "envAsUtf8", key: partnerKey },
+        ];
+        if (/^[0-9a-fA-F]+$/.test(partnerKey) && partnerKey.length % 2 === 0) {
+          keyVariants.push({ name: "envHexDecoded", key: Buffer.from(partnerKey, "hex") });
         }
+
+        // Kandidat URL
+        const noSlash = callbackUrl.replace(/\/+$/, "");
+        const urlVariants: Array<{ name: string; url: string }> = [
+          { name: "envCallbackUrl", url: callbackUrl },
+          { name: "envNoTrailingSlash", url: noSlash },
+          { name: "envWithTrailingSlash", url: noSlash + "/" },
+          { name: "reconHttpsHostPath", url: "https://" + hostHeader + reqPath },
+          { name: "reconHttpsHostApiPath", url: "https://" + hostHeader + "/api" + reqPath },
+          { name: "reconHttpHostPath", url: "http://" + hostHeader + reqPath },
+        ];
+
+        const matches: Record<string, boolean> = {};
+        for (const kv of keyVariants) {
+          for (const uv of urlVariants) {
+            const sig = createHmac("sha256", kv.key)
+              .update(uv.url + "|" + rawBody, "utf8")
+              .digest("hex");
+            matches[kv.name + "__" + uv.name] = authHeader === sig;
+          }
+        }
+
         console.warn(
           "[shopee-push][DEBUG-SIG] " +
             JSON.stringify({
               callbackUrl,
+              hostHeader,
+              requestUrl: request.url,
+              reqPath,
               partnerKeyLen: partnerKey.length,
-              partnerKeyHead: partnerKey.slice(0, 6),
               rawBodyLen: rawBody.length,
-              rawBodyHead: rawBody.slice(0, 100),
-              received: authHeader ?? null,
-              expectedKeyAsUtf8,
-              expectedKeyAsHexDecoded,
-              matchKeyAsUtf8: authHeader === expectedKeyAsUtf8,
-              matchKeyAsHexDecoded: authHeader === expectedKeyAsHexDecoded,
+              rawBody,
+              receivedAuth: authHeader ?? null,
+              receivedAuthLen: authHeader ? authHeader.length : 0,
+              matches,
             })
         );
       }
