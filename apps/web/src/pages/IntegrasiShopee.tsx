@@ -7,23 +7,14 @@ import { AlertTriangle, Zap, CloudSync, Loader2 } from 'lucide-react';
 
 /* ── HELPERS ── */
 function parseShopeeCallbackUrl(raw: string): { code: string; shop_id: string } | null {
-  try {
-    const input = raw.trim();
-    let url: URL;
-    if (input.startsWith('http://') || input.startsWith('https://')) {
-      url = new URL(input);
-    } else if (input.startsWith('?')) {
-      url = new URL(`https://dummy.com${input}`);
-    } else {
-      url = new URL(`https://dummy.com?${input}`);
-    }
-    const code = url.searchParams.get('code');
-    const shopId = url.searchParams.get('shop_id');
-    if (code && shopId) return { code, shop_id: shopId };
-    return null;
-  } catch {
-    return null;
+  const input = (raw || '').trim();
+  if (!input) return null;
+  const code = input.match(/(?:^|[?&])code=([^&#\s]+)/)?.[1];
+  const shopId = input.match(/(?:^|[?&])shop_id=([^&#\s]+)/)?.[1];
+  if (code && shopId) {
+    return { code: decodeURIComponent(code), shop_id: decodeURIComponent(shopId) };
   }
+  return null;
 }
 
 function getInitials(name: string) {
