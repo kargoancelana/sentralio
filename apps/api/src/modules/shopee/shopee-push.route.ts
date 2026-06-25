@@ -53,51 +53,33 @@ export const shopeePushRoutes = new Elysia()
   .post(
     "/shopee/webhook",
     async ({ body, request, set }) => {
-      // ── 1. Ambil raw body ──
-      // Elysia dengan type:'text' menaruh body mentah sebagai string di `body`.
-      // Fallback ke request.text() untuk jaga-jaga.
-      let rawBody: string;
-      if (typeof body === "string") {
-        rawBody = body;
-      } else {
-        try {
-          rawBody = await request.text();
-        } catch {
-          set.status = 400;
-          return "";
-        }
-      }
+      // SELALU balas 2xx — Shopee butuh 2xx; non-2xx = Verify gagal + push di-disable.
+      set.status = 200;
 
-      // ── 2. Cek konfigurasi ──
+      // body DIJAMIN raw string karena custom `parse` hook di bawah.
+      const rawBody = typeof body === "string" ? body : "";
+
+      // ── Cek konfigurasi ──
       const partnerKey = env.shopeePushPartnerKey;
       const callbackUrl = env.shopeeWebhookCallbackUrl;
-
       if (!partnerKey || !callbackUrl) {
-        // Config belum lengkap — balas 200 agar Shopee Console bisa verifikasi
-        // endpoint, TAPI jangan proses / sentuh DB sama sekali.
-        console.warn(
-          "[shopee-push] Konfigurasi belum lengkap " +
-          `(partnerKey=${!!partnerKey}, callbackUrl=${!!callbackUrl}), ` +
-          "balas 200 tanpa proses payload"
-        );
-        set.status = 200;
+        console.warn("[shopee-push] config belum lengkap, ack 200 tanpa proses");
         return "";
       }
 
-      // ── 3. Verifikasi signature ──
+      // ── Verifikasi signature (cuma buat mutusin proses/enggak, BUKAN HTTP status) ──
       const authHeader = request.headers.get("Authorization") ?? undefined;
       if (!verifyPushSignature(rawBody, authHeader, callbackUrl, partnerKey)) {
-        console.warn("[shopee-push] Invalid signature — request ditolak");
-        set.status = 401;
+        console.warn("[shopee-push] signature invalid -- ack 200 tanpa proses payload");
         return "";
       }
 
-      // ── 4. Parse payload ──
+      // ── Parse payload ──
       let payload: any;
       try {
         payload = JSON.parse(rawBody);
       } catch {
-        set.status = 400;
+        console.warn("[shopee-push] body bukan JSON valid -- ack 200");
         return "";
       }
 
@@ -107,10 +89,7 @@ export const shopeePushRoutes = new Elysia()
 
       console.log("[shopee-push] Push received:", { code, shopId, data });
 
-      // ── 5. Balas 200 DULU, proses async ──
-      set.status = 200;
-
-      // ── 6. Proses async (setImmediate agar tidak blocking response) ──
+      // ── Proses async (status sudah 200, tidak blocking response) ──
       setImmediate(async () => {
         try {
           // Validasi shop — harus ada di credentials dan status connected
@@ -181,10 +160,13 @@ export const shopeePushRoutes = new Elysia()
       });
 
       return "";
-  },
-  {
-    // Paksa Elysia agar tidak parse body sebagai JSON — simpan sebagai string
-    // mentah supaya signature HMAC-SHA256 bisa diverifikasi atas raw bytes.
-    type: "text",
-  }
-);
+    },
+    {
+      // KUNCI: custom parser supaya body = RAW STRING, apa pun Content-Type-nya.
+      // `type: "text"` saja TIDAK cukup (klien kirim application/json -> Elysia
+      // parse jadi object -> request.text() throw -> 400). Pakai parser ini:
+      parse: async ({ request }) => {
+        return await request.text();
+      },
+    }
+  );
