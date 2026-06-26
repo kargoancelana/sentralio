@@ -21,9 +21,12 @@ import { ProtectedRoute } from './auth/ProtectedRoute';
 import { PlatformProtectedRoute } from './auth/PlatformProtectedRoute';
 import { RoleGate } from './auth/RoleGate';
 import { FeatureGate } from './auth/FeatureGate';
+import { SubscriptionGate } from './auth/SubscriptionGate';
 import { Pengaturan } from './pages/Pengaturan';
 import { AutoBoost } from './pages/AutoBoost';
 import { ResetPassword } from './pages/ResetPassword';
+import { Register } from './pages/Register';
+import { Langganan } from './pages/Langganan';
 import './styles/globals.css';
 import './styles/hpp-layout.css';
 
@@ -79,41 +82,48 @@ function App() {
           <Route element={<TenantAuthLayout />}>
             {/* Public route */}
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<Register />} />
 
             {/* All authenticated routes */}
             <Route element={<ProtectedRoute />}>
-              <Route element={<Layout />}>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/pesanan/saya" element={<PesananSaya />} />
-                {/* Cetak Label shares the orders page */}
-                <Route path="/cetak-label" element={<PesananSaya />} />
+              {/* Langganan: authenticated, reachable walau belum aktif, TANPA gate & TANPA Layout overlay */}
+              <Route path="/langganan" element={<Langganan />} />
 
-                {/* Configurable feature routes - gated by effective feature
-                    access so admin-granted staff permissions take effect. */}
-                <Route element={<FeatureGate feature="master_produk" />}>
-                  <Route path="/produk/master" element={<MasterProduk />} />
-                </Route>
-                <Route element={<FeatureGate feature="produk_channel" />}>
-                  <Route path="/produk/channel" element={<ProdukChannel />} />
-                </Route>
-                <Route element={<FeatureGate feature="auto_boost" />}>
-                  <Route path="/promosi/auto-boost" element={<AutoBoost />} />
-                </Route>
-                <Route element={<FeatureGate feature="laporan_keuangan" />}>
-                  <Route path="/keuangan/laporan" element={<LaporanKeuangan />} />
-                </Route>
+              {/* Sisa app: di-gate status langganan */}
+              <Route element={<SubscriptionGate />}>
+                <Route element={<Layout />}>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/pesanan/saya" element={<PesananSaya />} />
+                  {/* Cetak Label shares the orders page */}
+                  <Route path="/cetak-label" element={<PesananSaya />} />
 
-                {/* Shopee integration stays admin-only (manages credentials). */}
-                <Route element={<RoleGate allow={['admin']} />}>
-                  <Route path="/integrasi/shopee" element={<IntegrasiShopee />} />
-                  <Route path="/integrasi/shopee/callback" element={<ShopeeCallback />} />
-                </Route>
+                  {/* Configurable feature routes - gated by effective feature
+                      access so admin-granted staff permissions take effect. */}
+                  <Route element={<FeatureGate feature="master_produk" />}>
+                    <Route path="/produk/master" element={<MasterProduk />} />
+                  </Route>
+                  <Route element={<FeatureGate feature="produk_channel" />}>
+                    <Route path="/produk/channel" element={<ProdukChannel />} />
+                  </Route>
+                  <Route element={<FeatureGate feature="auto_boost" />}>
+                    <Route path="/promosi/auto-boost" element={<AutoBoost />} />
+                  </Route>
+                  <Route element={<FeatureGate feature="laporan_keuangan" />}>
+                    <Route path="/keuangan/laporan" element={<LaporanKeuangan />} />
+                  </Route>
 
-                {/* Settings - available to all authenticated users.
-                    Admin-only sections (user management) are gated inside the page. */}
-                <Route path="/settings" element={<Pengaturan />} />
-                {/* Legacy /users path now lives under Settings */}
-                <Route path="/users" element={<Navigate to="/settings" replace />} />
+                  {/* Shopee integration stays admin-only (manages credentials). */}
+                  <Route element={<RoleGate allow={['admin']} />}>
+                    <Route path="/integrasi/shopee" element={<IntegrasiShopee />} />
+                    <Route path="/integrasi/shopee/callback" element={<ShopeeCallback />} />
+                  </Route>
+
+                  {/* Settings - available to all authenticated users.
+                      Admin-only sections (user management) are gated inside the page. */}
+                  <Route path="/settings" element={<Pengaturan />} />
+                  {/* Legacy /users path now lives under Settings */}
+                  <Route path="/users" element={<Navigate to="/settings" replace />} />
+                </Route>
               </Route>
             </Route>
 

@@ -40,6 +40,8 @@ export type AuthState =
 export interface AuthApi {
   state: AuthState;
   subscriptionBlocked: boolean;
+  /** null = belum diketahui (jangan nge-block). true/false dari GET /subscription/status. */
+  subscriptionActive: boolean | null;
   login(email: string, password: string): Promise<{ ok: boolean; error?: string }>;
   logout(): Promise<void>;
   refreshMe(): Promise<void>;
@@ -62,6 +64,7 @@ interface AuthProviderProps {
 export function AuthProvider({ children }: AuthProviderProps) {
   const [state, setState] = useState<AuthState>({ status: 'loading' });
   const [subscriptionBlocked, setSubscriptionBlocked] = useState(false);
+  const [subscriptionActive, setSubscriptionActive] = useState<boolean | null>(null);
   const navigate = useNavigate();
 
   // Stable ref to avoid stale closure in the session-expired handler.
@@ -74,11 +77,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const refreshMe = useCallback(async () => {
     try {
       const user = await fetchApi<PublicUser>('/auth/me');
+      let active: boolean | null = null;
+      try {
+        const status = await fetchApi<{ ok: boolean; active: boolean }>('/subscription/status');
+        active = status.active;
+      } catch {
+        active = null; // gagal cek -> jangan trap user
+      }
+      setSubscriptionActive(active);
       setState({ status: 'authenticated', user });
       setSubscriptionBlocked(false);
     } catch {
       // Non-2xx or network error → treat as anonymous (Req 4.7).
       setState({ status: 'anonymous' });
+      setSubscriptionActive(null);
     }
   }, []);
 
@@ -124,6 +136,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
           method: 'POST',
           body: JSON.stringify({ email, password }),
         });
+        let active: boolean | null = null;
+        try {
+          const status = await fetchApi<{ ok: boolean; active: boolean }>('/subscription/status');
+          active = status.active;
+        } catch {
+          active = null;
+        }
+        setSubscriptionActive(active);
         setState({ status: 'authenticated', user: res.user });
         setSubscriptionBlocked(false);
         return { ok: true };
@@ -145,6 +165,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // Best-effort — proceed with local state clear regardless.
     }
     setState({ status: 'anonymous' });
+    setSubscriptionActive(null);
     navigateRef.current('/login');
   }, []);
 
@@ -174,7 +195,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     [],
   );
 
-  const value: AuthApi = { state, subscriptionBlocked, login, logout, refreshMe, changePassword };
+  const value: AuthApi = { state, subscriptionBlocked, subscriptionActive, login, logout, refreshMe, changePassword };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

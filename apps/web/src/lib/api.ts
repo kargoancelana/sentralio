@@ -16,6 +16,36 @@ export interface AutoBoostQueueItem { id: number; shopId: number; shopeeItemId: 
 export interface AutoBoostStatusItem { shopeeItemId: number; boosted: boolean; cooldownSecond: number; }
 export interface AutoBoostLog { id: number; shopeeItemId: number; status: string; message: string|null; boostedAt: string; }
 
+// ─── Subscription Types ───────────────────────────────────────────────────────
+
+export interface SubscriptionOrder {
+  id: number;
+  companyId: number;
+  planId: number;
+  planName: string | null;
+  amount: number;
+  status: 'pending' | 'approved' | 'rejected';
+  proofKey: string | null;
+  note: string | null;
+  createdAt: string;
+}
+
+export interface SubscriptionPlan {
+  id: number;
+  name: string;
+  durationDays: number;
+  price: number;
+  maxShops: number;
+  maxUsers: number;
+  features: string[] | null;
+}
+
+export interface SubscriptionStatus {
+  ok: boolean;
+  active: boolean;
+  subscription: { planName: string; endsAt: string; status: string } | null;
+}
+
 // ─── Profit Analytics Types ───────────────────────────────────────────────────
 
 /** Single item in an order's profit breakdown */
@@ -407,4 +437,43 @@ export const api = {
   autoBoostQueueReorder: (shopId: number, orderedIds: number[]) => fetchApi(`/auto-boost/queue/reorder`, { method: 'PUT', body: JSON.stringify({ shopId, orderedIds }) }),
   autoBoostStatus: (shopId: number) => fetchApi(`/auto-boost/status?shopId=${shopId}`),
   autoBoostHistory: (shopId: number) => fetchApi(`/auto-boost/history?shopId=${shopId}`),
+
+  // ── Register (publik) ──
+  register: (body: {
+    companyName: string;
+    name: string;
+    email: string;
+    username?: string;
+    password: string;
+  }) =>
+    fetchApi<{ ok: boolean; companyId?: number; slug?: string }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  // ── Subscription self-service (tenant) ──
+  subscriptionStatus: () => fetchApi<SubscriptionStatus>('/subscription/status'),
+  subscriptionPlans: () =>
+    fetchApi<{ ok: boolean; plans: SubscriptionPlan[] }>('/subscription/plans'),
+  subscriptionOrders: () =>
+    fetchApi<{ ok: boolean; orders: SubscriptionOrder[] }>('/subscription/orders'),
+  subscriptionCreateOrder: (planId: number) =>
+    fetchApi<{ ok: boolean; order: SubscriptionOrder }>('/subscription/orders', {
+      method: 'POST',
+      body: JSON.stringify({ planId }),
+    }),
+  subscriptionUploadProof: (orderId: number, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return fetchApi<{ ok: boolean; proofKey: string }>(
+      `/subscription/orders/${orderId}/proof`,
+      {
+        method: 'POST',
+        body: form,
+        // PENTING: override headers jadi {} supaya 'Content-Type: application/json'
+        // default TIDAK terkirim. Browser auto-set multipart boundary sendiri.
+        headers: {},
+      },
+    );
+  },
 };
