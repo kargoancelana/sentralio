@@ -204,6 +204,9 @@ export async function fetchApi<T = any>(
     if (res.status === 401 && path !== '/auth/login') {
       window.dispatchEvent(new CustomEvent('wms.session-expired'));
     }
+    if (res.status === 402 && (data as any)?.error === 'subscription_required') {
+      window.dispatchEvent(new CustomEvent('wms.subscription-blocked'));
+    }
     throw new ApiError(res.status, data.message || data.error || `API error ${res.status}`);
   }
 

@@ -8,7 +8,7 @@
  * - Cuma plan dengan is_active=1 yang boleh di-assign.
  */
 
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, lte } from 'drizzle-orm';
 import { db as defaultDb } from '../../db/client';
 import { subscriptions, plans, companies } from '../../db/schema';
 import type { DrizzleDb } from '../auth/lockout';
@@ -221,4 +221,56 @@ export async function cancelSubscription(args: {
   if (!subscription) throw new Error('cancelSubscription: row tidak ditemukan setelah update');
 
   return { kind: 'ok', subscription };
+}
+
+/**
+ * Lazy-expire lalu return langganan aktif valid untuk company, atau null.
+ *
+ * Dipanggil tiap request tenant oleh subscription-guard — query ringan:
+ * 1 conditional UPDATE (idx: company_status) + 1 SELECT (idx: company_status, ends_at).
+ *
+ * Idempoten: row yang sudah 'expired'/'cancelled' tidak tersentuh.
+ */
+export async function getActiveSubscription(
+  companyId: number,
+  now: Date,
+  db: DrizzleDb = defaultDb,
+): Promise<SubscriptionItem | null> {
+  // Lazy-expire: set status='expired' untuk row active yang sudah lewat ends_at.
+  await db
+    .update(subscriptions)
+    .set({ status: 'expired', updatedAt: now })
+    .where(
+      and(
+        eq(subscriptions.companyId, companyId),
+        eq(subscriptions.status, 'active'),
+        lte(subscriptions.endsAt, now),
+      ),
+    );
+
+  // Select row active yang masih valid (ends_at > now).
+  const rows = await db
+    .select({
+      id: subscriptions.id,
+      companyId: subscriptions.companyId,
+      planId: subscriptions.planId,
+      planName: plans.name,
+      status: subscriptions.status,
+      startsAt: subscriptions.startsAt,
+      endsAt: subscriptions.endsAt,
+      createdAt: subscriptions.createdAt,
+      updatedAt: subscriptions.updatedAt,
+    })
+    .from(subscriptions)
+    .innerJoin(plans, eq(subscriptions.planId, plans.id))
+    .where(
+      and(
+        eq(subscriptions.companyId, companyId),
+        eq(subscriptions.status, 'active'),
+      ),
+    )
+    .orderBy(desc(subscriptions.endsAt))
+    .limit(1);
+
+  return rows[0] ? rowToItem(rows[0]) : null;
 }
