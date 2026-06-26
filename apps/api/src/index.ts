@@ -35,6 +35,8 @@ import { usersRoutes } from "./modules/users/users.route";
 import { autoBoostRoutes } from "./modules/auto-boost/auto-boost.route";
 import { shopeePushRoutes } from "./modules/shopee/shopee-push.route";
 import { startQueues, stopQueues } from "./queue";
+import { subscriptionRoutes } from "./modules/subscription/subscription.route";
+import { subscriptionGuardMiddleware } from "./modules/auth/subscription-guard.middleware";
 // Fail-fast: di production FRONTEND_URL wajib diset (dipakai untuk CORS allowlist).
 if (env.nodeEnv === 'production' && !env.frontendUrl) {
   throw new Error(
@@ -143,6 +145,12 @@ const app = new Elysia()
 
   // Auth protected routes (logout, me, renew) — Req 5.5
   .use(authProtectedRoutes)
+
+  // Subscription status endpoint (exempt dari guard) — harus sebelum guard
+  .use(subscriptionRoutes)             // GET /subscription/status
+
+  // Subscription enforcement — block company tanpa langganan aktif (402)
+  .use(subscriptionGuardMiddleware)
 
   // Staff permission configuration (admin only)
   .use(permissionsRoutes)

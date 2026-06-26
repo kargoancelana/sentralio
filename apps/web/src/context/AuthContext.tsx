@@ -39,6 +39,7 @@ export type AuthState =
 
 export interface AuthApi {
   state: AuthState;
+  subscriptionBlocked: boolean;
   login(email: string, password: string): Promise<{ ok: boolean; error?: string }>;
   logout(): Promise<void>;
   refreshMe(): Promise<void>;
@@ -60,6 +61,7 @@ interface AuthProviderProps {
 
 export function AuthProvider({ children }: AuthProviderProps) {
   const [state, setState] = useState<AuthState>({ status: 'loading' });
+  const [subscriptionBlocked, setSubscriptionBlocked] = useState(false);
   const navigate = useNavigate();
 
   // Stable ref to avoid stale closure in the session-expired handler.
@@ -73,6 +75,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       const user = await fetchApi<PublicUser>('/auth/me');
       setState({ status: 'authenticated', user });
+      setSubscriptionBlocked(false);
     } catch {
       // Non-2xx or network error → treat as anonymous (Req 4.7).
       setState({ status: 'anonymous' });
@@ -102,6 +105,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
     };
   }, []); // subscribe once
 
+  // ── Subscription-blocked event listener ──────────────────────────────────
+  useEffect(() => {
+    function handleSubscriptionBlocked() {
+      setSubscriptionBlocked(true);
+    }
+    window.addEventListener('wms.subscription-blocked', handleSubscriptionBlocked);
+    return () => {
+      window.removeEventListener('wms.subscription-blocked', handleSubscriptionBlocked);
+    };
+  }, []); // subscribe once
+
   // ── Login ──────────────────────────────────────────────────────────────────
   const login = useCallback(
     async (email: string, password: string): Promise<{ ok: boolean; error?: string }> => {
@@ -111,6 +125,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           body: JSON.stringify({ email, password }),
         });
         setState({ status: 'authenticated', user: res.user });
+        setSubscriptionBlocked(false);
         return { ok: true };
       } catch (err) {
         if (err instanceof ApiError) {
@@ -159,7 +174,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     [],
   );
 
-  const value: AuthApi = { state, login, logout, refreshMe, changePassword };
+  const value: AuthApi = { state, subscriptionBlocked, login, logout, refreshMe, changePassword };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

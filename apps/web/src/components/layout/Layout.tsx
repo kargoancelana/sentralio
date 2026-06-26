@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { ToastProvider } from '../ui/Toast';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './Header';
+import { SubscriptionBanner } from '../subscription/SubscriptionBanner';
 
 export function Layout() {
   const [collapsed, setCollapsed] = useState(false);
@@ -19,6 +20,7 @@ export function Layout() {
 
   return (
     <ToastProvider>
+      <SubscriptionBanner />
       <div className="wms-shell">
         <Sidebar
           active={active}
