@@ -53,8 +53,8 @@ export const platformUsersRoutes = new Elysia({ prefix: '/platform' })
       return { ok: false, error: 'unauthorized', message: 'A valid platform session is required.' };
     }
   })
-  .post('/companies/:companyId/users/:userId/reset-password', async ({ params, platformAdmin, set }) => {
-    const companyId = Number(params.companyId);
+  .post('/companies/:id/users/:userId/reset-password', async ({ params, platformAdmin, set }) => {
+    const companyId = Number(params.id);
     const userId = Number(params.userId);
 
     if (!Number.isInteger(companyId) || companyId <= 0 || !Number.isInteger(userId) || userId <= 0) {
