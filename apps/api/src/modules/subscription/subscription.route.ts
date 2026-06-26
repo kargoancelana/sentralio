@@ -22,12 +22,20 @@ import {
   listOrders,
 } from './subscription-order.service';
 import { uploadProof } from '../../services/storage.service';
+import { listActivePlans } from './subscription-plan.service';
 
 export const subscriptionRoutes = new Elysia()
   .get('/subscription/status', async ({ user, set }) => {
     set.status = 200;
     const sub = await getActiveSubscription(user.companyId, new Date());
     return { ok: true, active: !!sub, subscription: sub };
+  })
+
+  // List plan AKTIF untuk tenant (pilih paket sebelum buat order).
+  .get('/subscription/plans', async ({ set }) => {
+    set.status = 200;
+    const activePlans = await listActivePlans();
+    return { ok: true, plans: activePlans };
   })
 
   // Buat order pending baru. Body: { planId: number }.
