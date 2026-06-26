@@ -100,6 +100,14 @@ export const env = {
   // Kalau belum diset, webhook tetap bisa diverifikasi pakai PARTNER_KEY reguler.
   shopeePushPartnerKey: process.env.SHOPEE_PUSH_PARTNER_KEY || process.env.PARTNER_KEY || "",
   shopeeWebhookCallbackUrl: process.env.SHOPEE_WEBHOOK_CALLBACK_URL || "",
+  // Object storage (S3-compatible: Cloudflare R2 / AWS S3) — bukti transfer (Fase 4).
+  // Opsional saat boot; divalidasi lazy saat storage benar-benar dipakai.
+  // JANGAN masukkan ke requiredEnv — server harus bisa boot tanpa env ini.
+  s3Endpoint: process.env.S3_ENDPOINT || "",           // R2: https://<acct>.r2.cloudflarestorage.com ; AWS: kosong
+  s3Region: process.env.S3_REGION || "auto",           // R2: 'auto' ; AWS: mis. 'ap-southeast-1'
+  s3Bucket: process.env.S3_BUCKET || "",
+  s3AccessKeyId: process.env.S3_ACCESS_KEY_ID || "",
+  s3SecretAccessKey: process.env.S3_SECRET_ACCESS_KEY || "",
   // Auth
   authJwtSecret: jwtSecret,
   authAllowedOrigins: rawAllowedOrigins,
