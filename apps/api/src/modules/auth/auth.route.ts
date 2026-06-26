@@ -27,6 +27,7 @@ import { authMiddleware } from './auth.middleware';
 import { buildClearCookie } from './cookie';
 import { FEATURES } from './matrix';
 import { decide } from './matrix';
+import { registerCompany } from './register.service';
 
 const COOKIE_NAME = 'wms_session';
 
@@ -109,6 +110,51 @@ export const authPublicRoutes = new Elysia({ prefix: '/auth' })
 
       case 'fail-500':
         // Internal error during session issuance — NO cookie (Req 1.9)
+        set.status = 500;
+        return { ok: false, error: 'internal_error' };
+    }
+  })
+
+  /**
+   * POST /auth/register
+   *
+   * Public self-service registration (Fase 4.2a). Bikin 1 company status
+   * 'pending' + 1 admin user (is_active = 1). TIDAK auto-login dan TIDAK bikin
+   * order/subscription — user login dulu, lalu submit order + upload bukti via
+   * /subscription/orders*.
+   * Body: { companyName, name, email, username?, password }.
+   */
+  .post('/register', async ({ body, set }) => {
+    const b = (body ?? {}) as {
+      companyName?: unknown;
+      name?: unknown;
+      email?: unknown;
+      username?: unknown;
+      password?: unknown;
+    };
+
+    const result = await registerCompany({
+      companyName: b.companyName,
+      name: b.name,
+      email: b.email,
+      username: b.username,
+      password: b.password,
+    });
+
+    switch (result.kind) {
+      case 'ok':
+        set.status = 201;
+        return { ok: true, companyId: result.companyId, slug: result.slug };
+      case 'fail-validation':
+        set.status = 400;
+        return { ok: false, error: 'validation', field: result.field, message: result.message };
+      case 'fail-email-taken':
+        set.status = 409;
+        return { ok: false, error: 'email_taken' };
+      case 'fail-username-taken':
+        set.status = 409;
+        return { ok: false, error: 'username_taken' };
+      case 'fail-500':
         set.status = 500;
         return { ok: false, error: 'internal_error' };
     }
