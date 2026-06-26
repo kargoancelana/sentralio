@@ -13,7 +13,7 @@
  */
 
 import { type FormEvent, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { safeRedirectPath } from '../auth/redirect';
 import { PasswordInput } from '../components/ui/PasswordInput';
@@ -172,6 +172,10 @@ export function LoginPage() {
             {disabled ? 'Memproses…' : 'Masuk'}
           </button>
         </form>
+
+        <p style={{ marginTop: '20px', textAlign: 'center', fontSize: '0.9rem', color: 'var(--text3)' }}>
+          Belum punya akun? <Link to="/register">Daftar</Link>
+        </p>
       </div>
     </main>
   );
