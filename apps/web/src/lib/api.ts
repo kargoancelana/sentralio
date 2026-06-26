@@ -231,7 +231,7 @@ export async function fetchApi<T = any>(
   if (!res.ok) {
     // Dispatch session-expired event on 401 for any non-login path (Req 4.5, 10.2).
     // Skipped for /auth/login to avoid a redirect loop on bad credentials.
-    if (res.status === 401 && path !== '/auth/login') {
+    if (res.status === 401 && path !== '/auth/login' && path !== '/auth/me') {
       window.dispatchEvent(new CustomEvent('wms.session-expired'));
     }
     if (res.status === 402 && (data as any)?.error === 'subscription_required') {
