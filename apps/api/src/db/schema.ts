@@ -1,4 +1,4 @@
-import { int, mysqlTable, timestamp, varchar, text, uniqueIndex, index, bigint, date, primaryKey, mysqlEnum, mediumtext, char } from "drizzle-orm/mysql-core";
+import { int, mysqlTable, timestamp, varchar, text, uniqueIndex, index, bigint, date, primaryKey, mysqlEnum, mediumtext, char, foreignKey } from "drizzle-orm/mysql-core";
 
 export const companyStatusEnum = mysqlEnum("status", ["pending", "active", "suspended", "expired"]);
 
@@ -214,8 +214,7 @@ export const hppEntries = mysqlTable("hpp_entries", {
 export const masterPackingCostEntries = mysqlTable("master_packing_cost_entries", {
   id: int("id").primaryKey().autoincrement(),
   companyId: int("company_id").notNull().default(1).references(() => companies.id),
-  masterProductId: int("master_product_id").notNull()
-    .references(() => masterProducts.id, { onDelete: "cascade" }),
+  masterProductId: int("master_product_id").notNull(),  // FK eksplisit di bawah (nama pendek)
   packingCost: int("packing_cost").notNull(),     // in Rupiah, range [0, 999999999]
   startDate: varchar("start_date", { length: 10 }).notNull(), // YYYY-MM-DD
   endDate: varchar("end_date", { length: 10 }),   // YYYY-MM-DD or null
@@ -228,6 +227,11 @@ export const masterPackingCostEntries = mysqlTable("master_packing_cost_entries"
   idxMasterProduct: index("idx_master_packing_master_product").on(t.masterProductId),
   idxMasterProductPeriod: index("idx_master_packing_period").on(t.masterProductId, t.startDate, t.endDate),
   idxCompany: index("idx_master_packing_cost_entries_company").on(t.companyId),
+  fkMasterProduct: foreignKey({
+    name: "master_packing_cost_entries_master_product_id_fk",  // 48 char, < MySQL 64-char limit
+    columns: [t.masterProductId],
+    foreignColumns: [masterProducts.id],
+  }).onDelete("cascade"),
 }));
 
 // ─── Biaya Packing Entries ─────────────────────────────────────
