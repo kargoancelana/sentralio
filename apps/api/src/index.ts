@@ -119,7 +119,26 @@ const app = new Elysia()
     },
   }))
 
-  .use(authPublicRoutes)   // POST /auth/login
+  // Rate-limiter khusus register — endpoint publik yang bikin company, batasi
+  // spam dari satu IP. Skip semua path selain POST /auth/register.
+  .use(rateLimit({
+    duration: 60000,
+    max: 5, // maksimal 5 pendaftaran per menit per IP
+    scoping: 'global',
+    errorResponse: {
+      success: false,
+      message: "Terlalu banyak percobaan pendaftaran. Coba lagi sebentar lagi.",
+      error: "REGISTER_RATE_LIMIT_EXCEEDED",
+    },
+    generator: (req, server) => server?.requestIP(req)?.address || 'unknown',
+    skip: (req) => {
+      let pathname: string;
+      try { pathname = new URL(req.url).pathname; } catch { pathname = req.url; }
+      return !(pathname.endsWith('/auth/register') && req.method === 'POST');
+    },
+  }))
+
+  .use(authPublicRoutes)   // POST /auth/login, POST /auth/register
   .use(passwordResetPublicRoutes)
 
   // ─── Platform portal auth (Super Admin) ──────────────────────────────────

@@ -23,6 +23,25 @@ const ALLOWED_TYPES: Record<string, string> = {
 
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
+// Magic bytes (file signature) per content-type. JANGAN percaya content-type /
+// ekstensi dari client doang — verifikasi byte awal file benar-benar cocok.
+const MAGIC_BYTES: Record<string, number[]> = {
+  "image/jpeg": [0xff, 0xd8, 0xff],
+  "image/png":  [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+  "application/pdf": [0x25, 0x50, 0x44, 0x46, 0x2d], // "%PDF-"
+};
+
+/** True kalau byte awal `bytes` cocok dengan signature untuk `contentType`. */
+function matchesMagicBytes(contentType: string, bytes: Uint8Array): boolean {
+  const sig = MAGIC_BYTES[contentType];
+  if (!sig) return false;
+  if (bytes.length < sig.length) return false;
+  for (let i = 0; i < sig.length; i++) {
+    if (bytes[i] !== sig[i]) return false;
+  }
+  return true;
+}
+
 // ── Lazy singleton ────────────────────────────────────────────
 // Client TIDAK dibuat saat import — dibuat saat pertama dipakai.
 // Mencegah crash boot kalau env S3 belum diisi.
@@ -76,6 +95,13 @@ export async function uploadProof(input: UploadProofInput): Promise<{ key: strin
     : (input.bytes as Uint8Array).byteLength;
 
   if (size <= 0 || size > MAX_BYTES) throw new Error("file_too_large");
+
+  // Verifikasi magic bytes: byte awal file HARUS cocok dengan content-type yang
+  // diklaim. Mencegah file disamarkan (mis. file lain di-rename jadi image/jpeg).
+  const u8 = input.bytes instanceof ArrayBuffer ? new Uint8Array(input.bytes) : input.bytes;
+  if (!matchesMagicBytes(input.contentType, u8)) {
+    throw new Error("invalid_file_type");
+  }
 
   const key = `subscription-proofs/company-${input.companyId}/${randomUUID()}.${ext}`;
   const client = getClient();
