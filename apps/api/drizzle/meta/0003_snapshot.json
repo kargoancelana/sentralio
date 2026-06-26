@@ -918,8 +918,8 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "master_packing_cost_entries_master_product_id_master_products_id_fk": {
-          "name": "master_packing_cost_entries_master_product_id_master_products_id_fk",
+        "master_packing_cost_entries_master_product_id_fk": {
+          "name": "master_packing_cost_entries_master_product_id_fk",
           "tableFrom": "master_packing_cost_entries",
           "tableTo": "master_products",
           "columnsFrom": [
