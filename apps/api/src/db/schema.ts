@@ -469,3 +469,31 @@ export const subscriptions = mysqlTable("subscriptions", {
   idxCompanyStatus: index("idx_subscriptions_company_status").on(t.companyId, t.status),
   idxEndsAt: index("idx_subscriptions_ends_at").on(t.endsAt),
 }));
+
+// ─── Subscription Orders / Billing (Fase 4) ────────────────────
+
+export const subscriptionOrderStatusEnum = mysqlEnum("status", ["pending", "approved", "rejected"]);
+
+// Pengajuan langganan dari company + bukti transfer (manual billing).
+// Di-review Super Admin: approve -> bikin row subscriptions (logika di Fase 4.3).
+export const subscriptionOrders = mysqlTable("subscription_orders", {
+  id: int("id").primaryKey().autoincrement(),
+  companyId: int("company_id").notNull().references(() => companies.id),
+  planId: int("plan_id").notNull().references(() => plans.id),
+  // coupons belum ada (Fase 5). Simpan nullable TANPA FK dulu; FK ditambah di Fase 5.
+  couponId: int("coupon_id"),
+  amount: int("amount").notNull().default(0),        // Rupiah, harga FINAL (setelah diskon kupon kalau ada)
+  // Object key di storage (mis. 'subscription-proofs/company-1/uuid.jpg'). BUKAN URL publik.
+  // Nullable: order bisa dibuat dulu, bukti di-upload menyusul (alur detail di 4.2).
+  proofKey: varchar("proof_key", { length: 500 }),
+  status: subscriptionOrderStatusEnum.notNull().default("pending"),
+  reviewedBy: int("reviewed_by").references(() => platformAdmins.id), // nullable; admin yang review
+  reviewedAt: timestamp("reviewed_at"),
+  note: text("note"),                                 // alasan reject / catatan admin
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+}, (t) => ({
+  idxCompany: index("idx_subscription_orders_company").on(t.companyId),
+  idxStatus: index("idx_subscription_orders_status").on(t.status),
+  idxCompanyStatus: index("idx_subscription_orders_company_status").on(t.companyId, t.status),
+}));
