@@ -55,7 +55,6 @@ const validInput = {
   name: 'Budi Santoso',
   email: 'budi@example.com',
   password: 'Password1!',
-  now: new Date(),
 };
 
 // ── Validation ─────────────────────────────────────────────────

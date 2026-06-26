@@ -139,7 +139,6 @@ export const authPublicRoutes = new Elysia({ prefix: '/auth' })
       email: b.email,
       username: b.username,
       password: b.password,
-      now: new Date(),
     });
 
     switch (result.kind) {

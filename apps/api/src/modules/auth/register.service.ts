@@ -25,7 +25,6 @@ export interface RegisterInput {
   email: unknown;
   username?: unknown; // opsional
   password: unknown;
-  now: Date;
   db?: DrizzleDb;
 }
 
