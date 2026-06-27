@@ -43,3 +43,42 @@ export async function platformFetch<T>(path: string, options?: RequestInit): Pro
 
   return data as T;
 }
+
+// ─── Platform Order Types (Fase 4.3b) ───────────────────────────────────────
+
+export type PlatformOrderStatus = 'pending' | 'approved' | 'rejected';
+
+export interface PlatformOrder {
+  id: number;
+  companyId: number;
+  companyName: string | null;
+  planId: number;
+  planName: string | null;
+  amount: number;
+  proofKey: string | null;
+  status: PlatformOrderStatus;
+  note: string | null;
+  reviewedBy: number | null;
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
+// ─── Platform Order API helpers ──────────────────────────────────────────────
+
+export const platformOrderApi = {
+  list: (status?: PlatformOrderStatus) => {
+    const qs = status ? `?status=${status}` : '';
+    return platformFetch<{ ok: boolean; orders: PlatformOrder[] }>(`/orders${qs}`);
+  },
+  pendingCount: () =>
+    platformFetch<{ ok: boolean; count: number }>('/orders/pending-count'),
+  proofUrl: (id: number) =>
+    platformFetch<{ ok: boolean; url: string }>(`/orders/${id}/proof-url`),
+  approve: (id: number) =>
+    platformFetch<{ ok: boolean; order: PlatformOrder }>(`/orders/${id}/approve`, { method: 'POST' }),
+  reject: (id: number, note: string) =>
+    platformFetch<{ ok: boolean; order: PlatformOrder }>(`/orders/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    }),
+};
