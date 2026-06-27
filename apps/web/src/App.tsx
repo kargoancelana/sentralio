@@ -17,6 +17,7 @@ import { PlatformDashboard } from './pages/platform/PlatformDashboard';
 import { PlatformCompanies } from './pages/platform/PlatformCompanies';
 import { PlatformCompanyDetail } from './pages/platform/PlatformCompanyDetail';
 import { PlatformPlans } from './pages/platform/PlatformPlans';
+import { PlatformOrders } from './pages/platform/PlatformOrders';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { PlatformProtectedRoute } from './auth/PlatformProtectedRoute';
 import { RoleGate } from './auth/RoleGate';
@@ -73,6 +74,7 @@ function App() {
                 <Route path="/platform" element={<PlatformDashboard />} />
                 <Route path="/platform/companies" element={<PlatformCompanies />} />
                 <Route path="/platform/companies/:id" element={<PlatformCompanyDetail />} />
+                <Route path="/platform/orders" element={<PlatformOrders />} />
                 <Route path="/platform/plans" element={<PlatformPlans />} />
               </Route>
             </Route>
