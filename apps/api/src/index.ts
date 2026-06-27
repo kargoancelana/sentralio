@@ -31,6 +31,7 @@ import { platformAuthPublicRoutes, platformAuthProtectedRoutes } from "./modules
 import { platformCompaniesRoutes } from "./modules/platform/platform-companies.route";
 import { platformUsersRoutes } from "./modules/platform/platform-users.route";
 import { platformPlansRoutes } from "./modules/platform/platform-plans.route";
+import { platformOrdersRoutes } from "./modules/platform/platform-orders.route";
 import { usersRoutes } from "./modules/users/users.route";
 import { autoBoostRoutes } from "./modules/auto-boost/auto-boost.route";
 import { shopeePushRoutes } from "./modules/shopee/shopee-push.route";
@@ -150,6 +151,7 @@ const app = new Elysia()
   .use(platformCompaniesRoutes)       // GET /platform/companies, /companies/:id
   .use(platformUsersRoutes)
   .use(platformPlansRoutes)           // GET/POST/PUT /platform/plans
+  .use(platformOrdersRoutes)          // GET/POST /platform/orders*
 
   // ─── Shopee Push webhook (publik, SEBELUM auth) ───────────────────────────
   // Endpoint ini menerima push notification dari Shopee Open Platform.
