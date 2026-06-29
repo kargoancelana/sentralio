@@ -38,6 +38,9 @@ import { shopeePushRoutes } from "./modules/shopee/shopee-push.route";
 import { startQueues, stopQueues } from "./queue";
 import { subscriptionRoutes } from "./modules/subscription/subscription.route";
 import { subscriptionGuardMiddleware } from "./modules/auth/subscription-guard.middleware";
+import { maintenanceGuardMiddleware } from "./modules/auth/maintenance-guard.middleware";
+import { platformSettingsRoutes } from "./modules/platform/platform-settings.route";
+import { systemStatusRoutes } from "./modules/system/system-status.route";
 // Fail-fast: di production FRONTEND_URL wajib diset (dipakai untuk CORS allowlist).
 if (env.nodeEnv === 'production' && !env.frontendUrl) {
   throw new Error(
@@ -98,6 +101,7 @@ const app = new Elysia()
   // Must be mounted BEFORE originMiddleware + authMiddleware so they are
   // accessible without a session (Req 4.3, 5.4).
   .use(healthRoutes)
+  .use(systemStatusRoutes)        // GET /system/status (maintenance status, tanpa login)
 
   // Dedicated rate-limiter for login — tighter than the global limit to defend
   // against password spraying across multiple accounts from one IP.
@@ -152,6 +156,7 @@ const app = new Elysia()
   .use(platformUsersRoutes)
   .use(platformPlansRoutes)           // GET/POST/PUT /platform/plans
   .use(platformOrdersRoutes)          // GET/POST /platform/orders*
+  .use(platformSettingsRoutes)        // GET/PUT /platform/settings (payment info + maintenance)
 
   // ─── Shopee Push webhook (publik, SEBELUM auth) ───────────────────────────
   // Endpoint ini menerima push notification dari Shopee Open Platform.
@@ -168,7 +173,10 @@ const app = new Elysia()
   .use(authProtectedRoutes)
 
   // Subscription status endpoint (exempt dari guard) — harus sebelum guard
-  .use(subscriptionRoutes)             // GET /subscription/status
+  .use(subscriptionRoutes)             // GET /subscription/status, /payment-info
+
+  // Maintenance guard — block akses saat level='full' (503), exempt: /auth, /subscription, /system, /platform
+  .use(maintenanceGuardMiddleware)
 
   // Subscription enforcement — block company tanpa langganan aktif (402)
   .use(subscriptionGuardMiddleware)

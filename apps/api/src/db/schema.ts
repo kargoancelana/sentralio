@@ -501,3 +501,13 @@ export const subscriptionOrders = mysqlTable("subscription_orders", {
   idxStatus: index("idx_subscription_orders_status").on(t.status),
   idxCompanyStatus: index("idx_subscription_orders_company_status").on(t.companyId, t.status),
 }));
+
+// ─── System Settings (Fase 4.4) ───────────────────────────────
+// Key-value global. value_json = JSON string. Key yang dipakai sekarang:
+//   'payment_info' -> { bankName, accountNumber, accountHolder, instructions, supportContact, note }
+//   'maintenance'  -> { level: 'off'|'banner'|'full', message }
+export const systemSettings = mysqlTable("system_settings", {
+  key: varchar("key", { length: 64 }).primaryKey(),
+  valueJson: text("value_json").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+});
