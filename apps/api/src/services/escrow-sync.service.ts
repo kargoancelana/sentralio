@@ -69,11 +69,13 @@ export class EscrowSyncService {
    * Dipanggil dari endpoint POST /sync/escrow.
    *
    * @param daysBack - Jumlah hari ke belakang untuk range escrow_release_time (default: 30)
+   * @param shopId - (Opsional) Scope sync ke satu toko saja. Jika undefined, sync semua toko connected (global mode).
    * @returns EscrowSyncResult berisi statistik sync per toko
    * @throws Error dengan message 'SYNC_IN_PROGRESS' jika sync sedang berjalan (untuk 409)
    */
-  async startEscrowSync(daysBack: number = 30): Promise<EscrowSyncResult> {
-    console.log(`[${this.jobName}] Starting escrow sync (daysBack=${daysBack})`);
+  async startEscrowSync(daysBack: number = 30, shopId?: number): Promise<EscrowSyncResult> {
+    const scopeMsg = shopId ? `shop ${shopId}` : "all connected shops";
+    console.log(`[${this.jobName}] Starting escrow sync for ${scopeMsg} (daysBack=${daysBack})`);
 
     // Coba acquire lock; tolak jika sudah berjalan
     const locked = await this.acquireLock();
@@ -90,11 +92,15 @@ export class EscrowSyncService {
     };
 
     try {
-      // Ambil semua toko yang terdaftar
+      // Ambil toko yang akan di-sync: satu toko atau semua toko connected
       const shops = await db
         .select({ shopId: shopeeCredentials.shopId })
         .from(shopeeCredentials)
-        .where(eq(shopeeCredentials.status, "connected"));
+        .where(
+          shopId
+            ? and(eq(shopeeCredentials.status, "connected"), eq(shopeeCredentials.shopId, shopId))
+            : eq(shopeeCredentials.status, "connected")
+        );
 
       if (shops.length === 0) {
         console.warn("[escrow-sync] No shops found, nothing to sync");

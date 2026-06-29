@@ -39,7 +39,7 @@ export function startGapSyncWorker(): Worker {
       await job.updateProgress(50);
 
       console.log(`[gap-sync-worker] Shop ${shopId} - syncing escrow (${daysBack} days)...`);
-      await syncEscrowForShop(daysBack, `escrow_gap_${shopId}`);
+      await syncEscrowForShop(daysBack, `escrow_gap_${shopId}`, shopId);
 
       await job.updateProgress(80);
 

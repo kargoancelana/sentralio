@@ -61,7 +61,7 @@ export function startOnboardingWorker(): Worker {
         .where(eq(shopeeCredentials.shopId, shopId));
 
       console.log(`[onboarding-worker] Shop ${shopId} - syncing escrow (180 days)...`);
-      await syncEscrowForShop(180, `escrow_onboarding_${shopId}`);
+      await syncEscrowForShop(180, `escrow_onboarding_${shopId}`, shopId);
 
       await job.updateProgress(85);
 
