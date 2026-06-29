@@ -351,6 +351,8 @@ const app = new Elysia()
       await db.update(shopeeCredentials)
         .set({
           status: "disconnected",
+          // Issue #191: lepas slot aktif → toko bisa diklaim akun lain.
+          activeShopId: null,
           // Clear tokens — we never keep credentials for a disconnected shop.
           accessToken: "",
           refreshToken: "",

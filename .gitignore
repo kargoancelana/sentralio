@@ -46,6 +46,10 @@ referensi_api/
 api_logistik.md
 prompt.md
 
+# ── Scratch / temp kerja AI (JANGAN di-commit) ──────────────
+_tmp/
+**/_tmp/
+
 # ── Local debugging & helper scripts (apps/api) ───────────────
 apps/api/check-*.ts
 apps/api/migrate-*.ts
