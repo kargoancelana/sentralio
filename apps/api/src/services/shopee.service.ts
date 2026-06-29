@@ -160,6 +160,7 @@ export async function syncShopeeProducts(targetShopId?: number) {
 
   let grandTotalItems = 0;
   let grandTotalModels = 0;
+  const failedShopIds: number[] = [];
 
   for (const shop of shopsToSync) {
     const shopId = shop.shopId;
@@ -170,10 +171,26 @@ export async function syncShopeeProducts(targetShopId?: number) {
       grandTotalModels += res.total_models;
     } catch (err: any) {
       console.error(`[SYNC] Failed sync for shopId=${shopId}: ${err.message}`);
+      failedShopIds.push(shopId);
+      
+      // Single-shop mode (onboarding/manual): rethrow immediately so caller can handle error
+      if (targetShopId) {
+        throw new Error(`Product sync failed for shop ${shopId}: ${err.message}`);
+      }
+      // Multi-shop mode (scheduler): continue to next shop, collect failures
     }
   }
 
-  return { total_items: grandTotalItems, total_models: grandTotalModels, status: "success" };
+  if (failedShopIds.length > 0) {
+    console.warn(`[SYNC] Product sync completed with ${failedShopIds.length} failed shop(s): ${failedShopIds.join(', ')}`);
+  }
+
+  return { 
+    total_items: grandTotalItems, 
+    total_models: grandTotalModels, 
+    status: failedShopIds.length > 0 ? "partial" : "success",
+    failedShopIds 
+  };
 }
 
 async function syncShopeeProductsForShop(shopId: number) {
