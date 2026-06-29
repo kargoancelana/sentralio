@@ -18,6 +18,7 @@ import { PlatformCompanies } from './pages/platform/PlatformCompanies';
 import { PlatformCompanyDetail } from './pages/platform/PlatformCompanyDetail';
 import { PlatformPlans } from './pages/platform/PlatformPlans';
 import { PlatformOrders } from './pages/platform/PlatformOrders';
+import { PlatformSettings } from './pages/platform/PlatformSettings';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { PlatformProtectedRoute } from './auth/PlatformProtectedRoute';
 import { RoleGate } from './auth/RoleGate';
@@ -28,6 +29,7 @@ import { AutoBoost } from './pages/AutoBoost';
 import { ResetPassword } from './pages/ResetPassword';
 import { Register } from './pages/Register';
 import { Langganan } from './pages/Langganan';
+import { MaintenanceBanner } from './components/system/MaintenanceBanner';
 import './styles/globals.css';
 import './styles/hpp-layout.css';
 
@@ -39,6 +41,7 @@ import './styles/hpp-layout.css';
 function TenantAuthLayout() {
   return (
     <AuthProvider>
+      <MaintenanceBanner />
       <Outlet />
     </AuthProvider>
   );
@@ -76,6 +79,7 @@ function App() {
                 <Route path="/platform/companies/:id" element={<PlatformCompanyDetail />} />
                 <Route path="/platform/orders" element={<PlatformOrders />} />
                 <Route path="/platform/plans" element={<PlatformPlans />} />
+                <Route path="/platform/settings" element={<PlatformSettings />} />
               </Route>
             </Route>
           </Route>

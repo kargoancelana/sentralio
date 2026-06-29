@@ -82,3 +82,37 @@ export const platformOrderApi = {
       body: JSON.stringify({ note }),
     }),
 };
+
+// ─── Platform Settings Types (Fase 4.4b) ────────────────────────────────────
+
+export interface PaymentInfo {
+  bankName: string;
+  accountNumber: string;
+  accountHolder: string;
+  instructions: string;
+  supportContact: string;
+  note: string;
+}
+
+export type MaintenanceLevel = 'off' | 'banner' | 'full';
+
+export interface MaintenanceSetting {
+  level: MaintenanceLevel;
+  message: string;
+}
+
+export interface SystemSettings {
+  paymentInfo: PaymentInfo;
+  maintenance: MaintenanceSetting;
+}
+
+// ─── Platform Settings API helpers ───────────────────────────────────────────
+
+export const platformSettingsApi = {
+  get: () => platformFetch<{ ok: boolean; settings: SystemSettings }>('/settings'),
+  update: (input: { paymentInfo?: PaymentInfo; maintenance?: MaintenanceSetting }) =>
+    platformFetch<{ ok: boolean; settings: SystemSettings }>('/settings', {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+};

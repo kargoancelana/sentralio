@@ -53,6 +53,9 @@ export function PlatformLayout() {
           <NavLink to="/platform/plans">
             Plans
           </NavLink>
+          <NavLink to="/platform/settings">
+            Settings
+          </NavLink>
         </nav>
       </aside>
       <div className="platform-shell__main">
