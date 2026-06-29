@@ -18,8 +18,8 @@ export async function syncOrdersForShop(shopId: number, daysBack: number) {
   return await syncShopeeOrdersService(shopId, daysBack, "", undefined, "create_time");
 }
 
-export async function syncEscrowForShop(daysBack: number, lockName: string) {
-  return await new EscrowSyncService(lockName).startEscrowSync(daysBack);
+export async function syncEscrowForShop(daysBack: number, lockName: string, shopId?: number) {
+  return await new EscrowSyncService(lockName).startEscrowSync(daysBack, shopId);
 }
 
 export async function syncAdsForShop(shopId: number, startDate: string, endDate: string) {
