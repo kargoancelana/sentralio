@@ -23,6 +23,7 @@ import {
 } from './subscription-order.service';
 import { uploadProof } from '../../services/storage.service';
 import { listActivePlans } from './subscription-plan.service';
+import { getPaymentInfo } from '../platform/platform-settings.service';
 
 export const subscriptionRoutes = new Elysia()
   .get('/subscription/status', async ({ user, set }) => {
@@ -36,6 +37,14 @@ export const subscriptionRoutes = new Elysia()
     set.status = 200;
     const activePlans = await listActivePlans();
     return { ok: true, plans: activePlans };
+  })
+
+  // Info pembayaran untuk tenant (bank rekening, instruksi, kontak support).
+  // Company pending (belum punya langganan) tetap bisa akses (utk halaman order).
+  .get('/subscription/payment-info', async ({ set }) => {
+    set.status = 200;
+    const paymentInfo = await getPaymentInfo();
+    return { ok: true, paymentInfo };
   })
 
   // Buat order pending baru. Body: { planId: number }.
