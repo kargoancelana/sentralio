@@ -6,7 +6,7 @@ import { EscrowSyncService } from "./escrow-sync.service";
 import { getTotalAdsExpense } from "./ads-expense.service";
 import { syncShopeeProducts } from "./shopee.service";
 import { autoMapProducts } from "./master.service";
-import { eq, or, and } from "drizzle-orm";
+import { eq, or, and, desc } from "drizzle-orm";
 
 export const STATUS_PRIORITY: Record<string, number> = {
   'UNPAID': 0, 'READY_TO_SHIP': 1, 'PROCESSED': 2,
@@ -30,15 +30,22 @@ export async function syncProductsForShop(shopId: number) {
   const result = await syncShopeeProducts(shopId);
 
   // Resolve the company that owns this shop so auto-map stays scoped per-company.
+  // Only resolve from CONNECTED credentials to avoid wrong company_id in multi-tenant scenarios.
   const credRows = await db.select({ companyId: shopeeCredentials.companyId })
     .from(shopeeCredentials)
-    .where(eq(shopeeCredentials.shopId, shopId))
+    .where(
+      and(
+        eq(shopeeCredentials.shopId, shopId),
+        eq(shopeeCredentials.status, "connected")
+      )
+    )
+    .orderBy(desc(shopeeCredentials.updatedAt))
     .limit(1);
   const cred = credRows[0];
   if (cred) {
     await autoMapProducts(cred.companyId);
   } else {
-    console.warn(`[sync-tasks] Skipping autoMapProducts: no shopeeCredentials found for shopId=${shopId}`);
+    console.warn(`[sync-tasks] Skipping autoMapProducts: no CONNECTED shopeeCredentials found for shopId=${shopId}`);
   }
 
   return result;

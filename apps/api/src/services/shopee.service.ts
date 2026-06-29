@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { db } from "../db/client";
 import { productGroups, products, masterProducts, masterProductVariants, shopeeCredentials, shopeeOrderItems, shopeeOrders } from "../db/schema";
 import { shopeeRequest } from "./shopee-raw";
@@ -178,14 +178,21 @@ export async function syncShopeeProducts(targetShopId?: number) {
 
 async function syncShopeeProductsForShop(shopId: number) {
   // Resolve the company that owns this shop so every synced row carries the
-  // correct company_id (otherwise inserts fall back to the DEFAULT 1).
+  // correct company_id. Only sync products for CONNECTED shops to avoid
+  // tagging products with the wrong company_id in multi-tenant scenarios.
   const credRows = await db.select({ companyId: shopeeCredentials.companyId })
     .from(shopeeCredentials)
-    .where(eq(shopeeCredentials.shopId, shopId))
+    .where(
+      and(
+        eq(shopeeCredentials.shopId, shopId),
+        eq(shopeeCredentials.status, "connected")
+      )
+    )
+    .orderBy(desc(shopeeCredentials.updatedAt))
     .limit(1);
   const companyId = credRows[0]?.companyId;
   if (!companyId) {
-    console.warn(`[SYNC] Skipping shopId=${shopId}: no shopeeCredentials found (cannot resolve company_id)`);
+    console.warn(`[SYNC] Skipping shopId=${shopId}: no CONNECTED shopeeCredentials (cannot resolve company_id)`);
     return { total_items: 0, total_models: 0, status: "skipped" };
   }
 
