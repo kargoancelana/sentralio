@@ -57,10 +57,10 @@ function DisconnectModal({ shop, onClose, onConfirm }: any) {
                 Peringatan: Aksi Berisiko Tinggi
               </div>
               <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.55 }}>
-                Memutus koneksi akan menghentikan sinkronisasi otomatis dan menyembunyikan
-                semua data toko ini (pesanan, produk channel, dan laporan) dari aplikasi.
-                Data tidak dihapus — semuanya akan muncul kembali dan sinkronisasi berjalan lagi
-                begitu Anda menghubungkan ulang toko ini.
+                Memutus koneksi akan menghentikan sinkronisasi dan menyembunyikan data toko ini dari aplikasi.
+                Data historis Anda tetap tersimpan dan tidak hilang. Selama toko belum dihubungkan akun Sentralio lain,
+                Anda masih bisa menghubungkannya kembali (data periode terputus akan otomatis ditarik ulang).
+                Namun jika akun lain sudah mengklaim toko ini, Anda tidak bisa reconnect sampai mereka melepasnya.
               </div>
             </div>
           </div>
@@ -338,7 +338,12 @@ export function IntegrasiShopee() {
       setShowPasteModal(false);
       refetch();
     } catch (err: any) {
-      toast(err.message || 'Gagal menukar token.', 'error');
+      // Issue #191: 409 shop_owned_by_other → tampilkan message dari server (lebih friendly)
+      if (err.status === 409) {
+        toast(err.message || 'Toko ini sedang terhubung ke akun lain.', 'error');
+      } else {
+        toast(err.message || 'Gagal menukar token.', 'error');
+      }
     }
   };
 
