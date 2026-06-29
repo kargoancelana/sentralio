@@ -32,6 +32,7 @@ import { platformCompaniesRoutes } from "./modules/platform/platform-companies.r
 import { platformUsersRoutes } from "./modules/platform/platform-users.route";
 import { platformPlansRoutes } from "./modules/platform/platform-plans.route";
 import { platformOrdersRoutes } from "./modules/platform/platform-orders.route";
+import { platformShopsRoutes } from "./modules/platform/platform-shops.route";
 import { usersRoutes } from "./modules/users/users.route";
 import { autoBoostRoutes } from "./modules/auto-boost/auto-boost.route";
 import { shopeePushRoutes } from "./modules/shopee/shopee-push.route";
@@ -156,6 +157,7 @@ const app = new Elysia()
   .use(platformUsersRoutes)
   .use(platformPlansRoutes)           // GET/POST/PUT /platform/plans
   .use(platformOrdersRoutes)          // GET/POST /platform/orders*
+  .use(platformShopsRoutes)           // POST /platform/shops/:shopId/force-release (issue #191)
   .use(platformSettingsRoutes)        // GET/PUT /platform/settings (payment info + maintenance)
 
   // ─── Shopee Push webhook (publik, SEBELUM auth) ───────────────────────────
