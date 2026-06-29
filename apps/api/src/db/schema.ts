@@ -518,3 +518,28 @@ export const systemSettings = mysqlTable("system_settings", {
   valueJson: text("value_json").notNull(),
   updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
 });
+
+// ─── Coupons (Fase 5) ───────────────────────────────────────────
+// Kupon diskon GLOBAL (platform-wide) - TANPA company_id, sama kayak `plans`.
+// 5.1 = tabel + CRUD portal. Apply/validasi & used_count++ = 5.2.
+// FK subscription_orders.coupon_id -> coupons.id juga nyusul di 5.2.
+export const couponTypeEnum = mysqlEnum("type", ["percent", "fixed"]);
+
+export const coupons = mysqlTable("coupons", {
+  id: int("id").primaryKey().autoincrement(),
+  code: varchar("code", { length: 64 }).notNull(),               // verbatim
+  codeUpper: varchar("code_upper", { length: 64 }).notNull(),    // trim+UPPER (ASCII); unik & lookup
+  type: couponTypeEnum.notNull(),
+  value: int("value").notNull(),                                 // percent: 1..100 | fixed: Rupiah >=1
+  maxUses: int("max_uses"),                                      // nullable = unlimited
+  usedCount: int("used_count").notNull().default(0),             // server-managed; dipakai mulai 5.2
+  validFrom: timestamp("valid_from"),                            // nullable = tanpa batas bawah
+  validUntil: timestamp("valid_until"),                          // nullable = tanpa kadaluarsa
+  planId: int("plan_id").references(() => plans.id),             // nullable = semua plan
+  isActive: int("is_active").notNull().default(1),               // 1/0
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+}, (t) => ({
+  uniqCodeUpper: uniqueIndex("uniq_coupons_code_upper").on(t.codeUpper),
+  idxPlan: index("idx_coupons_plan").on(t.planId),
+}));
