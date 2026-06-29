@@ -72,10 +72,10 @@ export const platformShopsRoutes = new Elysia({ prefix: "/platform" })
    * - Logs the action (adminId + shop details) for audit trail
    */
   .post(
-    "/:shopId/force-release",
+    "/shops/:shopId/force-release",
     async ({ params, set, platformAdmin }) => {
-      const shopId = parseInt(params.shopId);
-      if (!Number.isFinite(shopId)) {
+      const shopId = Number(params.shopId);
+      if (!Number.isInteger(shopId) || shopId <= 0) {
         set.status = 400;
         return { success: false, message: "Invalid shop ID" };
       }
