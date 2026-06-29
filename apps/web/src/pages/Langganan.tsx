@@ -14,7 +14,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { api, ApiError, type SubscriptionOrder, type SubscriptionPlan, type SubscriptionStatus } from '../lib/api';
+import { api, ApiError, type PaymentInfo, type SubscriptionOrder, type SubscriptionPlan, type SubscriptionStatus } from '../lib/api';
 
 const formatRupiah = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
@@ -41,6 +41,7 @@ export function Langganan() {
   const [subStatus, setSubStatus] = useState<SubscriptionStatus | null>(null);
   const [orders, setOrders] = useState<SubscriptionOrder[]>([]);
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [paymentInfo, setPaymentInfo] = useState<PaymentInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Upload state
@@ -59,14 +60,16 @@ export function Langganan() {
     setLoading(true);
     setError(null);
     try {
-      const [statusRes, ordersRes, plansRes] = await Promise.all([
+      const [statusRes, ordersRes, plansRes, paymentRes] = await Promise.all([
         api.subscriptionStatus().catch(() => null),
         api.subscriptionOrders().catch(() => ({ ok: true, orders: [] as SubscriptionOrder[] })),
         api.subscriptionPlans().catch(() => ({ ok: true, plans: [] as SubscriptionPlan[] })),
+        api.subscriptionPaymentInfo().catch(() => null),
       ]);
       if (statusRes) setSubStatus(statusRes);
       setOrders((ordersRes as any).orders ?? []);
       setPlans((plansRes as any).plans ?? []);
+      setPaymentInfo(paymentRes ? ((paymentRes as any).paymentInfo ?? null) : null);
     } catch {
       setError('Gagal memuat data langganan.');
     } finally {
@@ -180,6 +183,18 @@ export function Langganan() {
         {/* ── Belum aktif ── */}
         {!subStatus?.active && (
           <>
+            {/* Info pembayaran (rekening tujuan transfer) */}
+            {paymentInfo && (paymentInfo.bankName || paymentInfo.accountNumber || paymentInfo.instructions) && (
+              <div className="card" style={{ marginBottom: 16 }}>
+                <h2 style={{ marginTop: 0 }}>Info Pembayaran</h2>
+                {paymentInfo.bankName && <p>Bank: <strong>{paymentInfo.bankName}</strong></p>}
+                {paymentInfo.accountNumber && <p>No. Rekening: <strong>{paymentInfo.accountNumber}</strong></p>}
+                {paymentInfo.accountHolder && <p>Atas Nama: <strong>{paymentInfo.accountHolder}</strong></p>}
+                {paymentInfo.instructions && <p style={{ whiteSpace: 'pre-wrap' }}>{paymentInfo.instructions}</p>}
+                {paymentInfo.note && <p style={{ whiteSpace: 'pre-wrap' }}><em>{paymentInfo.note}</em></p>}
+                {paymentInfo.supportContact && <p>Bantuan: {paymentInfo.supportContact}</p>}
+              </div>
+            )}
             {/* Ada pending order + belum ada bukti */}
             {pendingOrder && !pendingOrder.proofKey && (
               <div className="card" style={{ padding: '24px', marginBottom: '24px' }}>

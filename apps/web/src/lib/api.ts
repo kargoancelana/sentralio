@@ -46,6 +46,22 @@ export interface SubscriptionStatus {
   subscription: { planName: string; endsAt: string; status: string } | null;
 }
 
+export interface PaymentInfo {
+  bankName: string;
+  accountNumber: string;
+  accountHolder: string;
+  instructions: string;
+  supportContact: string;
+  note: string;
+}
+
+export type MaintenanceLevel = 'off' | 'banner' | 'full';
+
+export interface MaintenanceSetting {
+  level: MaintenanceLevel;
+  message: string;
+}
+
 // ─── Profit Analytics Types ───────────────────────────────────────────────────
 
 /** Single item in an order's profit breakdown */
@@ -455,6 +471,10 @@ export const api = {
   subscriptionStatus: () => fetchApi<SubscriptionStatus>('/subscription/status'),
   subscriptionPlans: () =>
     fetchApi<{ ok: boolean; plans: SubscriptionPlan[] }>('/subscription/plans'),
+  subscriptionPaymentInfo: () =>
+    fetchApi<{ ok: boolean; paymentInfo: PaymentInfo }>('/subscription/payment-info'),
+  systemStatus: () =>
+    fetchApi<{ ok: boolean; maintenance: MaintenanceSetting }>('/system/status'),
   subscriptionOrders: () =>
     fetchApi<{ ok: boolean; orders: SubscriptionOrder[] }>('/subscription/orders'),
   subscriptionCreateOrder: (planId: number) =>
