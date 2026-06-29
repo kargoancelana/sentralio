@@ -111,12 +111,6 @@ export function PlatformCoupons() {
       .catch(() => setLoadError('Gagal memuat daftar kupon.'));
   }
 
-  function fetchPlans() {
-    return platformFetch<PlansResponse>('/plans')
-      .then((res) => setPlans(res.plans))
-      .catch(() => setPlans([]));
-  }
-
   useEffect(() => {
     let active = true;
     Promise.all([
