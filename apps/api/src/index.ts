@@ -31,6 +31,7 @@ import { platformAuthPublicRoutes, platformAuthProtectedRoutes } from "./modules
 import { platformCompaniesRoutes } from "./modules/platform/platform-companies.route";
 import { platformUsersRoutes } from "./modules/platform/platform-users.route";
 import { platformPlansRoutes } from "./modules/platform/platform-plans.route";
+import { platformCouponsRoutes } from "./modules/platform/platform-coupons.route";
 import { platformOrdersRoutes } from "./modules/platform/platform-orders.route";
 import { platformShopsRoutes } from "./modules/platform/platform-shops.route";
 import { usersRoutes } from "./modules/users/users.route";
@@ -156,6 +157,7 @@ const app = new Elysia()
   .use(platformCompaniesRoutes)       // GET /platform/companies, /companies/:id
   .use(platformUsersRoutes)
   .use(platformPlansRoutes)           // GET/POST/PUT /platform/plans
+  .use(platformCouponsRoutes)         // GET/POST/PUT /platform/coupons (Fase 5.1)
   .use(platformOrdersRoutes)          // GET/POST /platform/orders*
   .use(platformShopsRoutes)           // POST /platform/shops/:shopId/force-release (issue #191)
   .use(platformSettingsRoutes)        // GET/PUT /platform/settings (payment info + maintenance)
