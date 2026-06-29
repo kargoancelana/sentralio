@@ -100,9 +100,16 @@ export const shopeeCredentials = mysqlTable("shopee_credentials", {
   initialSyncStartedAt: timestamp("initial_sync_started_at"),
   initialSyncAt: timestamp("initial_sync_at"),
   disconnectedAt: timestamp("disconnected_at"),
+  // Issue #191: NULL = toko tidak sedang aktif di company ini; = shopId saat 'connected'.
+  // MySQL unique index izinkan banyak NULL tapi cuma SATU non-NULL per nilai
+  // → enforce "satu koneksi aktif per toko" di level DB (race-safe).
+  activeShopId: int("active_shop_id"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => ({
-  uniqShopId: uniqueIndex("uniq_shop_id").on(t.shopId),
+  // dedup per company (boleh ada row historis 'disconnected' per company)
+  uniqCompanyShop: uniqueIndex("uniq_company_shop").on(t.companyId, t.shopId),
+  // satu koneksi aktif per toko di seluruh tabel
+  uniqActiveShop: uniqueIndex("uniq_active_shop").on(t.activeShopId),
   idxCompany: index("idx_shopee_credentials_company").on(t.companyId),
 }));
 

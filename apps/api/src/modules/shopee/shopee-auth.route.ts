@@ -1,6 +1,6 @@
 import * as crypto from "crypto";
 import { Elysia, t } from "elysia";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { env } from "../../config/env";
 import { db } from "../../db/client";
 import { shopeeCredentials } from "../../db/schema";
@@ -56,6 +56,23 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
       const shopIdNum = parseInt(shop_id);
 
       console.log(`[shopee-oauth] Exchanging code for tokens, shop_id=${shopIdNum}, code=****${code.slice(-4)}`);
+
+      // ─── Ownership guard (Issue #191): satu toko hanya boleh AKTIF di satu company ──
+      const activeOther = await db.select({ id: shopeeCredentials.id })
+        .from(shopeeCredentials)
+        .where(and(
+          eq(shopeeCredentials.shopId, shopIdNum),
+          eq(shopeeCredentials.status, "connected"),
+          ne(shopeeCredentials.companyId, user.companyId),
+        )).limit(1);
+      if (activeOther.length > 0) {
+        set.status = 409;
+        return {
+          success: false,
+          error: "shop_owned_by_other",
+          message: "Toko ini sedang terhubung ke akun Sentralio lain. Satu toko hanya bisa aktif di satu akun. Minta pemilik melepas toko atau hubungi support.",
+        };
+      }
 
       const path = "/api/v2/auth/token/get";
       const timestamp = Math.floor(Date.now() / 1000);
@@ -124,6 +141,8 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
         // (Re)connecting always marks the shop active again — this is what
         // restores a previously soft-disconnected shop's data and sync.
         status: "connected",
+        // Issue #191: (re)connect = klaim slot aktif untuk toko ini.
+        activeShopId: shopIdNum,
         updatedAt: new Date(),
       };
 
@@ -136,18 +155,32 @@ export const shopeeAuthRoutes = new Elysia({ prefix: "/shopee" })
         )).limit(1);
 
       let prevSyncStatus = null;
-      if (existing.length > 0) {
-        prevSyncStatus = existing[0].initialSyncStatus;
-        await db.update(shopeeCredentials)
-          .set(credentialPayload)
-          .where(and(
-            eq(shopeeCredentials.companyId, user.companyId),
-            eq(shopeeCredentials.shopId, shopIdNum),
-          ));
-        console.log(`[shopee-oauth] Updated existing credentials for shop_id=${shopIdNum}`);
-      } else {
-        await db.insert(shopeeCredentials).values({ ...credentialPayload, companyId: user.companyId });
-        console.log(`[shopee-oauth] Inserted new credentials for shop_id=${shopIdNum}`);
+      try {
+        if (existing.length > 0) {
+          prevSyncStatus = existing[0].initialSyncStatus;
+          await db.update(shopeeCredentials)
+            .set(credentialPayload)
+            .where(and(
+              eq(shopeeCredentials.companyId, user.companyId),
+              eq(shopeeCredentials.shopId, shopIdNum),
+            ));
+          console.log(`[shopee-oauth] Updated existing credentials for shop_id=${shopIdNum}`);
+        } else {
+          await db.insert(shopeeCredentials).values({ ...credentialPayload, companyId: user.companyId });
+          console.log(`[shopee-oauth] Inserted new credentials for shop_id=${shopIdNum}`);
+        }
+      } catch (err: any) {
+        // Race: company lain merebut slot aktif tepat sebelum commit → uniq_active_shop
+        // melempar ER_DUP_ENTRY. Balikin 409 yang sama, bukan 500 mentah.
+        if (err?.code === "ER_DUP_ENTRY") {
+          set.status = 409;
+          return {
+            success: false,
+            error: "shop_owned_by_other",
+            message: "Toko ini sedang terhubung ke akun Sentralio lain. Satu toko hanya bisa aktif di satu akun. Minta pemilik melepas toko atau hubungi support.",
+          };
+        }
+        throw err;
       }
 
       const isNewShop = existing.length === 0 || prevSyncStatus === "error";
