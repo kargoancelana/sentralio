@@ -41,6 +41,11 @@ export function encrypt(text: string): string {
 
 // Decrypt. Supports new GCM (3 parts) and legacy CBC (2 parts) formats.
 export function decrypt(text: string): string {
+  // Guard against empty/null token before checking format
+  if (!text || text.trim() === "") {
+    throw new Error("Cannot decrypt empty token. Token may have been cleared during disconnect.");
+  }
+
   if (!text.includes(":")) {
     throw new Error("Invalid encrypted format. Expected iv:authTag:ciphertext or legacy iv:ciphertext");
   }

@@ -1,5 +1,5 @@
 import * as crypto from "crypto";
-import { eq } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { db } from "../db/client";
 import { shopeeCredentials } from "../db/schema";
 import { encrypt, decrypt } from "../utils/crypto";
@@ -19,12 +19,25 @@ interface TokenRow {
  * Gets credentials for a specific shop from the DB.
  * If shopId is not provided, returns the first available shop.
  * If expired, triggers a refresh automatically.
+ * 
+ * Only returns 'connected' credentials. Disconnected rows are ignored,
+ * even if they share the same shop_id (multi-tenant scenario).
  */
 export async function getValidToken(shopId?: number): Promise<TokenRow> {
   let query = db.select().from(shopeeCredentials);
   
   if (shopId) {
-    query = query.where(eq(shopeeCredentials.shopId, shopId)) as any;
+    // Filter by shop_id AND status='connected', order by updated_at DESC for deterministic results
+    query = query.where(
+      and(
+        eq(shopeeCredentials.shopId, shopId),
+        eq(shopeeCredentials.status, "connected")
+      )
+    ).orderBy(desc(shopeeCredentials.updatedAt)) as any;
+  } else {
+    // No shop_id specified: get any connected shop, newest first
+    query = query.where(eq(shopeeCredentials.status, "connected"))
+      .orderBy(desc(shopeeCredentials.updatedAt)) as any;
   }
   
   const rows = await query.limit(1);
@@ -32,8 +45,8 @@ export async function getValidToken(shopId?: number): Promise<TokenRow> {
 
   if (!row) {
     const msg = shopId 
-      ? `No shopee credentials found for shop ID ${shopId}.`
-      : "No shopee credentials found. Please connect a shop first.";
+      ? `No connected Shopee credentials for shop ID ${shopId}. Toko belum/tidak terhubung.`
+      : "No connected Shopee credentials found. Please connect a shop first.";
     throw new Error(msg);
   }
 
