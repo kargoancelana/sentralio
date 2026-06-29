@@ -17,6 +17,7 @@ import { PlatformDashboard } from './pages/platform/PlatformDashboard';
 import { PlatformCompanies } from './pages/platform/PlatformCompanies';
 import { PlatformCompanyDetail } from './pages/platform/PlatformCompanyDetail';
 import { PlatformPlans } from './pages/platform/PlatformPlans';
+import { PlatformCoupons } from './pages/platform/PlatformCoupons';
 import { PlatformOrders } from './pages/platform/PlatformOrders';
 import { PlatformSettings } from './pages/platform/PlatformSettings';
 import { ProtectedRoute } from './auth/ProtectedRoute';
@@ -79,6 +80,7 @@ function App() {
                 <Route path="/platform/companies/:id" element={<PlatformCompanyDetail />} />
                 <Route path="/platform/orders" element={<PlatformOrders />} />
                 <Route path="/platform/plans" element={<PlatformPlans />} />
+                <Route path="/platform/coupons" element={<PlatformCoupons />} />
                 <Route path="/platform/settings" element={<PlatformSettings />} />
               </Route>
             </Route>

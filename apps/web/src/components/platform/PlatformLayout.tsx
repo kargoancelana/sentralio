@@ -53,6 +53,9 @@ export function PlatformLayout() {
           <NavLink to="/platform/plans">
             Plans
           </NavLink>
+          <NavLink to="/platform/coupons">
+            Coupons
+          </NavLink>
           <NavLink to="/platform/settings">
             Settings
           </NavLink>
