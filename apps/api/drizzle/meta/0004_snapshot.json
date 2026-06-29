@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "3acff00d-33e1-44a3-affd-d7b7fcf14208",
+  "id": "0fa16420-488c-4b6e-afc9-7e0a56688fad",
   "prevId": "a65eefa7-7485-4630-af68-b3f2b5ebbfa5",
   "tables": {
     "account_lockouts": {

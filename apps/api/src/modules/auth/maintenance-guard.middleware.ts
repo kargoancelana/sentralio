@@ -28,11 +28,13 @@ function pathnameOf(url: string): string {
 /**
  * Prefix yang di-exempt dari maintenance enforcement.
  * /auth/* - login/logout tetap jalan
+ * /health - health check (Caddy/monitoring), jangan blok
  * /subscription/* - company tetap bisa lihat status langganan & payment info
  * /system/status - frontend perlu cek status maintenance
  * /platform/* - Super Admin portal (tetap bisa akses untuk matiin maintenance)
+ * /shopee/* - webhook push dari Shopee, jangan blok
  */
-const EXEMPT_PREFIXES = ['/auth', '/subscription', '/system/status', '/platform'];
+const EXEMPT_PREFIXES = ['/auth', '/health', '/subscription', '/system/status', '/platform', '/shopee'];
 
 function isExempt(pathname: string): boolean {
   return EXEMPT_PREFIXES.some(
@@ -44,7 +46,8 @@ export const maintenanceGuardMiddleware = new Elysia({ name: 'maintenance-guard'
   .onBeforeHandle({ as: 'global' }, async ({ request, set }) => {
     const pathname = pathnameOf(request.url);
 
-    // Exempt: auth, subscription, system status, platform portal.
+    // Exempt: auth, health, subscription, system status, platform portal, shopee webhook.
+    // Note: /shopee/* dan routes publik lainnya tidak akan kena blok karena di-exempt.
     if (isExempt(pathname)) return;
 
     // Cek maintenance status (cached).

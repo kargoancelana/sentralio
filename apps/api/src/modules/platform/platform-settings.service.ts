@@ -14,7 +14,7 @@
  * Maintenance status di-cache pendek (10-15 detik) karena dipanggil tiap request di middleware.
  */
 
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { db as defaultDb } from '../../db/client';
 import { systemSettings } from '../../db/schema';
 import type { DrizzleDb } from '../auth/lockout';
@@ -128,11 +128,10 @@ function trimMaintenance(m: MaintenanceSetting): MaintenanceSetting {
  */
 export async function getSettings(db: DrizzleDb = defaultDb): Promise<SystemSettings> {
   try {
-    const rows = await db.select().from(systemSettings).where(
-      eq(systemSettings.key, 'payment_info')
-    ).union(
-      db.select().from(systemSettings).where(eq(systemSettings.key, 'maintenance'))
-    );
+    const rows = await db
+      .select()
+      .from(systemSettings)
+      .where(inArray(systemSettings.key, ['payment_info', 'maintenance']));
 
     const paymentRow = rows.find((r) => r.key === 'payment_info');
     const maintenanceRow = rows.find((r) => r.key === 'maintenance');
@@ -169,6 +168,7 @@ export async function getPaymentInfo(db: DrizzleDb = defaultDb): Promise<Payment
 /**
  * Baca maintenance setting saja (convenience untuk middleware / status endpoint).
  * Pakai cache pendek (dipanggil tiap request).
+ * Note: Hasil error (catch) tidak di-cache — hanya hasil sukses yang di-cache.
  */
 export async function getMaintenance(db: DrizzleDb = defaultDb): Promise<MaintenanceSetting> {
   const now = Date.now();
@@ -185,9 +185,9 @@ export async function getMaintenance(db: DrizzleDb = defaultDb): Promise<Mainten
     maintenanceCache = { value: parsed, expiresAt: now + CACHE_TTL_MS };
     return parsed;
   } catch {
-    const fallback = { ...DEFAULT_MAINTENANCE };
-    maintenanceCache = { value: fallback, expiresAt: now + CACHE_TTL_MS };
-    return fallback;
+    // Jangan cache hasil error — fallback langsung ke default tanpa cache.
+    // Kalau DB sempat error pas maintenance 'full', kita tidak mau cache 'off' selama TTL.
+    return { ...DEFAULT_MAINTENANCE };
   }
 }
 
