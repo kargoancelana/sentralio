@@ -544,3 +544,30 @@ export const coupons = mysqlTable("coupons", {
   uniqCodeUpper: uniqueIndex("uniq_coupons_code_upper").on(t.codeUpper),
   idxPlan: index("idx_coupons_plan").on(t.planId),
 }));
+
+/**
+ * audit_log — catatan aksi sensitif (Fase 6.1).
+ * Append-only & SENGAJA tanpa foreign key: audit harus tetap utuh walau
+ * company / admin / target dihapus. actor_id & company_id nullable.
+ */
+export const auditLog = mysqlTable(
+  'audit_log',
+  {
+    id: int('id').autoincrement().primaryKey(),
+    actorType: mysqlEnum('actor_type', ['platform', 'company']).notNull(),
+    actorId: int('actor_id'),               // nullable: login gagal / aktor tak dikenal
+    companyId: int('company_id'),           // nullable: aksi global (plan/coupon/settings)
+    action: varchar('action', { length: 100 }).notNull(),
+    targetType: varchar('target_type', { length: 50 }),
+    targetId: varchar('target_id', { length: 64 }),  // string biar generik (id numerik di-stringify)
+    beforeJson: text('before_json'),
+    afterJson: text('after_json'),
+    ip: varchar('ip', { length: 64 }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => ({
+    actionIdx: index('audit_action_idx').on(t.action),
+    companyIdx: index('audit_company_idx').on(t.companyId),
+    createdIdx: index('audit_created_idx').on(t.createdAt),
+  }),
+);
