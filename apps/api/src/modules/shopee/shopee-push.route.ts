@@ -152,6 +152,19 @@ export const shopeePushRoutes = new Elysia()
 
             console.log(`[shopee-push] tracking updated for ${orderSn}`);
 
+            // Tracking number sudah keluar → shipment pasti sudah di-arrange.
+            // Pre-generate + cache label resmi sekarang biar pas user cetak langsung instan.
+            // jobId sama dengan code 15 → BullMQ dedupe, tidak akan double-enqueue.
+            // Worker punya attempts 5, jadi kalau shipping document belum READY, dia retry.
+            if (trackingNumber) {
+              await labelDownloadQueue.add(
+                `push-tracking-label-${orderSn}`,
+                { shopId, orderSn, companyId, packageNumber },
+                { attempts: 5, backoff: { type: "exponential", delay: 10000 }, removeOnComplete: 100, removeOnFail: 200, jobId: `label-download-${orderSn}` }
+              );
+              console.log(`[shopee-push] code=4 enqueued label-download (pre-gen) untuk ${orderSn}`);
+            }
+
           } else if (code === PUSH_CODE_SHIPPING_DOCUMENT) {
             // code 15: Shipping Document (AWB/label) Status Push
             const orderSn: string = data.ordersn ?? data.order_sn;
