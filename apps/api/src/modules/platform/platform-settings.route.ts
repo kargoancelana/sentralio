@@ -179,6 +179,7 @@ export const platformSettingsRoutes = new Elysia({ prefix: '/platform' })
       actorType: 'platform',
       actorId: platformAdmin.id,
       action: 'platform.settings.update',
+      targetType: 'settings',
       before,
       after: settings,
       ip: extractAuditIp(request, server as Parameters<typeof extractAuditIp>[1]),

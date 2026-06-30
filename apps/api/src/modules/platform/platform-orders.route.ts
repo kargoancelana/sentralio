@@ -135,9 +135,8 @@ export const platformOrdersRoutes = new Elysia({ prefix: '/platform' })
         await logAudit({
           actorType: 'platform',
           actorId: platformAdmin.id,
-          companyId: result.order.companyId,
           action: 'platform.order.approve',
-          targetType: 'order',
+          targetType: 'subscription_order',
           targetId: id,
           after: result.order,
           ip: extractAuditIp(request, server as Parameters<typeof extractAuditIp>[1]),
@@ -179,9 +178,8 @@ export const platformOrdersRoutes = new Elysia({ prefix: '/platform' })
         await logAudit({
           actorType: 'platform',
           actorId: platformAdmin.id,
-          companyId: result.order.companyId,
           action: 'platform.order.reject',
-          targetType: 'order',
+          targetType: 'subscription_order',
           targetId: id,
           after: result.order,
           ip: extractAuditIp(request, server as Parameters<typeof extractAuditIp>[1]),
