@@ -95,6 +95,10 @@ export function ShipmentProgressDialog({ isOpen, orderSn, onClose, onComplete }:
 
     // ── Step 3: Prefetch Label Data ──
     setStep('PREFETCHING_LABEL');
+    // Warm KEDUA cache supaya tombol apa pun yang diklik user langsung instan:
+    // - Label Resmi (PDF) via orderShippingLabel → menghangatkan cache PDF di server (fire-and-forget)
+    // - Label Custom (JSON) via orderLabelData
+    api.orderShippingLabel(orderSn).catch(() => { /* ok — warming saja */ });
     try {
       const labelRes = await api.orderLabelData(orderSn);
       if (labelRes.success && labelRes.data) {
@@ -448,6 +452,8 @@ export function BatchShipmentProgressDialog({ isOpen, orderSns, onClose, onCompl
 
           // Batch prefetch label data for all ready orders (non-blocking)
           if (readyOrderSns.length > 0) {
+            // Warm cache PDF resmi batch juga (fire-and-forget) biar "Cetak Label Asli" instan.
+            api.orderShippingLabelBatch(readyOrderSns).catch(() => { /* ok — warming saja */ });
             api.orderLabelDataBatch(readyOrderSns)
               .then(batchLabelRes => {
                 if (batchLabelRes.success && batchLabelRes.data) {
