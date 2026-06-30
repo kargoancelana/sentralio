@@ -194,8 +194,13 @@ export const shopeePushRoutes = new Elysia()
                 { attempts: 5, backoff: { type: "exponential", delay: 10000 }, removeOnComplete: 100, removeOnFail: 200, jobId: `label-download-${orderSn}` }
               );
               console.log(`[shopee-push] code=15 enqueued label-download untuk ${orderSn}`);
+            } else if (status === "FAILED") {
+              // Shipping document gagal generate (Shopee backend error, package issue, dll).
+              // Invalidate cached label (kalau ada) → user harus retry manual atau contact support.
+              await labelCache.delete(orderSn);
+              console.log(`[shopee-push] code=15 status=FAILED, invalidated label cache untuk ${orderSn}`);
             } else {
-              console.log(`[shopee-push] code=15 status=${status} (bukan READY), skip`);
+              console.log(`[shopee-push] code=15 status=${status} (bukan READY/FAILED), skip`);
             }
 
           } else {
