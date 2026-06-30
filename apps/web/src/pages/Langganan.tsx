@@ -146,7 +146,8 @@ export function Langganan() {
           await fetchAll();
         } else if (err.status === 404) {
           setOrderError('Paket tidak ditemukan.');
-        } else if (err.status === 400 && err.message.includes('Kupon')) {
+        } else if (err.status === 400) {
+          // Display backend error message directly for all 400 errors
           setOrderError(err.message);
         } else {
           setOrderError('Terjadi kesalahan, coba lagi.');
@@ -323,7 +324,12 @@ export function Langganan() {
                         className="form-input"
                         placeholder="Masukkan kode kupon"
                         value={couponCode}
-                        onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                        onChange={(e) => {
+                          setCouponCode(e.target.value.toUpperCase());
+                          // Reset validation state when user edits
+                          setCouponValid(null);
+                          setCouponMessage('');
+                        }}
                         disabled={validatingCoupon || creatingOrder}
                         style={{ flex: 1 }}
                       />
