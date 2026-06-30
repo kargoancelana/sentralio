@@ -57,6 +57,13 @@
       "when": 1782779359762,
       "tag": "0007_smiling_butterfly",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1782818074818,
+      "tag": "0008_closed_vision",
+      "breakpoints": true
     }
   ]
 }
