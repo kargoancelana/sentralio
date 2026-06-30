@@ -1,11 +1,11 @@
 /**
- * Subscription_Order_Service — buat order langganan + attach bukti (Fase 4.2a).
+ * Subscription_Order_Service — buat order langganan + attach bukti (Fase 4.2a + 5.2).
  *
  * Dipakai route /subscription/orders* (tenant, EXEMPT dari subscription-guard
  * sehingga company 'pending' tetap bisa submit order + upload bukti walau belum
  * punya langganan aktif).
  *
- * TIDAK ada kupon di sini (Fase 5). amount = plan.price saat order dibuat.
+ * Fase 5.2: apply kupon diskon saat order dibuat. couponCode opsional.
  * Approve/reject + bikin row subscriptions ada di portal Super Admin (Fase 4.1),
  * BUKAN di sini.
  */
@@ -14,6 +14,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { db as defaultDb } from '../../db/client';
 import { plans, subscriptionOrders } from '../../db/schema';
 import type { DrizzleDb } from '../auth/lockout';
+import { validateCoupon, formatCouponError } from './coupon-apply.service';
 
 export interface OrderItem {
   id: number;
@@ -54,10 +55,11 @@ function mapOrderRow(row: any, planName: string | null): OrderItem {
   };
 }
 
-/** Buat order pending baru untuk company. Tolak kalau sudah ada order pending. */
+/** Buat order pending baru untuk company. Tolak kalau sudah ada order pending. Apply kupon kalau ada (Fase 5.2). */
 export async function createOrder(input: {
   companyId: number;
   planId: unknown;
+  couponCode?: string;
   db?: DrizzleDb;
 }): Promise<CreateOrderResult> {
   const db = input.db ?? defaultDb;
@@ -90,10 +92,34 @@ export async function createOrder(input: {
       return { kind: 'fail-pending-exists', order: mapOrderRow(pendingRows[0], null) };
     }
 
+    // Validasi & apply kupon kalau ada (Fase 5.2)
+    let couponId: number | undefined;
+    let discountAmount = 0;
+    let finalAmount = plan.price;
+
+    if (input.couponCode && input.couponCode.trim() !== '') {
+      const couponResult = await validateCoupon({
+        code: input.couponCode,
+        planId,
+        now: new Date(),
+        db,
+      });
+
+      if (!couponResult.valid) {
+        return { kind: 'fail-validation', message: formatCouponError(couponResult.reason) };
+      }
+
+      couponId = couponResult.couponId;
+      discountAmount = couponResult.discountAmount;
+      finalAmount = couponResult.finalAmount;
+    }
+
     const [ins] = await db.insert(subscriptionOrders).values({
       companyId: input.companyId,
       planId,
-      amount: plan.price,
+      couponId,
+      discountAmount,
+      amount: finalAmount,
       status: 'pending',
     });
     const orderId = (ins as { insertId: number }).insertId;

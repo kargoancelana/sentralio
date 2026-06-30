@@ -24,6 +24,7 @@ import {
 import { uploadProof } from '../../services/storage.service';
 import { listActivePlans } from './subscription-plan.service';
 import { getPaymentInfo } from '../platform/platform-settings.service';
+import { validateCoupon, formatCouponError } from './coupon-apply.service';
 
 export const subscriptionRoutes = new Elysia()
   .get('/subscription/status', async ({ user, set }) => {
@@ -47,10 +48,50 @@ export const subscriptionRoutes = new Elysia()
     return { ok: true, paymentInfo };
   })
 
-  // Buat order pending baru. Body: { planId: number }.
+  // Validasi kupon + preview diskon sebelum submit order (Fase 5.2).
+  // Body: { planId: number, code: string } -> { valid, discountAmount?, finalAmount?, reason? }
+  .post('/subscription/coupons/validate', async ({ body, set }) => {
+    const b = (body ?? {}) as { planId?: unknown; code?: unknown };
+    
+    if (!Number.isInteger(b.planId) || (b.planId as number) <= 0) {
+      set.status = 400;
+      return { ok: false, error: 'validation', message: 'planId wajib berupa angka.' };
+    }
+    if (typeof b.code !== 'string' || b.code.trim() === '') {
+      set.status = 400;
+      return { ok: false, error: 'validation', message: 'code wajib diisi.' };
+    }
+
+    const result = await validateCoupon({
+      code: b.code,
+      planId: b.planId as number,
+      now: new Date(),
+    });
+
+    if (result.valid) {
+      set.status = 200;
+      return {
+        ok: true,
+        valid: true,
+        discountAmount: result.discountAmount,
+        finalAmount: result.finalAmount,
+      };
+    } else {
+      set.status = 200;
+      return {
+        ok: true,
+        valid: false,
+        reason: result.reason,
+        message: formatCouponError(result.reason),
+      };
+    }
+  })
+
+  // Buat order pending baru. Body: { planId: number, couponCode?: string } (Fase 5.2).
   .post('/subscription/orders', async ({ user, body, set }) => {
-    const b = (body ?? {}) as { planId?: unknown };
-    const result = await createOrder({ companyId: user.companyId, planId: b.planId });
+    const b = (body ?? {}) as { planId?: unknown; couponCode?: unknown };
+    const couponCode = typeof b.couponCode === 'string' ? b.couponCode : undefined;
+    const result = await createOrder({ companyId: user.companyId, planId: b.planId, couponCode });
     switch (result.kind) {
       case 'ok':
         set.status = 201;
