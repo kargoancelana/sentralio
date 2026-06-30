@@ -491,8 +491,9 @@ export const subscriptionOrders = mysqlTable("subscription_orders", {
   id: int("id").primaryKey().autoincrement(),
   companyId: int("company_id").notNull().references(() => companies.id),
   planId: int("plan_id").notNull().references(() => plans.id),
-  // coupons belum ada (Fase 5). Simpan nullable TANPA FK dulu; FK ditambah di Fase 5.
-  couponId: int("coupon_id"),
+  // FK ditambah di Fase 5.2. onDelete: restrict (jaga audit, coupon yang pernah dipakai tidak boleh di-hard-delete).
+  couponId: int("coupon_id").references(() => coupons.id, { onDelete: "restrict", onUpdate: "cascade" }),
+  discountAmount: int("discount_amount").notNull().default(0), // Rupiah, snapshot nilai diskon saat order dibuat (Fase 5.2)
   amount: int("amount").notNull().default(0),        // Rupiah, harga FINAL (setelah diskon kupon kalau ada)
   // Object key di storage (mis. 'subscription-proofs/company-1/uuid.jpg'). BUKAN URL publik.
   // Nullable: order bisa dibuat dulu, bukti di-upload menyusul (alur detail di 4.2).

@@ -15,9 +15,9 @@
  * direplikasi langsung di dalam transaction approveOrder.
  */
 
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { db as defaultDb } from '../../db/client';
-import { subscriptionOrders, subscriptions, plans, companies } from '../../db/schema';
+import { subscriptionOrders, subscriptions, plans, companies, coupons } from '../../db/schema';
 import type { DrizzleDb } from '../auth/lockout';
 
 export interface PlatformOrderItem {
@@ -198,7 +198,15 @@ export async function approveOrder(args: {
       .set({ status: 'approved', reviewedBy, reviewedAt: now, updatedAt: now })
       .where(eq(subscriptionOrders.id, orderId));
 
-    // 2. Auto-cancel subscriptions active milik company ini
+    // 2. Increment used_count kalau order pakai kupon (Fase 5.2, atomic)
+    if (order.couponId !== null) {
+      await tx
+        .update(coupons)
+        .set({ usedCount: sql`${coupons.usedCount} + 1`, updatedAt: now })
+        .where(eq(coupons.id, order.couponId));
+    }
+
+    // 3. Auto-cancel subscriptions active milik company ini
     await tx
       .update(subscriptions)
       .set({ status: 'cancelled', updatedAt: now })
@@ -209,7 +217,7 @@ export async function approveOrder(args: {
         ),
       );
 
-    // 3. Insert subscription baru
+    // 4. Insert subscription baru
     await tx.insert(subscriptions).values({
       companyId: order.companyId,
       planId: plan.id,
@@ -218,7 +226,7 @@ export async function approveOrder(args: {
       endsAt,
     });
 
-    // 4. Company → active
+    // 5. Company → active
     await tx
       .update(companies)
       .set({ status: 'active' })

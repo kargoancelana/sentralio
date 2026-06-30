@@ -1,0 +1,2 @@
+ALTER TABLE `subscription_orders` ADD `discount_amount` int DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `subscription_orders` ADD CONSTRAINT `subscription_orders_coupon_id_coupons_id_fk` FOREIGN KEY (`coupon_id`) REFERENCES `coupons`(`id`) ON DELETE restrict ON UPDATE cascade;
