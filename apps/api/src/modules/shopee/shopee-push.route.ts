@@ -130,9 +130,9 @@ export const shopeePushRoutes = new Elysia()
               { attempts: 3, backoff: { type: "exponential", delay: 5000 }, removeOnComplete: 100, removeOnFail: 200, jobId: `order-status-${orderSn}` }
             );
 
-            // Status terminal (batal/unpaid) → invalidate cached label (kalau ada).
+            // Status terminal (batal/retur) → invalidate cached label (kalau ada).
             // Label nggak valid lagi untuk order ini; kalau user coba print = error.
-            const terminalStatuses = ["CANCELLED", "UNPAID"];
+            const terminalStatuses = ["CANCELLED", "IN_CANCEL", "TO_RETURN"];
             if (terminalStatuses.includes(newStatus)) {
               await labelCache.delete(orderSn);
               console.log(`[shopee-push] code=3 invalidated label cache untuk ${orderSn} (status=${newStatus})`);
