@@ -14,6 +14,7 @@ import { Elysia } from 'elysia';
 import { platformLogin, platformMe, type PlatformLoginResult } from './platform-auth.service';
 import { buildPlatformClearCookie, PLATFORM_COOKIE_NAME } from './platform-cookie';
 import { hasValidTenantScope } from '../auth/scope-guard';
+import { logAudit } from './audit-log.service';
 
 /** Tenant session cookie name — mirror of auth.middleware's local constant. */
 const TENANT_COOKIE_NAME = 'wms_session';
@@ -52,6 +53,12 @@ export const platformAuthPublicRoutes = new Elysia({ prefix: '/platform/auth' })
       case 'ok':
         set.status = 200;
         set.headers['Set-Cookie'] = result.cookie;
+        await logAudit({
+          actorType: 'platform',
+          actorId: result.admin.id,
+          action: 'platform.auth.login_success',
+          ip,
+        });
         return {
           ok: true,
           admin: {
@@ -62,6 +69,12 @@ export const platformAuthPublicRoutes = new Elysia({ prefix: '/platform/auth' })
         };
       case 'fail-401':
         set.status = 401;
+        await logAudit({
+          actorType: 'platform',
+          actorId: null,
+          action: 'platform.auth.login_failure',
+          ip,
+        });
         return { ok: false, error: 'invalid_credentials' };
       case 'fail-429':
         set.status = 429;

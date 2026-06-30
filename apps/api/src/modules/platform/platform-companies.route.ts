@@ -16,6 +16,7 @@ import { buildPlatformClearCookie, PLATFORM_COOKIE_NAME } from './platform-cooki
 import { hasValidTenantScope } from '../auth/scope-guard';
 import { listCompanies, getCompanyDetail } from './platform-companies.service';
 import { getCompanySubscriptions, assignSubscription, cancelSubscription } from './platform-subscriptions.service';
+import { logAudit, extractAuditIp } from './audit-log.service';
 
 /** Tenant session cookie name — mirror of auth.middleware's local constant. */
 const TENANT_COOKIE_NAME = 'wms_session';
@@ -102,7 +103,7 @@ export const platformCompaniesRoutes = new Elysia({ prefix: '/platform' })
   })
 
   // POST /companies/:id/subscriptions
-  .post('/companies/:id/subscriptions', async ({ params, body, set }) => {
+  .post('/companies/:id/subscriptions', async ({ params, body, set, platformAdmin, request, server }) => {
     const id = Number(params.id);
     if (!Number.isInteger(id) || id <= 0) {
       set.status = 400;
@@ -126,12 +127,22 @@ export const platformCompaniesRoutes = new Elysia({ prefix: '/platform' })
       return { ok: false, error: 'invalid_plan' };
     }
 
+    await logAudit({
+      actorType: 'platform',
+      actorId: platformAdmin.id,
+      companyId: id,
+      action: 'platform.subscription.assign',
+      targetType: 'subscription',
+      targetId: result.subscription.id,
+      after: result.subscription,
+      ip: extractAuditIp(request, server as Parameters<typeof extractAuditIp>[1]),
+    });
     set.status = 201;
     return { ok: true, subscription: result.subscription };
   })
 
   // POST /companies/:id/subscriptions/:subId/cancel
-  .post('/companies/:id/subscriptions/:subId/cancel', async ({ params, set }) => {
+  .post('/companies/:id/subscriptions/:subId/cancel', async ({ params, set, platformAdmin, request, server }) => {
     const id = Number(params.id);
     const subId = Number(params.subId);
 
@@ -155,6 +166,16 @@ export const platformCompaniesRoutes = new Elysia({ prefix: '/platform' })
       return { ok: false, error: 'not_active' };
     }
 
+    await logAudit({
+      actorType: 'platform',
+      actorId: platformAdmin.id,
+      companyId: id,
+      action: 'platform.subscription.cancel',
+      targetType: 'subscription',
+      targetId: subId,
+      after: result.subscription,
+      ip: extractAuditIp(request, server as Parameters<typeof extractAuditIp>[1]),
+    });
     set.status = 200;
     return { ok: true, subscription: result.subscription };
   });

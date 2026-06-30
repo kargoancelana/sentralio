@@ -3,6 +3,7 @@ import { platformMe } from './platform-auth.service';
 import { buildPlatformClearCookie, PLATFORM_COOKIE_NAME } from './platform-cookie';
 import { hasValidTenantScope } from '../auth/scope-guard';
 import { createResetToken } from '../auth/password-reset.service';
+import { logAudit, extractAuditIp } from './audit-log.service';
 
 /** Tenant session cookie name — mirror of auth.middleware's local constant. */
 const TENANT_COOKIE_NAME = 'wms_session';
@@ -53,7 +54,7 @@ export const platformUsersRoutes = new Elysia({ prefix: '/platform' })
       return { ok: false, error: 'unauthorized', message: 'A valid platform session is required.' };
     }
   })
-  .post('/companies/:id/users/:userId/reset-password', async ({ params, platformAdmin, set }) => {
+  .post('/companies/:id/users/:userId/reset-password', async ({ params, platformAdmin, set, request, server }) => {
     const companyId = Number(params.id);
     const userId = Number(params.userId);
 
@@ -75,6 +76,15 @@ export const platformUsersRoutes = new Elysia({ prefix: '/platform' })
         return { ok: false, error: 'not_found' };
       case 'ok':
         set.status = 200;
+        await logAudit({
+          actorType: 'platform',
+          actorId: platformAdmin.id,
+          companyId,
+          action: 'platform.user.reset_password',
+          targetType: 'user',
+          targetId: userId,
+          ip: extractAuditIp(request, server as Parameters<typeof extractAuditIp>[1]),
+        });
         return {
           ok: true,
           resetUrl: result.resetUrl,

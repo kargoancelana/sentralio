@@ -13,6 +13,7 @@ import { buildPlatformClearCookie, PLATFORM_COOKIE_NAME } from './platform-cooki
 import { hasValidTenantScope } from '../auth/scope-guard';
 import { getSettings, updateSettings } from './platform-settings.service';
 import type { PaymentInfo, MaintenanceSetting, MaintenanceLevel } from './platform-settings.service';
+import { logAudit, extractAuditIp } from './audit-log.service';
 
 /** Tenant session cookie name — mirror dari auth.middleware. */
 const TENANT_COOKIE_NAME = 'wms_session';
@@ -164,15 +165,24 @@ export const platformSettingsRoutes = new Elysia({ prefix: '/platform' })
   })
 
   // PUT /platform/settings
-  .put('/settings', async ({ body, set }) => {
+  .put('/settings', async ({ body, set, platformAdmin, request, server }) => {
     const validation = validateSettingsInput(body);
     if (!validation.ok) {
       set.status = 400;
       return { ok: false, error: 'validation', message: validation.message };
     }
 
+    const before = await getSettings();
     await updateSettings(validation.value);
     const settings = await getSettings();
+    await logAudit({
+      actorType: 'platform',
+      actorId: platformAdmin.id,
+      action: 'platform.settings.update',
+      before,
+      after: settings,
+      ip: extractAuditIp(request, server as Parameters<typeof extractAuditIp>[1]),
+    });
     set.status = 200;
     return { ok: true, settings };
   });

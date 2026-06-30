@@ -17,6 +17,7 @@ import { buildPlatformClearCookie, PLATFORM_COOKIE_NAME } from './platform-cooki
 import { hasValidTenantScope } from '../auth/scope-guard';
 import { listPlans, getPlan, createPlan, updatePlan } from './platform-plans.service';
 import type { PlanInput } from './platform-plans.service';
+import { logAudit, extractAuditIp } from './audit-log.service';
 
 /** Tenant session cookie name — mirror dari auth.middleware. */
 const TENANT_COOKIE_NAME = 'wms_session';
@@ -176,7 +177,7 @@ export const platformPlansRoutes = new Elysia({ prefix: '/platform' })
   })
 
   // POST /platform/plans
-  .post('/plans', async ({ body, set }) => {
+  .post('/plans', async ({ body, set, platformAdmin, request, server }) => {
     const validation = validatePlanInput(body, true);
     if (!validation.ok) {
       set.status = 400;
@@ -184,12 +185,21 @@ export const platformPlansRoutes = new Elysia({ prefix: '/platform' })
     }
 
     const plan = await createPlan(validation.value);
+    await logAudit({
+      actorType: 'platform',
+      actorId: platformAdmin.id,
+      action: 'platform.plan.create',
+      targetType: 'plan',
+      targetId: plan.id,
+      after: plan,
+      ip: extractAuditIp(request, server as Parameters<typeof extractAuditIp>[1]),
+    });
     set.status = 201;
     return { ok: true, plan };
   })
 
   // PUT /platform/plans/:id
-  .put('/plans/:id', async ({ params, body, set }) => {
+  .put('/plans/:id', async ({ params, body, set, platformAdmin, request, server }) => {
     const id = Number(params.id);
     if (!Number.isInteger(id) || id <= 0) {
       set.status = 400;
@@ -202,12 +212,23 @@ export const platformPlansRoutes = new Elysia({ prefix: '/platform' })
       return { ok: false, error: 'validation', message: validation.message };
     }
 
+    const before = await getPlan(id);
     const plan = await updatePlan(id, validation.value);
     if (!plan) {
       set.status = 404;
       return { ok: false, error: 'not_found' };
     }
 
+    await logAudit({
+      actorType: 'platform',
+      actorId: platformAdmin.id,
+      action: 'platform.plan.update',
+      targetType: 'plan',
+      targetId: id,
+      before,
+      after: plan,
+      ip: extractAuditIp(request, server as Parameters<typeof extractAuditIp>[1]),
+    });
     set.status = 200;
     return { ok: true, plan };
   });
