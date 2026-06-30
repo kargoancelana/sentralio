@@ -24,6 +24,9 @@ export interface SubscriptionOrder {
   planId: number;
   planName: string | null;
   amount: number;
+  couponId: number | null;
+  couponCode: string | null;
+  discountAmount: number;
   status: 'pending' | 'approved' | 'rejected';
   proofKey: string | null;
   note: string | null;
@@ -477,10 +480,22 @@ export const api = {
     fetchApi<{ ok: boolean; maintenance: MaintenanceSetting }>('/system/status'),
   subscriptionOrders: () =>
     fetchApi<{ ok: boolean; orders: SubscriptionOrder[] }>('/subscription/orders'),
-  subscriptionCreateOrder: (planId: number) =>
+  subscriptionValidateCoupon: (planId: number, code: string) =>
+    fetchApi<{
+      ok: boolean;
+      valid: boolean;
+      discountAmount?: number;
+      finalAmount?: number;
+      reason?: string;
+      message?: string;
+    }>('/subscription/coupons/validate', {
+      method: 'POST',
+      body: JSON.stringify({ planId, code }),
+    }),
+  subscriptionCreateOrder: (planId: number, couponCode?: string) =>
     fetchApi<{ ok: boolean; order: SubscriptionOrder }>('/subscription/orders', {
       method: 'POST',
-      body: JSON.stringify({ planId }),
+      body: JSON.stringify({ planId, couponCode }),
     }),
   subscriptionUploadProof: (orderId: number, file: File) => {
     const form = new FormData();

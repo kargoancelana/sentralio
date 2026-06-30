@@ -192,8 +192,29 @@ export function PlatformOrders() {
             {orders.map((o) => (
               <tr key={o.id}>
                 <td>{o.companyName ?? '-'}</td>
-                <td>{o.planName ?? '-'}</td>
-                <td>{formatRupiah(o.amount)}</td>
+                <td>
+                  {o.planName ?? '-'}
+                  {o.couponCode && (
+                    <div style={{ fontSize: '0.75rem', color: 'var(--success, #22c55e)', marginTop: '4px' }}>
+                      🎟️ Kupon: {o.couponCode}
+                    </div>
+                  )}
+                </td>
+                <td>
+                  {o.discountAmount > 0 ? (
+                    <>
+                      <div style={{ textDecoration: 'line-through', fontSize: '0.85rem', color: 'var(--text3)' }}>
+                        {formatRupiah(o.amount + o.discountAmount)}
+                      </div>
+                      <div style={{ fontWeight: 700 }}>{formatRupiah(o.amount)}</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--success, #22c55e)' }}>
+                        Hemat {formatRupiah(o.discountAmount)}
+                      </div>
+                    </>
+                  ) : (
+                    formatRupiah(o.amount)
+                  )}
+                </td>
                 <td>{formatDate(o.createdAt)}</td>
                 <td>
                   <span className={statusBadgeClass(o.status)}>{o.status}</span>
