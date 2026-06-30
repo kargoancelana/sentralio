@@ -24,9 +24,9 @@ export interface SubscriptionOrder {
   planId: number;
   planName: string | null;
   amount: number;
-  couponId: number | null;
-  couponCode: string | null;
-  discountAmount: number;
+  couponId?: number | null;
+  couponCode?: string | null;
+  discountAmount?: number;
   status: 'pending' | 'approved' | 'rejected';
   proofKey: string | null;
   note: string | null;
