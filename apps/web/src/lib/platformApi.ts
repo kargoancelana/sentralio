@@ -55,6 +55,9 @@ export interface PlatformOrder {
   planId: number;
   planName: string | null;
   amount: number;
+  couponId: number | null;
+  couponCode: string | null;
+  discountAmount: number;
   proofKey: string | null;
   status: PlatformOrderStatus;
   note: string | null;

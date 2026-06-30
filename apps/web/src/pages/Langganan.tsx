@@ -53,6 +53,15 @@ export function Langganan() {
   const [creatingOrder, setCreatingOrder] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
 
+  // Coupon state
+  const [couponCode, setCouponCode] = useState('');
+  const [validatingCoupon, setValidatingCoupon] = useState(false);
+  const [couponValid, setCouponValid] = useState<boolean | null>(null);
+  const [couponDiscount, setCouponDiscount] = useState(0);
+  const [couponFinalAmount, setCouponFinalAmount] = useState(0);
+  const [couponMessage, setCouponMessage] = useState('');
+  const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
+
   // Checking status
   const [checking, setChecking] = useState(false);
 
@@ -81,18 +90,68 @@ export function Langganan() {
     void fetchAll();
   }, []);
 
-  async function handleSelectPlan(planId: number) {
+  async function handleValidateCoupon(planId: number, code: string) {
+    if (!code.trim()) {
+      setCouponValid(null);
+      setCouponMessage('');
+      return;
+    }
+    
+    setValidatingCoupon(true);
+    setCouponValid(null);
+    setCouponMessage('');
+    try {
+      const res = await api.subscriptionValidateCoupon(planId, code.trim());
+      if (res.valid) {
+        setCouponValid(true);
+        setCouponDiscount(res.discountAmount ?? 0);
+        setCouponFinalAmount(res.finalAmount ?? 0);
+        setCouponMessage('Kupon valid!');
+      } else {
+        setCouponValid(false);
+        setCouponDiscount(0);
+        setCouponFinalAmount(0);
+        const reasonMap: Record<string, string> = {
+          not_found: 'Kode kupon tidak ditemukan',
+          inactive: 'Kupon tidak aktif',
+          expired: 'Kupon sudah kadaluarsa',
+          not_started: 'Kupon belum berlaku',
+          max_uses_reached: 'Kupon sudah mencapai batas penggunaan',
+          plan_mismatch: 'Kupon tidak berlaku untuk paket ini',
+        };
+        setCouponMessage(res.reason ? reasonMap[res.reason] ?? res.message ?? 'Kupon tidak valid' : res.message ?? 'Kupon tidak valid');
+      }
+    } catch {
+      setCouponValid(false);
+      setCouponMessage('Gagal memvalidasi kupon');
+    } finally {
+      setValidatingCoupon(false);
+    }
+  }
+
+  async function handleSelectPlan(planId: number, withCoupon = false) {
     setCreatingOrder(true);
     setOrderError(null);
     try {
-      await api.subscriptionCreateOrder(planId);
+      const coupon = withCoupon && couponCode.trim() ? couponCode.trim() : undefined;
+      await api.subscriptionCreateOrder(planId, coupon);
       await fetchAll();
+      // Reset coupon state
+      setCouponCode('');
+      setCouponValid(null);
+      setSelectedPlanId(null);
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
-        // pending_order_exists — refetch
-        await fetchAll();
-      } else if (err instanceof ApiError && err.status === 404) {
-        setOrderError('Paket tidak ditemukan.');
+      if (err instanceof ApiError) {
+        if (err.status === 409) {
+          await fetchAll();
+        } else if (err.status === 404) {
+          setOrderError('Paket tidak ditemukan.');
+        } else if (err.status === 400) {
+          // Display backend error message directly for all 400 errors
+          setOrderError(err.message);
+        } else {
+          setOrderError('Terjadi kesalahan, coba lagi.');
+        }
       } else {
         setOrderError('Terjadi kesalahan, coba lagi.');
       }
@@ -254,6 +313,79 @@ export function Langganan() {
               <div style={{ marginBottom: '24px' }}>
                 <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '16px', color: 'var(--text1)' }}>Pilih Paket</h2>
                 {orderError && <p style={{ color: 'var(--error)', fontSize: '0.85rem', marginBottom: '12px' }}>{orderError}</p>}
+                
+                {/* Coupon input section */}
+                {selectedPlanId && (
+                  <div className="card" style={{ padding: '20px', marginBottom: '16px' }}>
+                    <h3 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: '12px', color: 'var(--text1)' }}>Punya Kode Kupon?</h3>
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="Masukkan kode kupon"
+                        value={couponCode}
+                        onChange={(e) => {
+                          setCouponCode(e.target.value.toUpperCase());
+                          // Reset validation state when user edits
+                          setCouponValid(null);
+                          setCouponMessage('');
+                        }}
+                        disabled={validatingCoupon || creatingOrder}
+                        style={{ flex: 1 }}
+                      />
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={!couponCode.trim() || validatingCoupon || creatingOrder}
+                        onClick={() => void handleValidateCoupon(selectedPlanId, couponCode)}
+                      >
+                        {validatingCoupon ? 'Cek...' : 'Terapkan'}
+                      </button>
+                    </div>
+                    {couponMessage && (
+                      <p style={{ fontSize: '0.85rem', margin: 0, color: couponValid ? 'var(--success, #22c55e)' : 'var(--error)' }}>
+                        {couponMessage}
+                      </p>
+                    )}
+                    {couponValid && (
+                      <div style={{ marginTop: '12px', padding: '12px', backgroundColor: 'var(--bg3)', borderRadius: '4px' }}>
+                        <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text2)' }}>
+                          Harga asli: <span style={{ textDecoration: 'line-through' }}>{formatRupiah(plans.find(p => p.id === selectedPlanId)?.price ?? 0)}</span>
+                        </p>
+                        <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--success, #22c55e)' }}>
+                          Diskon: -{formatRupiah(couponDiscount)}
+                        </p>
+                        <p style={{ margin: '4px 0 0 0', fontSize: '1rem', fontWeight: 700, color: 'var(--text1)' }}>
+                          Total: {formatRupiah(couponFinalAmount)}
+                        </p>
+                      </div>
+                    )}
+                    <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => {
+                          setSelectedPlanId(null);
+                          setCouponCode('');
+                          setCouponValid(null);
+                          setCouponMessage('');
+                        }}
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        disabled={creatingOrder || (couponCode.trim() !== '' && !couponValid)}
+                        onClick={() => void handleSelectPlan(selectedPlanId, couponValid === true)}
+                        style={{ flex: 1 }}
+                      >
+                        {creatingOrder ? 'Memproses...' : 'Konfirmasi Order'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {plans.length === 0 ? (
                   <p style={{ color: 'var(--text3)' }}>Belum ada paket tersedia. Hubungi admin.</p>
                 ) : (
@@ -273,8 +405,8 @@ export function Langganan() {
                           type="button"
                           className="btn btn-primary"
                           style={{ marginTop: '8px' }}
-                          disabled={creatingOrder}
-                          onClick={() => void handleSelectPlan(plan.id)}
+                          disabled={creatingOrder || selectedPlanId !== null}
+                          onClick={() => setSelectedPlanId(plan.id)}
                         >
                           Pilih paket
                         </button>
