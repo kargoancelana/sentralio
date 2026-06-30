@@ -25,6 +25,7 @@ describe('coupon-apply.service', () => {
     await db.delete(coupons).where(eq(coupons.codeUpper, 'PLANMISMATCH'));
     await db.delete(coupons).where(eq(coupons.codeUpper, 'PERCENT50'));
     await db.delete(coupons).where(eq(coupons.codeUpper, 'FIXED100K'));
+    await db.delete(coupons).where(eq(coupons.codeUpper, 'FIXED300K'));
 
     // Setup test plan (harga 200.000)
     const planRows = await db.select().from(plans).where(eq(plans.isActive, 1)).limit(1);
