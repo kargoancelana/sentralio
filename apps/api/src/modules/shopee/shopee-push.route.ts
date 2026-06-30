@@ -15,6 +15,7 @@ import { db } from "../../db/client";
 import { shopeeCredentials, shopeeOrders } from "../../db/schema";
 import { env } from "../../config/env";
 import { pushSyncQueue, labelDownloadQueue } from "../../queue";
+import { labelCache } from "../../services/label-cache.service";
 
 // Push code definitions (Shopee Open Platform)
 const PUSH_CODE_ORDER_STATUS = 3;
@@ -128,6 +129,14 @@ export const shopeePushRoutes = new Elysia()
               { shopId, orderSn, companyId, type: "order_status" },
               { attempts: 3, backoff: { type: "exponential", delay: 5000 }, removeOnComplete: 100, removeOnFail: 200, jobId: `order-status-${orderSn}` }
             );
+
+            // Status terminal (batal/unpaid) → invalidate cached label (kalau ada).
+            // Label nggak valid lagi untuk order ini; kalau user coba print = error.
+            const terminalStatuses = ["CANCELLED", "UNPAID"];
+            if (terminalStatuses.includes(newStatus)) {
+              await labelCache.delete(orderSn);
+              console.log(`[shopee-push] code=3 invalidated label cache untuk ${orderSn} (status=${newStatus})`);
+            }
 
           } else if (code === PUSH_CODE_TRACKING) {
             // code 4: TrackingNo Push
