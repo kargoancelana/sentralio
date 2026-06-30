@@ -21,6 +21,7 @@ import {
   rejectOrder,
 } from './platform-orders.service';
 import { isStorageConfigured, getProofPresignedUrl } from '../../services/storage.service';
+import { logAudit, extractAuditIp } from './audit-log.service';
 
 /** Tenant session cookie name — mirror dari auth.middleware. */
 const TENANT_COOKIE_NAME = 'wms_session';
@@ -120,7 +121,7 @@ export const platformOrdersRoutes = new Elysia({ prefix: '/platform' })
   })
 
   // POST /platform/orders/:id/approve
-  .post('/orders/:id/approve', async ({ params, platformAdmin, set }) => {
+  .post('/orders/:id/approve', async ({ params, platformAdmin, set, request, server }) => {
     const id = Number(params.id);
     if (!Number.isInteger(id) || id <= 0) {
       set.status = 400;
@@ -131,6 +132,15 @@ export const platformOrdersRoutes = new Elysia({ prefix: '/platform' })
 
     switch (result.kind) {
       case 'ok':
+        await logAudit({
+          actorType: 'platform',
+          actorId: platformAdmin.id,
+          action: 'platform.order.approve',
+          targetType: 'subscription_order',
+          targetId: id,
+          after: result.order,
+          ip: extractAuditIp(request, server as Parameters<typeof extractAuditIp>[1]),
+        });
         set.status = 200;
         return { ok: true, order: result.order };
       case 'not_found':
@@ -146,7 +156,7 @@ export const platformOrdersRoutes = new Elysia({ prefix: '/platform' })
   })
 
   // POST /platform/orders/:id/reject
-  .post('/orders/:id/reject', async ({ params, body, platformAdmin, set }) => {
+  .post('/orders/:id/reject', async ({ params, body, platformAdmin, set, request, server }) => {
     const id = Number(params.id);
     if (!Number.isInteger(id) || id <= 0) {
       set.status = 400;
@@ -165,6 +175,15 @@ export const platformOrdersRoutes = new Elysia({ prefix: '/platform' })
 
     switch (result.kind) {
       case 'ok':
+        await logAudit({
+          actorType: 'platform',
+          actorId: platformAdmin.id,
+          action: 'platform.order.reject',
+          targetType: 'subscription_order',
+          targetId: id,
+          after: result.order,
+          ip: extractAuditIp(request, server as Parameters<typeof extractAuditIp>[1]),
+        });
         set.status = 200;
         return { ok: true, order: result.order };
       case 'not_found':

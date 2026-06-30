@@ -17,6 +17,7 @@ import { buildPlatformClearCookie, PLATFORM_COOKIE_NAME } from './platform-cooki
 import { hasValidTenantScope } from '../auth/scope-guard';
 import { listCoupons, getCoupon, createCoupon, updateCoupon, DuplicateCouponCodeError, PlanNotFoundError } from './platform-coupons.service';
 import type { CouponInput } from './platform-coupons.service';
+import { logAudit, extractAuditIp } from './audit-log.service';
 
 /** Tenant session cookie name — mirror dari auth.middleware. */
 const TENANT_COOKIE_NAME = 'wms_session';
@@ -213,7 +214,7 @@ export const platformCouponsRoutes = new Elysia({ prefix: '/platform' })
   })
 
   // POST /platform/coupons
-  .post('/coupons', async ({ body, set }) => {
+  .post('/coupons', async ({ body, set, platformAdmin, request, server }) => {
     const validation = validateCouponInput(body, true);
     if (!validation.ok) {
       set.status = 400;
@@ -222,6 +223,15 @@ export const platformCouponsRoutes = new Elysia({ prefix: '/platform' })
 
     try {
       const coupon = await createCoupon(validation.value);
+      await logAudit({
+        actorType: 'platform',
+        actorId: platformAdmin.id,
+        action: 'platform.coupon.create',
+        targetType: 'coupon',
+        targetId: coupon.id,
+        after: coupon,
+        ip: extractAuditIp(request, server as Parameters<typeof extractAuditIp>[1]),
+      });
       set.status = 201;
       return { ok: true, coupon };
     } catch (e) {
@@ -238,7 +248,7 @@ export const platformCouponsRoutes = new Elysia({ prefix: '/platform' })
   })
 
   // PUT /platform/coupons/:id
-  .put('/coupons/:id', async ({ params, body, set }) => {
+  .put('/coupons/:id', async ({ params, body, set, platformAdmin, request, server }) => {
     const id = Number(params.id);
     if (!Number.isInteger(id) || id <= 0) {
       set.status = 400;
@@ -252,12 +262,23 @@ export const platformCouponsRoutes = new Elysia({ prefix: '/platform' })
     }
 
     try {
+      const before = await getCoupon(id);
       const coupon = await updateCoupon(id, validation.value);
       if (!coupon) {
         set.status = 404;
         return { ok: false, error: 'not_found' };
       }
 
+      await logAudit({
+        actorType: 'platform',
+        actorId: platformAdmin.id,
+        action: 'platform.coupon.update',
+        targetType: 'coupon',
+        targetId: id,
+        before,
+        after: coupon,
+        ip: extractAuditIp(request, server as Parameters<typeof extractAuditIp>[1]),
+      });
       set.status = 200;
       return { ok: true, coupon };
     } catch (e) {
