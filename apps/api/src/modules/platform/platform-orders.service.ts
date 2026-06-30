@@ -33,6 +33,9 @@ export interface PlatformOrderItem {
   reviewedBy: number | null;
   reviewedAt: string | null; // ISO
   createdAt: string;         // ISO
+  couponId: number | null;
+  couponCode: string | null;
+  discountAmount: number;
 }
 
 export type ApproveResult =
@@ -62,6 +65,9 @@ function mapOrderRow(row: {
   reviewedBy: number | null;
   reviewedAt: Date | null;
   createdAt: Date;
+  couponId: number | null;
+  couponCode: string | null;
+  discountAmount: number;
 }): PlatformOrderItem {
   return {
     id: row.id,
@@ -76,6 +82,9 @@ function mapOrderRow(row: {
     reviewedBy: row.reviewedBy ?? null,
     reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
+    couponId: row.couponId ?? null,
+    couponCode: row.couponCode ?? null,
+    discountAmount: row.discountAmount,
   };
 }
 
@@ -97,10 +106,14 @@ async function selectOrderById(
       reviewedBy: subscriptionOrders.reviewedBy,
       reviewedAt: subscriptionOrders.reviewedAt,
       createdAt: subscriptionOrders.createdAt,
+      couponId: subscriptionOrders.couponId,
+      couponCode: coupons.code,
+      discountAmount: subscriptionOrders.discountAmount,
     })
     .from(subscriptionOrders)
     .leftJoin(companies, eq(subscriptionOrders.companyId, companies.id))
     .leftJoin(plans, eq(subscriptionOrders.planId, plans.id))
+    .leftJoin(coupons, eq(subscriptionOrders.couponId, coupons.id))
     .where(eq(subscriptionOrders.id, orderId))
     .limit(1);
   return rows[0] ? mapOrderRow(rows[0]) : null;
@@ -128,10 +141,14 @@ export async function listAllOrders(
       reviewedBy: subscriptionOrders.reviewedBy,
       reviewedAt: subscriptionOrders.reviewedAt,
       createdAt: subscriptionOrders.createdAt,
+      couponId: subscriptionOrders.couponId,
+      couponCode: coupons.code,
+      discountAmount: subscriptionOrders.discountAmount,
     })
     .from(subscriptionOrders)
     .leftJoin(companies, eq(subscriptionOrders.companyId, companies.id))
     .leftJoin(plans, eq(subscriptionOrders.planId, plans.id))
+    .leftJoin(coupons, eq(subscriptionOrders.couponId, coupons.id))
     .orderBy(desc(subscriptionOrders.id));
 
   const rows = args.status
