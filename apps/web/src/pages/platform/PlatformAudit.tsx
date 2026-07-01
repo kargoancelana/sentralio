@@ -9,7 +9,6 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Modal } from '../../components/ui/Modal';
-import { useToast } from '../../components/ui/Toast';
 import {
   platformAuditApi,
   type AuditLogRow,
@@ -33,9 +32,20 @@ function actorBadgeClass(actorType: 'platform' | 'company'): string {
   return actorType === 'platform' ? 'badge badge--active' : 'badge badge--pending';
 }
 
-export function PlatformAudit() {
-  const toast = useToast();
+/**
+ * Defensive JSON pretty-printer. Backend serializeSnapshot() can truncate at 8000 chars,
+ * leaving invalid JSON → parse would crash. Fallback to raw string if parse fails.
+ */
+function prettyJson(raw: string | null): string {
+  if (raw == null) return '(null)';
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw; // truncated or non-JSON → display as-is
+  }
+}
 
+export function PlatformAudit() {
   // Filter states
   const [companyId, setCompanyId] = useState<string>('');
   const [action, setAction] = useState<string>('');
@@ -46,7 +56,6 @@ export function PlatformAudit() {
   const [rows, setRows] = useState<AuditLogRow[] | null>(null);
   const [total, setTotal] = useState<number>(0);
   const [page, setPage] = useState<number>(1);
-  const [pageSize] = useState<number>(50);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // Actions dropdown
@@ -88,10 +97,11 @@ export function PlatformAudit() {
     []
   );
 
+  // Fetch on page change only (filters applied via handleApplyFilter)
   useEffect(() => {
     const filters: AuditLogFilters = {
       page,
-      pageSize,
+      // pageSize removed - backend hardcodes to 50
     };
     if (companyId) filters.companyId = parseInt(companyId, 10);
     if (action) filters.action = action;
@@ -99,10 +109,10 @@ export function PlatformAudit() {
     if (dateTo) filters.dateTo = dateTo;
 
     void fetchAuditLogs(filters);
-  }, [page, pageSize, companyId, action, dateFrom, dateTo, fetchAuditLogs]);
+  }, [page, fetchAuditLogs, companyId, action, dateFrom, dateTo]);
 
   function handleApplyFilter() {
-    setPage(1); // Reset to page 1 when filter changes
+    setPage(1); // Reset to page 1, triggers fetch via useEffect
   }
 
   function handleResetFilter() {
@@ -117,7 +127,7 @@ export function PlatformAudit() {
     setDetailRow(row);
   }
 
-  const totalPages = Math.ceil(total / pageSize);
+  const totalPages = Math.ceil(total / 50); // Backend hardcodes pageSize to 50
 
   return (
     <div className="platform-page">
@@ -363,9 +373,7 @@ export function PlatformAudit() {
                   maxHeight: '200px',
                 }}
               >
-                {detailRow.beforeJson
-                  ? JSON.stringify(JSON.parse(detailRow.beforeJson), null, 2)
-                  : '(null)'}
+                {prettyJson(detailRow.beforeJson)}
               </pre>
             </div>
 
@@ -381,9 +389,7 @@ export function PlatformAudit() {
                   maxHeight: '200px',
                 }}
               >
-                {detailRow.afterJson
-                  ? JSON.stringify(JSON.parse(detailRow.afterJson), null, 2)
-                  : '(null)'}
+                {prettyJson(detailRow.afterJson)}
               </pre>
             </div>
           </div>

@@ -158,7 +158,7 @@ export interface AuditLogFilters {
   dateFrom?: string; // YYYY-MM-DD
   dateTo?: string;   // YYYY-MM-DD
   page?: number;
-  pageSize?: number;
+  // pageSize removed - backend hardcodes to 50
 }
 
 // ─── Platform Audit API helpers ──────────────────────────────────────────────
@@ -171,7 +171,7 @@ export const platformAuditApi = {
     if (filters?.dateFrom) params.set('date_from', filters.dateFrom);
     if (filters?.dateTo) params.set('date_to', filters.dateTo);
     if (filters?.page) params.set('page', String(filters.page));
-    if (filters?.pageSize) params.set('page_size', String(filters.pageSize));
+    // pageSize param removed - backend doesn't read it (hardcoded to 50)
     
     const qs = params.toString();
     return platformFetch<AuditLogListResponse>(`/audit${qs ? `?${qs}` : ''}`);
