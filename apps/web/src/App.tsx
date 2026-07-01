@@ -20,6 +20,7 @@ import { PlatformPlans } from './pages/platform/PlatformPlans';
 import { PlatformCoupons } from './pages/platform/PlatformCoupons';
 import { PlatformOrders } from './pages/platform/PlatformOrders';
 import { PlatformSettings } from './pages/platform/PlatformSettings';
+import { PlatformAudit } from './pages/platform/PlatformAudit';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { PlatformProtectedRoute } from './auth/PlatformProtectedRoute';
 import { RoleGate } from './auth/RoleGate';
@@ -82,6 +83,7 @@ function App() {
                 <Route path="/platform/plans" element={<PlatformPlans />} />
                 <Route path="/platform/coupons" element={<PlatformCoupons />} />
                 <Route path="/platform/settings" element={<PlatformSettings />} />
+                <Route path="/platform/audit" element={<PlatformAudit />} />
               </Route>
             </Route>
           </Route>

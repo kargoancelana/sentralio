@@ -59,6 +59,9 @@ export function PlatformLayout() {
           <NavLink to="/platform/settings">
             Settings
           </NavLink>
+          <NavLink to="/platform/audit">
+            Audit Log
+          </NavLink>
         </nav>
       </aside>
       <div className="platform-shell__main">

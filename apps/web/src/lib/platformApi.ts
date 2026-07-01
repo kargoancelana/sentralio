@@ -119,3 +119,62 @@ export const platformSettingsApi = {
       body: JSON.stringify(input),
     }),
 };
+
+// ─── Platform Audit Types (Fase 6.2b) ────────────────────────────────────────
+
+export type ActorType = 'platform' | 'company';
+
+export interface AuditLogRow {
+  id: number;
+  actorType: ActorType;
+  actorId: number;
+  companyId: number | null;
+  companyName: string | null;
+  action: string;
+  targetType: string;
+  targetId: string;
+  beforeJson: string | null;
+  afterJson: string | null;
+  ip: string | null;
+  createdAt: string; // ISO string
+}
+
+export interface AuditLogListResponse {
+  ok: boolean;
+  rows: AuditLogRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface AuditActionsResponse {
+  ok: boolean;
+  actions: string[];
+}
+
+export interface AuditLogFilters {
+  companyId?: number;
+  action?: string;
+  dateFrom?: string; // YYYY-MM-DD
+  dateTo?: string;   // YYYY-MM-DD
+  page?: number;
+  // pageSize removed - backend hardcodes to 50
+}
+
+// ─── Platform Audit API helpers ──────────────────────────────────────────────
+
+export const platformAuditApi = {
+  list: (filters?: AuditLogFilters) => {
+    const params = new URLSearchParams();
+    if (filters?.companyId) params.set('company_id', String(filters.companyId));
+    if (filters?.action) params.set('action', filters.action);
+    if (filters?.dateFrom) params.set('date_from', filters.dateFrom);
+    if (filters?.dateTo) params.set('date_to', filters.dateTo);
+    if (filters?.page) params.set('page', String(filters.page));
+    // pageSize param removed - backend doesn't read it (hardcoded to 50)
+    
+    const qs = params.toString();
+    return platformFetch<AuditLogListResponse>(`/audit${qs ? `?${qs}` : ''}`);
+  },
+  actions: () => platformFetch<AuditActionsResponse>('/audit/actions'),
+};
