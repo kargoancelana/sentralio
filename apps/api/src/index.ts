@@ -42,6 +42,7 @@ import { subscriptionRoutes } from "./modules/subscription/subscription.route";
 import { subscriptionGuardMiddleware } from "./modules/auth/subscription-guard.middleware";
 import { maintenanceGuardMiddleware } from "./modules/auth/maintenance-guard.middleware";
 import { platformSettingsRoutes } from "./modules/platform/platform-settings.route";
+import { platformAuditRoutes } from "./modules/platform/platform-audit.route";
 import { systemStatusRoutes } from "./modules/system/system-status.route";
 // Fail-fast: di production FRONTEND_URL wajib diset (dipakai untuk CORS allowlist).
 if (env.nodeEnv === 'production' && !env.frontendUrl) {
@@ -161,6 +162,7 @@ const app = new Elysia()
   .use(platformOrdersRoutes)          // GET/POST /platform/orders*
   .use(platformShopsRoutes)           // POST /platform/shops/:shopId/force-release (issue #191)
   .use(platformSettingsRoutes)        // GET/PUT /platform/settings (payment info + maintenance)
+  .use(platformAuditRoutes)           // GET /platform/audit, /platform/audit/actions (Fase 6.2)
 
   // ─── Shopee Push webhook (publik, SEBELUM auth) ───────────────────────────
   // Endpoint ini menerima push notification dari Shopee Open Platform.
