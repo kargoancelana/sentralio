@@ -22,11 +22,6 @@ const fakeAuditRow = {
   createdAt: new Date('2026-01-15T10:00:00Z'),
 };
 
-const fakeCompany = {
-  id: 5,
-  name: 'PT Test Company',
-};
-
 // ── DB factory helpers ─────────────────────────────────────────
 
 function makeAuditDb(rows: any[], total: number = rows.length, actions: string[] = []): any {
@@ -34,42 +29,43 @@ function makeAuditDb(rows: any[], total: number = rows.length, actions: string[]
     select: (fields?: any) => {
       // Check if this is a count query
       if (fields && fields.count !== undefined) {
+        const countPromise = Promise.resolve([{ count: total }]);
+        // Make it chainable with .where() for filtered queries
+        Object.assign(countPromise, {
+          where: () => Promise.resolve([{ count: total }]),
+        });
         return {
-          from: () => ({
-            where: () => Promise.resolve([{ count: total }]),
-          }),
+          from: () => countPromise,
         };
       }
+      const mappedRows = rows.map(r => ({
+        ...r,
+        companyName: r.companyId === 5 ? 'PT Test Company' : null,
+      }));
+      
+      // Create thenable that also has .where() method
+      const offsetResult = Object.assign(Promise.resolve(mappedRows), {
+        where: () => Promise.resolve(mappedRows),
+      });
+      
+      const limitChain = {
+        offset: () => offsetResult,
+      };
+      
+      const orderByChain = {
+        limit: () => limitChain,
+      };
+      
+      const leftJoinChain = {
+        orderBy: () => orderByChain,
+      };
+      
+      const fromChain = {
+        leftJoin: () => leftJoinChain,
+      };
+      
       return {
-        from: () => ({
-          leftJoin: () => ({
-            orderBy: () => ({
-              limit: () => ({
-                offset: () => Promise.resolve(rows.map(r => ({
-                  ...r,
-                  companyName: r.companyId === 5 ? 'PT Test Company' : null,
-                }))),
-                where: () => ({
-                  offset: () => Promise.resolve(rows.map(r => ({
-                    ...r,
-                    companyName: r.companyId === 5 ? 'PT Test Company' : null,
-                  }))),
-                }),
-              }),
-            }),
-            where: () => ({
-              orderBy: () => ({
-                limit: () => ({
-                  offset: () => Promise.resolve(rows.map(r => ({
-                    ...r,
-                    companyName: r.companyId === 5 ? 'PT Test Company' : null,
-                  }))),
-                }),
-              }),
-            }),
-          }),
-          where: () => Promise.resolve([{ count: total }]),
-        }),
+        from: () => fromChain,
       };
     },
     selectDistinct: () => ({
