@@ -15,6 +15,7 @@
 import { type FormEvent, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { PasswordInput } from '../ui/PasswordInput';
+import { ImpersonationNotice } from '../impersonation/ImpersonationNotice';
 
 const labelStyle: React.CSSProperties = {
   display: 'block',
@@ -61,7 +62,11 @@ function RuleItem({ ok, label, show }: { ok: boolean; label: string; show: boole
 }
 
 export function ChangePasswordForm() {
-  const { changePassword } = useAuth();
+  const { state, changePassword } = useAuth();
+
+  // Check if this is an impersonation session (Fase 7.2).
+  const isImpersonating =
+    state.status === 'authenticated' && state.user.impersonatorId !== null;
 
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
@@ -128,6 +133,11 @@ export function ChangePasswordForm() {
         Mengubah password akan mengeluarkan sesi login Anda yang lain.
       </p>
 
+      {/* Fase 7.2: Show notice and disable form during impersonation */}
+      {isImpersonating && (
+        <ImpersonationNotice message="Anda tidak dapat mengubah password selama mode impersonation aktif." />
+      )}
+
       {success && (
         <div
           role="status"
@@ -169,7 +179,7 @@ export function ChangePasswordForm() {
             autoComplete="current-password"
             value={current}
             onChange={(e) => setCurrent(e.target.value)}
-            disabled={submitting}
+            disabled={submitting || isImpersonating}
             required
           />
         </div>
@@ -181,7 +191,7 @@ export function ChangePasswordForm() {
             autoComplete="new-password"
             value={next}
             onChange={(e) => setNext(e.target.value)}
-            disabled={submitting}
+            disabled={submitting || isImpersonating}
             placeholder="Masukkan password baru"
             required
           />
@@ -200,7 +210,7 @@ export function ChangePasswordForm() {
             autoComplete="new-password"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
-            disabled={submitting}
+            disabled={submitting || isImpersonating}
             placeholder="Ulangi password baru"
             style={confirmMismatch ? { borderColor: 'var(--error)' } : undefined}
             required
@@ -224,7 +234,7 @@ export function ChangePasswordForm() {
         <button
           type="submit"
           className="btn btn-primary"
-          disabled={submitting || !current || !allRulesPass || !confirmMatches}
+          disabled={submitting || isImpersonating || !current || !allRulesPass || !confirmMatches}
         >
           {submitting ? 'Menyimpan…' : 'Ubah Password'}
         </button>

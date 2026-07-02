@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { api, ApiError, type PaymentInfo, type SubscriptionOrder, type SubscriptionPlan, type SubscriptionStatus } from '../lib/api';
+import { ImpersonationNotice } from '../components/impersonation/ImpersonationNotice';
 
 const formatRupiah = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
@@ -34,8 +35,12 @@ function statusBadge(status: string) {
 }
 
 export function Langganan() {
-  const { logout, refreshMe } = useAuth();
+  const { state, logout, refreshMe } = useAuth();
   const navigate = useNavigate();
+
+  // Check if this is an impersonation session (Fase 7.2).
+  const isImpersonating =
+    state.status === 'authenticated' && state.user.impersonatorId !== null;
 
   const [loading, setLoading] = useState(true);
   const [subStatus, setSubStatus] = useState<SubscriptionStatus | null>(null);
@@ -242,6 +247,11 @@ export function Langganan() {
         {/* ── Belum aktif ── */}
         {!subStatus?.active && (
           <>
+            {/* Fase 7.2: Show notice during impersonation */}
+            {isImpersonating && (
+              <ImpersonationNotice message="Anda tidak dapat membuat order atau mengubah langganan selama mode impersonation aktif." />
+            )}
+
             {/* Info pembayaran (rekening tujuan transfer) */}
             {paymentInfo && (paymentInfo.bankName || paymentInfo.accountNumber || paymentInfo.instructions) && (
               <div className="card" style={{ marginBottom: 16 }}>
@@ -270,7 +280,7 @@ export function Langganan() {
                     type="file"
                     accept="image/jpeg,image/png,application/pdf"
                     ref={fileInputRef}
-                    disabled={uploading}
+                    disabled={uploading || isImpersonating}
                     className="form-input"
                     style={{ paddingTop: '6px' }}
                   />
@@ -279,7 +289,7 @@ export function Langganan() {
                 <button
                   type="button"
                   className="btn btn-primary"
-                  disabled={uploading}
+                  disabled={uploading || isImpersonating}
                   onClick={() => void handleUpload(pendingOrder.id)}
                 >
                   {uploading ? 'Mengunggah…' : 'Upload Bukti'}
@@ -376,7 +386,7 @@ export function Langganan() {
                       <button
                         type="button"
                         className="btn btn-primary"
-                        disabled={creatingOrder || (couponCode.trim() !== '' && !couponValid)}
+                        disabled={creatingOrder || isImpersonating || (couponCode.trim() !== '' && !couponValid)}
                         onClick={() => void handleSelectPlan(selectedPlanId, couponValid === true)}
                         style={{ flex: 1 }}
                       >
@@ -405,7 +415,7 @@ export function Langganan() {
                           type="button"
                           className="btn btn-primary"
                           style={{ marginTop: '8px' }}
-                          disabled={creatingOrder || selectedPlanId !== null}
+                          disabled={creatingOrder || isImpersonating || selectedPlanId !== null}
                           onClick={() => setSelectedPlanId(plan.id)}
                         >
                           Pilih paket
