@@ -213,7 +213,7 @@ export async function seedTwoTenants(
   const dummyRefreshToken = encrypt("dummy_refresh_token_plaintext");
   const dummyPartnerKey = encrypt("dummy_partner_key_plaintext");
 
-  // Company A: shop 100 connected + shop 555 DISCONNECTED (newer updated_at)
+  // Company A: shop 100 connected (with activeShopId) + shop 555 DISCONNECTED (newer updated_at)
   await db.insert(schema.shopeeCredentials).values({
     companyId: companyAId,
     partnerId: 1000,
@@ -224,6 +224,7 @@ export async function seedTwoTenants(
     refreshToken: dummyRefreshToken,
     expiresAt: new Date(Date.now() + 3600 * 1000),
     status: "connected",
+    activeShopId: 100, // Set activeShopId for connected shop (enables uniq_active_shop test)
     updatedAt: new Date(Date.now() - 7200 * 1000), // 2 hours ago
   });
 
@@ -241,7 +242,22 @@ export async function seedTwoTenants(
     updatedAt: new Date(), // NEWER than company B's row
   });
 
-  // Company B: shop 200 connected + shop 555 CONNECTED (older updated_at, but CONNECTED wins)
+  // Shop 666: only disconnected (for isShopConnected false test)
+  await db.insert(schema.shopeeCredentials).values({
+    companyId: companyAId,
+    partnerId: 1000,
+    partnerKey: dummyPartnerKey,
+    shopId: 666,
+    shopName: "Shop A 666 (only disconnected)",
+    accessToken: "",
+    refreshToken: "",
+    expiresAt: new Date("1970-01-01T00:00:01Z"),
+    status: "disconnected",
+    disconnectedAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  // Company B: shop 200 connected (with activeShopId) + shop 555 CONNECTED (older updated_at, but CONNECTED wins)
   await db.insert(schema.shopeeCredentials).values({
     companyId: companyBId,
     partnerId: 2000,
@@ -252,6 +268,7 @@ export async function seedTwoTenants(
     refreshToken: dummyRefreshToken,
     expiresAt: new Date(Date.now() + 3600 * 1000),
     status: "connected",
+    activeShopId: 200, // Set activeShopId for connected shop
     updatedAt: new Date(Date.now() - 7200 * 1000),
   });
 
@@ -265,6 +282,7 @@ export async function seedTwoTenants(
     refreshToken: dummyRefreshToken,
     expiresAt: new Date(Date.now() + 3600 * 1000),
     status: "connected",
+    activeShopId: 555, // Set activeShopId for connected shop
     updatedAt: new Date(Date.now() - 14400 * 1000), // 4 hours ago (OLDER)
   });
 

@@ -12,12 +12,12 @@
  * Run: bun test src/services/__tests__/tenant-isolation.integration.test.ts
  */
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { createTenantTestDb, seedTwoTenants } from "./helpers/tenant-test-db";
 import type { TenantTestDb } from "./helpers/tenant-test-db";
 import { 
   shopeeCredentials, 
-  products, 
+  masterProducts,
   shopeeOrders, 
   users 
 } from "../../db/schema";
@@ -55,13 +55,13 @@ afterAll(async () => {
 });
 
 describe("Tenant Isolation - Read Isolation", () => {
-  it("products: company A query never returns company B rows", async () => {
+  it("master_products: company A query never returns company B rows", async () => {
     if (!dbAvailable) return;
     
     const rowsA = await testDb!.db
       .select()
-      .from(products)
-      .where(eq(products.companyId, companyA.id));
+      .from(masterProducts)
+      .where(eq(masterProducts.companyId, companyA.id));
     
     // Verify all rows belong to company A
     expect(rowsA.length).toBeGreaterThan(0);
@@ -71,13 +71,13 @@ describe("Tenant Isolation - Read Isolation", () => {
     }
   });
   
-  it("products: company B query never returns company A rows", async () => {
+  it("master_products: company B query never returns company A rows", async () => {
     if (!dbAvailable) return;
     
     const rowsB = await testDb!.db
       .select()
-      .from(products)
-      .where(eq(products.companyId, companyB.id));
+      .from(masterProducts)
+      .where(eq(masterProducts.companyId, companyB.id));
     
     expect(rowsB.length).toBeGreaterThan(0);
     for (const row of rowsB) {
@@ -202,7 +202,9 @@ describe("#198/#200 - Shared shop_id Resolution (Real DB)", () => {
   it("SQL query with proper filters returns connected row first", async () => {
     if (!dbAvailable || !testDb) return;
     
-    // Simulate getValidToken() query logic
+    // Simulate getValidToken() query logic with DESC order (matches runtime)
+    // Without status filter, this would return disconnected row A (newer)
+    // With filter, returns connected row B → proves filter works
     const rows = await testDb.db
       .select()
       .from(shopeeCredentials)
@@ -212,7 +214,7 @@ describe("#198/#200 - Shared shop_id Resolution (Real DB)", () => {
           eq(shopeeCredentials.status, "connected")
         )
       )
-      .orderBy(shopeeCredentials.updatedAt)
+      .orderBy(desc(shopeeCredentials.updatedAt))
       .limit(1);
     
     expect(rows.length).toBe(1);
@@ -233,9 +235,9 @@ describe("#198/#200 - Shared shop_id Resolution (Real DB)", () => {
   it("isShopConnected returns false for shop with only disconnected rows", async () => {
     if (!dbAvailable || !testDb) return;
     
-    // Assuming seed created a shop with only disconnected rows (shop_id 999 or similar)
-    // If not, this test should be adjusted based on actual seed data
-    const result = await isShopConnected(999999, testDb.db as any);
+    // Shop 666 was seeded with only disconnected status (company A)
+    // This tests the actual filter logic: only disconnected exists → should return false
+    const result = await isShopConnected(666, testDb.db as any);
     expect(result).toBe(false);
   });
 });
@@ -375,7 +377,12 @@ describe("Constraint Enforcement", () => {
     
     expect(rowsA.length).toBe(1);
     expect(rowsB.length).toBe(1);
-    expect(rowsA[0].companyId).toBe(companyA.id);
-    expect(rowsB[0].companyId).toBe(companyB.id);
+    
+    const rowA = rowsA[0];
+    const rowB = rowsB[0];
+    if (!rowA || !rowB) return;
+    
+    expect(rowA.companyId).toBe(companyA.id);
+    expect(rowB.companyId).toBe(companyB.id);
   });
 });
