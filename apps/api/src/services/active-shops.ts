@@ -10,7 +10,7 @@
  * Every query that lists shops or filters data by shop MUST go through these
  * helpers so no code path accidentally leaks a disconnected shop's data.
  */
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db as defaultDb } from "../db/client";
 import { shopeeCredentials } from "../db/schema";
 
@@ -36,12 +36,23 @@ export async function getConnectedShopIdSet(db: AnyDb = defaultDb): Promise<Set<
   return new Set(await getConnectedShopIds(db));
 }
 
-/** True if the given shop is currently connected. */
+/**
+ * True if the given shop is currently connected.
+ * 
+ * Fixed for #198/#200: filter by status='connected' in WHERE clause to ensure
+ * deterministic results when shop_id has multiple rows (disconnected + connected).
+ * Without status filter, LIMIT 1 could return disconnected row, causing false negative.
+ */
 export async function isShopConnected(shopId: number, db: AnyDb = defaultDb): Promise<boolean> {
   const rows = await db
-    .select({ status: shopeeCredentials.status })
+    .select({ shopId: shopeeCredentials.shopId })
     .from(shopeeCredentials)
-    .where(eq(shopeeCredentials.shopId, shopId))
+    .where(
+      and(
+        eq(shopeeCredentials.shopId, shopId),
+        eq(shopeeCredentials.status, SHOP_STATUS_CONNECTED)
+      )
+    )
     .limit(1);
-  return rows.length > 0 && rows[0].status === SHOP_STATUS_CONNECTED;
+  return rows.length > 0;
 }
