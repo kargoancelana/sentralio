@@ -9,6 +9,7 @@
     "start": "bun run src/index.ts",
     "test": "bun test",
     "test:watch": "bun test --watch",
+    "test:isolation": "bun test src/services/__tests__/tenant-isolation.integration.test.ts src/services/__tests__/shopee-auth.select-active-credential.unit.test.ts src/services/__tests__/active-shops.tenant-resolution.unit.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
