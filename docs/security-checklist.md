@@ -85,9 +85,9 @@ Dokumen internal audit keamanan. Tiap kontrol disertai **status** + **bukti** (p
 **Bukti:**
 - **Modul hashing:** `apps/api/src/modules/auth/password.ts`
   - Algoritma: bcrypt (via `bcryptjs`)
-  - Cost factor: 12 (baris 8: `export const BCRYPT_COST = 12;`)
-  - Fungsi: `hashPassword(password: string)` (baris 14–17)
-  - Fungsi: `verifyPassword(password: string, hash: string)` (baris 24–27)
+  - Cost factor: 12 (baris 12: `export const BCRYPT_COST = 12;`)
+  - Fungsi: `hashPassword(password: string)` (baris 18–20)
+  - Fungsi: `verifyPassword(password: string, hash: string)` (baris 26–28)
 - **Penggunaan:**
   - `apps/api/src/modules/users/users.service.ts` (baris 75) — hash saat create user
   - `apps/api/src/modules/auth/auth.service.ts` (baris 92) — verify saat login
@@ -220,9 +220,10 @@ Dokumen internal audit keamanan. Tiap kontrol disertai **status** + **bukti** (p
   - Fungsi: `isValidEmailSyntax()` — regex-based email validation
   - Fungsi: `normalizeEmail()` — lowercase + trim
 - **Password policy:** `apps/api/src/modules/auth/password-policy.ts`
-  - Minimal 10 karakter, maksimal 128
-  - Harus ada: lowercase, uppercase, digit, special char
-  - Fungsi: `validatePasswordPolicy()`
+  - Minimal 8 karakter, maksimal 128
+  - Wajib: ≥1 huruf kapital (A–Z) + ≥1 karakter khusus (non-alphanumeric)
+  - Tidak ada syarat lowercase atau digit
+  - Fungsi: `validatePasswordPolicy()` (baris 29–46)
 
 **Catatan:** Belum ada sanitasi universal untuk semua input string (XSS, SQL injection prevention rely on parameterized queries dari Drizzle ORM).
 
