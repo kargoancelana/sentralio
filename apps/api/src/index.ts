@@ -23,6 +23,7 @@ import { EscrowSyncService } from "./services/escrow-sync.service";
 import { authPublicRoutes, authProtectedRoutes } from "./modules/auth/auth.route";
 import { passwordResetPublicRoutes } from "./modules/auth/password-reset.route";
 import { authMiddleware } from "./modules/auth/auth.middleware";
+import { impersonationGuardMiddleware } from "./modules/auth/impersonation-guard.middleware";
 import { featureGuardMiddleware } from "./modules/auth/feature-guard.middleware";
 import { permissionsRoutes } from "./modules/auth/permissions.route";
 import { ensureStaffPermissionsLoaded } from "./modules/auth/permissions.service";
@@ -176,6 +177,7 @@ const app = new Elysia()
   // Apply Origin_Middleware then Auth_Middleware to all routes below.
   .use(originMiddleware)
   .use(authMiddleware)
+  .use(impersonationGuardMiddleware)   // Fase 7.2 — guardrails impersonation
 
   // Auth protected routes (logout, me, renew) — Req 5.5
   .use(authProtectedRoutes)

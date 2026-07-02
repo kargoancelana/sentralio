@@ -85,6 +85,7 @@ export const authMiddleware = new Elysia({ name: 'auth-middleware' })
         requireFeature: (_feature: Feature): void => {
           // no-op placeholder; beforeHandle stops execution before handlers run
         },
+        impersonatorId: null,
       };
     }
 
@@ -109,7 +110,7 @@ export const authMiddleware = new Elysia({ name: 'auth-middleware' })
       }
     }
 
-    return { user, authError: undefined, requireFeature };
+    return { user, authError: undefined, requireFeature, impersonatorId: session.impersonatorId ?? null };
   })
   // Guard: reject requests whose session failed validation before any handler
   // runs (Req 4.4). A correctly-signed platform token (wrong scope) yields 403.
