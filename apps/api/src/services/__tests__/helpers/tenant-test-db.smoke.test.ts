@@ -11,15 +11,18 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
-import { createTenantTestDb, seedTwoTenants, type TenantTestDb } from "./tenant-test-db";
+import { createTenantTestDb, seedTwoTenants, type TenantTestDb, type TwoTenantsSeed } from "./tenant-test-db";
 
 let testDb: TenantTestDb | null = null;
+let seededData: TwoTenantsSeed | null = null;
 let dbAvailable = false;
 
 beforeAll(async () => {
   testDb = await createTenantTestDb();
   if (testDb) {
     dbAvailable = true;
+    // Seed once, reuse across all tests (avoid duplicate key errors)
+    seededData = await seedTwoTenants(testDb.db);
   } else {
     console.warn("⚠ Skipping tenant-test-db smoke tests: no MySQL available");
   }
@@ -49,7 +52,7 @@ describe("tenant-test-db harness smoke test", () => {
   it("seeds two tenants with expected data", async () => {
     if (!dbAvailable) return;
 
-    const { companyA, companyB } = await seedTwoTenants(testDb!.db);
+    const { companyA, companyB } = seededData!;
 
     // Verify companies
     expect(companyA.id).toBeGreaterThan(0);
@@ -90,7 +93,7 @@ describe("tenant-test-db harness smoke test", () => {
   it("seeds shared shop_id scenario (#198/#200)", async () => {
     if (!dbAvailable) return;
 
-    const { companyA, companyB } = await seedTwoTenants(testDb!.db);
+    const { companyA, companyB } = seededData!;
 
     // Verify shop_id 555 exists for both companies
     const { shopeeCredentials } = await import("../../../db/schema");

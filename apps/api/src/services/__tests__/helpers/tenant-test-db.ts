@@ -59,16 +59,24 @@ export interface TwoTenantsSeed {
 }
 
 /**
- * Split SQL file into statements (strips `--` comments).
+ * Split SQL file into statements.
+ * Drizzle uses `--> statement-breakpoint` as separator (not a comment).
+ * Also strips regular `--` comments.
  */
 function splitStatements(sql: string): string[] {
-  const withoutComments = sql
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("--"))
-    .join("\n");
-  return withoutComments
-    .split(";")
-    .map((s) => s.trim())
+  // First, split by Drizzle's statement-breakpoint
+  const statements = sql.split(/\s*--> statement-breakpoint\s*/);
+  
+  // For each statement, strip `--` comments and clean up
+  return statements
+    .map((stmt) => {
+      const withoutComments = stmt
+        .split("\n")
+        .filter((line) => !line.trim().startsWith("--"))
+        .join("\n")
+        .trim();
+      return withoutComments;
+    })
     .filter((s) => s.length > 0);
 }
 
@@ -227,7 +235,7 @@ export async function seedTwoTenants(
     shopName: "Shop A 555 (old, disconnected)",
     accessToken: "", // cleared on disconnect
     refreshToken: "",
-    expiresAt: new Date(0),
+    expiresAt: new Date("1970-01-01T00:00:01Z"), // MySQL TIMESTAMP min (avoid new Date(0))
     status: "disconnected",
     disconnectedAt: new Date(),
     updatedAt: new Date(), // NEWER than company B's row
