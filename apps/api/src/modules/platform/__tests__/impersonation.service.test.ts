@@ -144,10 +144,12 @@ describe('Impersonation Service', () => {
         const jwt = jwtMatch[1];
         const payload = await verifyJwtIgnoreExp(jwt);
 
-        // Mock DB for stop operation
+        // Mock DB for stop operation (must chain .onDuplicateKeyUpdate for revokeJti)
         const mockDbStop = {
           insert: mock(() => ({
-            values: mock(() => Promise.resolve()),
+            values: mock(() => ({
+              onDuplicateKeyUpdate: mock(() => Promise.resolve()),
+            })),
           })),
         } as any;
 
