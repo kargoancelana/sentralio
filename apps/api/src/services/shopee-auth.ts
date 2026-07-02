@@ -16,14 +16,44 @@ interface TokenRow {
 }
 
 /**
+ * Pure selector: picks the active credential from a list of rows.
+ * 
+ * Logic (defense-in-depth for #198/#200):
+ * 1. Filter rows with status='connected' (disconnected rows ignored)
+ * 2. If shopId specified, filter by shopId
+ * 3. Sort by updatedAt DESC (newest first)
+ * 4. Return first match, or undefined if none
+ * 
+ * This ensures that for shared shop_id scenarios:
+ * - connected rows always win over disconnected (even if disconnected is newer)
+ * - among multiple connected rows, pick the most recently updated
+ * 
+ * @param rows Array of credential-like objects with status, shopId, updatedAt
+ * @param shopId Optional shop_id filter
+ * @returns First matching row after filtering and sorting, or undefined
+ */
+export function selectActiveCredential<T extends { status: string; shopId: number; updatedAt: Date | string }>(
+  rows: T[],
+  shopId?: number,
+): T | undefined {
+  return rows
+    .filter((r) => r.status === "connected")
+    .filter((r) => shopId == null || r.shopId === shopId)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
+}
+
+/**
  * Gets credentials for a specific shop from the DB.
  * If shopId is not provided, returns the first available shop.
  * If expired, triggers a refresh automatically.
  * 
  * Only returns 'connected' credentials. Disconnected rows are ignored,
  * even if they share the same shop_id (multi-tenant scenario).
+ * 
+ * Defense-in-depth: Uses selectActiveCredential() to double-check query results.
  */
 export async function getValidToken(shopId?: number): Promise<TokenRow> {
+  // Query DB with proper filters (primary defense)
   let query = db.select().from(shopeeCredentials);
   
   if (shopId) {
@@ -40,8 +70,11 @@ export async function getValidToken(shopId?: number): Promise<TokenRow> {
       .orderBy(desc(shopeeCredentials.updatedAt)) as any;
   }
   
-  const rows = await query.limit(1);
-  const row = rows[0];
+  const rows = await query;
+  
+  // Defense-in-depth: use pure selector to pick active credential from results
+  // This ensures correctness even if query logic has bugs
+  const row = selectActiveCredential(rows, shopId);
 
   if (!row) {
     const msg = shopId 
