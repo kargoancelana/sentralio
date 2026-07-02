@@ -9,6 +9,7 @@ export interface AuthJwtPayload {
   iat: number;                  // unix seconds
   exp: number;                  // = iat + 28800 (8h)
   jti: string;                  // UUIDv4
+  imp?: number;                 // id platform admin yang impersonate (Fase 7.1); absen = sesi normal
 }
 
 const SESSION_DURATION_SECONDS = 28_800; // 8 hours
@@ -84,6 +85,7 @@ function extractClaims(payload: Record<string, unknown>): AuthJwtPayload {
   // scope dinormalkan ke 'tenant' di sini: ini verifier tenant, dan token
   // ber-scope platform (yang tidak punya klaim `role`) sudah ditolak oleh cek
   // role di atas. Enforcement cross-scope (403) adalah fase berikutnya.
+  const imp = payload.imp;
   return {
     sub: Number(sub),
     role: role as 'admin' | 'staff',
@@ -92,6 +94,7 @@ function extractClaims(payload: Record<string, unknown>): AuthJwtPayload {
     iat,
     exp,
     jti,
+    imp: typeof imp === 'number' ? imp : undefined,
   };
 }
 
@@ -106,6 +109,35 @@ export async function verifyJwt(token: string): Promise<AuthJwtPayload> {
   });
 
   return extractClaims(payload as Record<string, unknown>);
+}
+
+const IMPERSONATION_DURATION_SECONDS = 30 * 60; // 30 menit
+
+/**
+ * Sign an impersonation JWT with a short duration (30 minutes).
+ * Includes the `imp` claim to identify the platform admin performing the
+ * impersonation. Uses HS256 and the same secret as regular tenant sessions.
+ */
+export async function signImpersonationJwt(
+  payload: { sub: number; role: 'admin' | 'staff'; companyId: number; imp: number },
+  now: Date,
+): Promise<string> {
+  const iat = Math.floor(now.getTime() / 1000);
+  const exp = iat + IMPERSONATION_DURATION_SECONDS;
+  const jti = randomUUID();
+
+  return new SignJWT({
+    sub: String(payload.sub),
+    role: payload.role,
+    companyId: payload.companyId,
+    scope: 'tenant',
+    imp: payload.imp,
+    iat,
+    exp,
+    jti,
+  })
+    .setProtectedHeader({ alg: 'HS256' })
+    .sign(getSecret());
 }
 
 /**
