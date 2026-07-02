@@ -1,10 +1,16 @@
 /**
  * Unit tests for active-shops tenant resolution (with fake db)
  * 
- * Validates #198/#200 fix in isShopConnected: deterministic behavior when
- * shop_id has multiple rows (disconnected + connected across companies).
+ * NOTE: These tests validate function behavior and query construction logic,
+ * but do NOT test actual SQL filter execution (fake db always returns mockRows as-is).
  * 
- * Uses fake db that mimics Drizzle query chain to test filter construction.
+ * Real SQL filter behavior (determinism of WHERE status='connected') is tested in
+ * integration tests with real DB (PR 8.1.3). These unit tests provide:
+ * - Documentation of expected behavior
+ * - Regression protection for function signatures
+ * - Conceptual validation of query construction
+ * 
+ * For empirical proof that #198/#200 fix works with actual MySQL, see PR 8.1.3.
  */
 import { describe, it, expect } from "bun:test";
 import {

@@ -49,8 +49,11 @@ export function selectActiveCredential<T extends { status: string; shopId: numbe
  * 
  * Only returns 'connected' credentials. Disconnected rows are ignored,
  * even if they share the same shop_id (multi-tenant scenario).
+ * 
+ * Defense-in-depth: Uses selectActiveCredential() to double-check query results.
  */
 export async function getValidToken(shopId?: number): Promise<TokenRow> {
+  // Query DB with proper filters (primary defense)
   let query = db.select().from(shopeeCredentials);
   
   if (shopId) {
@@ -67,8 +70,11 @@ export async function getValidToken(shopId?: number): Promise<TokenRow> {
       .orderBy(desc(shopeeCredentials.updatedAt)) as any;
   }
   
-  const rows = await query.limit(1);
-  const row = rows[0];
+  const rows = await query;
+  
+  // Defense-in-depth: use pure selector to pick active credential from results
+  // This ensures correctness even if query logic has bugs
+  const row = selectActiveCredential(rows, shopId);
 
   if (!row) {
     const msg = shopId 
