@@ -1,110 +1,139 @@
 /**
  * Tests for impersonation.service.ts (Fase 7.1).
+ * 
+ * Uses mock DB to avoid touching real database during tests.
  */
 
-import { describe, test, expect, beforeAll, beforeEach } from 'bun:test';
-import { eq } from 'drizzle-orm';
-import { db } from '../../../db/client';
-import { users, revokedSessions } from '../../../db/schema';
+import { describe, test, expect, mock } from 'bun:test';
 import { startImpersonation, stopImpersonation } from '../impersonation.service';
-import { verifyJwtIgnoreExp } from '../../auth/jwt';
+import { signJwt, verifyJwtIgnoreExp } from '../../auth/jwt';
+
+// Mock user data
+const mockUser = {
+  id: 123,
+  companyId: 456,
+  email: 'test@example.com',
+  emailLower: 'test@example.com',
+  name: 'Test User',
+  role: 'admin' as const,
+  isActive: 1,
+  passwordHash: 'hash',
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
+const mockAdminId = 999;
 
 describe('Impersonation Service', () => {
-  let testCompanyId: number;
-  let testUserId: number;
-  let testAdminId: number;
-
-  beforeAll(async () => {
-    // Setup: create a test company and user (assumption: companies table exists).
-    // In real test setup, you'd create a company first. For now, assume companyId=999.
-    testCompanyId = 999;
-    testAdminId = 1; // Platform admin ID
-
-    // Insert a test user (or use existing).
-    const existingUsers = await db
-      .select()
-      .from(users)
-      .where(eq(users.companyId, testCompanyId))
-      .limit(1);
-
-    if (existingUsers.length > 0) {
-      testUserId = existingUsers[0].id;
-    } else {
-      // Create a test user if needed (adjust as per your test setup).
-      const [inserted] = await db.insert(users).values({
-        companyId: testCompanyId,
-        email: 'test-impersonation@example.com',
-        emailLower: 'test-impersonation@example.com',
-        name: 'Test Impersonation User',
-        role: 'admin',
-        passwordHash: '$2b$12$dummyhash',
-        isActive: 1,
-      });
-      testUserId = (inserted as any).insertId;
-    }
-  });
-
-  beforeEach(async () => {
-    // Clean up revoked sessions for our test user before each test.
-    await db.delete(revokedSessions).where(eq(revokedSessions.userId, testUserId));
-  });
-
   test('startImpersonation returns ok with valid user', async () => {
+    // Mock DB that returns the user
+    const mockDb = {
+      select: mock(() => ({
+        from: mock(() => ({
+          where: mock(() => ({
+            limit: mock(() => Promise.resolve([mockUser])),
+          })),
+        })),
+      })),
+      insert: mock(() => ({
+        values: mock(() => Promise.resolve()),
+      })),
+    } as any;
+
     const result = await startImpersonation({
-      adminId: testAdminId,
-      companyId: testCompanyId,
-      userId: testUserId,
+      adminId: mockAdminId,
+      companyId: mockUser.companyId,
+      userId: mockUser.id,
       now: new Date(),
+      db: mockDb,
     });
 
     expect(result.kind).toBe('ok');
     if (result.kind === 'ok') {
       expect(result.cookie).toContain('wms_session=');
-      expect(result.user.id).toBe(testUserId);
-      expect(result.user.companyId).toBe(testCompanyId);
+      expect(result.user.id).toBe(mockUser.id);
+      expect(result.user.companyId).toBe(mockUser.companyId);
 
       // Verify the JWT has the imp claim.
       const jwtMatch = result.cookie.match(/wms_session=([^;]+)/);
       expect(jwtMatch).not.toBeNull();
-      if (jwtMatch) {
+      if (jwtMatch && jwtMatch[1]) {
         const jwt = jwtMatch[1];
         const payload = await verifyJwtIgnoreExp(jwt);
-        expect(payload.sub).toBe(testUserId);
-        expect(payload.imp).toBe(testAdminId);
-        expect(payload.companyId).toBe(testCompanyId);
+        expect(payload.sub).toBe(mockUser.id);
+        expect(payload.imp).toBe(mockAdminId);
+        expect(payload.companyId).toBe(mockUser.companyId);
       }
     }
   });
 
   test('startImpersonation returns not-found for non-existent user', async () => {
+    // Mock DB that returns no user
+    const mockDb = {
+      select: mock(() => ({
+        from: mock(() => ({
+          where: mock(() => ({
+            limit: mock(() => Promise.resolve([])), // Empty result
+          })),
+        })),
+      })),
+    } as any;
+
     const result = await startImpersonation({
-      adminId: testAdminId,
-      companyId: testCompanyId,
+      adminId: mockAdminId,
+      companyId: mockUser.companyId,
       userId: 999999, // Non-existent user ID
       now: new Date(),
+      db: mockDb,
     });
 
     expect(result.kind).toBe('not-found');
   });
 
   test('startImpersonation returns not-found for user in different company', async () => {
+    // Mock DB that returns user but with different companyId
+    const mockDb = {
+      select: mock(() => ({
+        from: mock(() => ({
+          where: mock(() => ({
+            limit: mock(() => Promise.resolve([])), // No match for company filter
+          })),
+        })),
+      })),
+    } as any;
+
     const result = await startImpersonation({
-      adminId: testAdminId,
+      adminId: mockAdminId,
       companyId: 888, // Different company ID
-      userId: testUserId,
+      userId: mockUser.id,
       now: new Date(),
+      db: mockDb,
     });
 
     expect(result.kind).toBe('not-found');
   });
 
   test('stopImpersonation revokes jti for valid impersonation token', async () => {
-    // Start impersonation to get a token.
+    // First, start impersonation to get a token
+    const mockDbStart = {
+      select: mock(() => ({
+        from: mock(() => ({
+          where: mock(() => ({
+            limit: mock(() => Promise.resolve([mockUser])),
+          })),
+        })),
+      })),
+      insert: mock(() => ({
+        values: mock(() => Promise.resolve()),
+      })),
+    } as any;
+
     const startResult = await startImpersonation({
-      adminId: testAdminId,
-      companyId: testCompanyId,
-      userId: testUserId,
+      adminId: mockAdminId,
+      companyId: mockUser.companyId,
+      userId: mockUser.id,
       now: new Date(),
+      db: mockDbStart,
     });
 
     expect(startResult.kind).toBe('ok');
@@ -115,46 +144,87 @@ describe('Impersonation Service', () => {
         const jwt = jwtMatch[1];
         const payload = await verifyJwtIgnoreExp(jwt);
 
-        // Stop impersonation.
+        // Mock DB for stop operation
+        const mockDbStop = {
+          insert: mock(() => ({
+            values: mock(() => Promise.resolve()),
+          })),
+        } as any;
+
+        // Stop impersonation
         const stopResult = await stopImpersonation({
           cookieValue: jwt,
           now: new Date(),
+          db: mockDbStop,
         });
 
         expect(stopResult.clearCookie).toContain('Max-Age=0');
         expect(stopResult.stopped).not.toBeNull();
         if (stopResult.stopped) {
-          expect(stopResult.stopped.userId).toBe(testUserId);
-          expect(stopResult.stopped.adminId).toBe(testAdminId);
+          expect(stopResult.stopped.userId).toBe(mockUser.id);
+          expect(stopResult.stopped.adminId).toBe(mockAdminId);
         }
 
-        // Verify jti is in revoked_sessions.
-        const revoked = await db
-          .select()
-          .from(revokedSessions)
-          .where(eq(revokedSessions.jti, payload.jti))
-          .limit(1);
-        expect(revoked.length).toBe(1);
+        // Verify insert was called to revoke the jti
+        expect(mockDbStop.insert).toHaveBeenCalled();
       }
     }
   });
 
   test('stopImpersonation with invalid token returns stopped=null but clears cookie', async () => {
+    const mockDb = {
+      insert: mock(() => ({
+        values: mock(() => Promise.resolve()),
+      })),
+    } as any;
+
     const stopResult = await stopImpersonation({
       cookieValue: 'invalid-jwt-token',
       now: new Date(),
+      db: mockDb,
     });
 
     expect(stopResult.clearCookie).toContain('Max-Age=0');
     expect(stopResult.stopped).toBeNull();
   });
 
-  test('stopImpersonation with regular token (no imp claim) returns stopped=null', async () => {
-    // This test would require minting a regular token without imp claim.
-    // For simplicity, we'll just test with undefined cookieValue.
+  test('stopImpersonation with regular token (no imp claim) returns stopped=null but clears cookie', async () => {
+    // Mint a regular token WITHOUT imp claim
+    const regularToken = await signJwt({
+      sub: mockUser.id,
+      companyId: mockUser.companyId,
+      role: mockUser.role,
+      // NO imp claim - this is a regular session token
+    }, new Date());
+
+    const mockDb = {
+      insert: mock(() => ({
+        values: mock(() => Promise.resolve()),
+      })),
+    } as any;
+
+    const stopResult = await stopImpersonation({
+      cookieValue: regularToken,
+      now: new Date(),
+      db: mockDb,
+    });
+
+    // Should clear cookie but return stopped=null (no impersonation to stop)
+    expect(stopResult.clearCookie).toContain('Max-Age=0');
+    expect(stopResult.stopped).toBeNull();
+  });
+
+  test('stopImpersonation with undefined cookie clears cookie and returns stopped=null', async () => {
+    const mockDb = {
+      insert: mock(() => ({
+        values: mock(() => Promise.resolve()),
+      })),
+    } as any;
+
     const stopResult = await stopImpersonation({
       cookieValue: undefined,
       now: new Date(),
+      db: mockDb,
     });
 
     expect(stopResult.clearCookie).toContain('Max-Age=0');
