@@ -167,6 +167,139 @@ The tests use minimal mocking to focus on:
 2. **Error Scenarios**: Comprehensive error handling without external dependencies
 3. **Performance Characteristics**: Validating timing and batch processing logic
 
+## Tenant Isolation Tests
+
+### Overview
+Comprehensive tests validating **multi-tenant data isolation** and **shared shop_id resolution** (bug #198/#200). Tests ensure queries scoped to `company_id=A` never leak data from `company_id=B`, and that credential resolution is deterministic when multiple companies share the same `shop_id`.
+
+### Test Files
+
+#### 1. `tenant-isolation.integration.test.ts` ⚠️ **Requires MySQL**
+**Purpose**: Integration tests with real MySQL database
+
+**Coverage**:
+- ✅ **Read Isolation** — Empirical proof across tenant tables
+  - `master_products`: company A queries never return company B rows
+  - `shopee_orders`: strict tenant boundary enforcement
+  - `shopee_credentials`: credential isolation per company
+  - `users`: user data isolation per company
+
+- ✅ **Shared shop_id Resolution (#198/#200)**
+  - Resolves to `connected` row even when `disconnected` row is newer
+  - SQL query with `status='connected'` filter + `ORDER BY updated_at DESC`
+  - `isShopConnected()` returns deterministic results
+
+- ✅ **Schema Constraint Enforcement**
+  - `uniq_active_shop`: duplicate `active_shop_id` rejected
+  - `uniq_company_shop`: duplicate `(company_id, shop_id)` rejected
+  - Same `shop_id` across different companies **allowed** (multi-tenant support)
+
+**Test Behavior**:
+- **With MySQL**: Runs full test suite against ephemeral test database
+- **Without MySQL**: Skips gracefully with warning (no CI failure)
+
+**Database Setup**:
+The test uses a harness that:
+1. Creates ephemeral test DB: `sentralio_test_<timestamp>`
+2. Applies full schema (all migrations)
+3. Seeds 2 companies with realistic data
+4. Auto-cleans up after tests
+
+**Environment Variables** (required for integration tests):
+```bash
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=your_user
+DB_PASSWORD=your_password
+```
+
+#### 2. `shopee-auth.select-active-credential.unit.test.ts`
+**Purpose**: Unit tests for credential resolution logic (NO database required)
+
+**Coverage**:
+- ✅ **#198/#200 Deterministic Resolution**
+  - `connected` wins over `disconnected` (even if disconnected is newer)
+  - Multiple `connected` rows → picks most recent `updated_at`
+  - Only `disconnected` rows → returns `undefined`
+  - `shopId` filter works correctly
+
+**Test Strategy**: Pure function testing with mock data arrays
+
+#### 3. `active-shops.tenant-resolution.unit.test.ts`
+**Purpose**: Unit tests for active shops service (NO database required)
+
+**Coverage**:
+- ✅ **Connected Shop Detection**
+  - `getConnectedShopIds()` filters by `status='connected'`
+  - `isShopConnected()` is deterministic (uses `connected` filter)
+  - Shop ID set operations work correctly
+
+**Test Strategy**: Fake DB objects that mimic Drizzle chain methods
+
+#### 4. `helpers/tenant-test-db.ts` + `tenant-test-db.smoke.test.ts`
+**Purpose**: Reusable test harness for integration tests
+
+**Exports**:
+- `createTenantTestDb()` — Provisions ephemeral MySQL test DB
+- `seedTwoTenants()` — Seeds 2 companies with realistic data
+- Auto-cleanup with graceful failure handling
+
+### Running Tenant Isolation Tests
+
+#### Run All Tenant Isolation Tests (unit + integration)
+```bash
+bun run test:isolation
+```
+
+#### Run Only Unit Tests (fast, no DB required)
+```bash
+bun test apps/api/src/services/__tests__/shopee-auth.select-active-credential.unit.test.ts
+bun test apps/api/src/services/__tests__/active-shops.tenant-resolution.unit.test.ts
+```
+
+#### Run Only Integration Tests (requires MySQL)
+```bash
+bun test apps/api/src/services/__tests__/tenant-isolation.integration.test.ts
+```
+
+### Test Data Scenario (Integration Tests)
+
+**Company A:**
+- Shop 100: `connected`, has `activeShopId`
+- Shop 555: `disconnected`, **newer** `updated_at`
+- Shop 666: `disconnected` only (for false-case testing)
+
+**Company B:**
+- Shop 200: `connected`, has `activeShopId`
+- Shop 555: `connected`, **older** `updated_at` (BUT connected wins!)
+
+**Key Validation**: Shop 555 resolution picks Company B (connected) over Company A (disconnected), proving deterministic behavior.
+
+### Requirements Coverage — Tenant Isolation
+
+| Requirement | Description | Test Coverage |
+|-------------|-------------|---------------|
+| **Isolation** | Read queries never cross tenant boundaries | Integration tests (SQL queries) |
+| **#198 Fix** | Shared shop_id resolves deterministically | Unit + Integration tests |
+| **#200 Fix** | `isShopConnected()` is deterministic | Unit + Integration tests |
+| **Constraints** | DB-level protection (unique indexes) | Integration tests (constraint violation) |
+
+### Why Two Test Layers?
+
+1. **Unit Tests (Fast, Always Run)**
+   - Pure logic validation without I/O
+   - Run in CI/CD without MySQL
+   - Quick feedback during development
+   - **Primary regression protection for #198/#200**
+
+2. **Integration Tests (Empirical, MySQL Required)**
+   - Proves actual SQL behavior
+   - Validates schema constraints
+   - Tests real-world query patterns
+   - Skip-graceful in environments without DB
+
+---
+
 ## Future Enhancements
 
 ### Additional Test Coverage
