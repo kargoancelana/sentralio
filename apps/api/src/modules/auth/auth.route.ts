@@ -18,9 +18,9 @@ import { Elysia } from 'elysia';
 import {
   login,
   logout,
-  me,
   renew,
   changePassword,
+  validateSession,
   type LoginResult,
 } from './auth.service';
 import { authMiddleware } from './auth.middleware';
@@ -200,8 +200,7 @@ export const authProtectedRoutes = new Elysia({ prefix: '/auth' })
    *
    * Requires a valid session. Returns the public user profile.
    * authMiddleware already validated the session and set ctx.user; we re-call
-   * authService.me to stay consistent with the service boundary (and to carry
-   * the `now` clock injection point forward).
+   * authService.validateSession to get impersonatorId (Fase 7.1).
    */
   .get('/me', async ({ cookie, set }) => {
     const sessionCookie = cookie[COOKIE_NAME];
@@ -210,9 +209,9 @@ export const authProtectedRoutes = new Elysia({ prefix: '/auth' })
         ? sessionCookie.value
         : undefined;
 
-    const user = await me({ cookieValue, now: new Date() });
+    const session = await validateSession({ cookieValue, now: new Date() });
 
-    if (!user) {
+    if (!session) {
       // authMiddleware guards this; this branch is purely defensive.
       set.status = 401;
       return { ok: false, error: 'unauthorized' };
@@ -220,12 +219,14 @@ export const authProtectedRoutes = new Elysia({ prefix: '/auth' })
 
     set.status = 200;
     return {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
+      id: session.user.id,
+      email: session.user.email,
+      name: session.user.name,
+      role: session.user.role,
       // Effective feature access for this user (admin = all; staff = configured).
-      features: FEATURES.filter((f) => decide(user.role, f, user.companyId)),
+      features: FEATURES.filter((f) => decide(session.user.role, f, session.user.companyId)),
+      impersonating: session.impersonatorId != null,
+      impersonatorId: session.impersonatorId ?? null,
     };
   })
 

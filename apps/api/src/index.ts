@@ -30,6 +30,7 @@ import { originMiddleware } from "./modules/auth/origin.middleware";
 import { platformAuthPublicRoutes, platformAuthProtectedRoutes } from "./modules/platform/platform-auth.route";
 import { platformCompaniesRoutes } from "./modules/platform/platform-companies.route";
 import { platformUsersRoutes } from "./modules/platform/platform-users.route";
+import { platformImpersonationRoutes } from "./modules/platform/platform-impersonation.route";
 import { platformPlansRoutes } from "./modules/platform/platform-plans.route";
 import { platformCouponsRoutes } from "./modules/platform/platform-coupons.route";
 import { platformOrdersRoutes } from "./modules/platform/platform-orders.route";
@@ -157,6 +158,7 @@ const app = new Elysia()
   .use(platformAuthProtectedRoutes)   // GET /platform/auth/me, POST /platform/auth/logout
   .use(platformCompaniesRoutes)       // GET /platform/companies, /companies/:id
   .use(platformUsersRoutes)
+  .use(platformImpersonationRoutes)   // POST /platform/companies/:id/users/:userId/impersonate, /platform/impersonation/stop
   .use(platformPlansRoutes)           // GET/POST/PUT /platform/plans
   .use(platformCouponsRoutes)         // GET/POST/PUT /platform/coupons (Fase 5.1)
   .use(platformOrdersRoutes)          // GET/POST /platform/orders*

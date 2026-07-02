@@ -297,6 +297,7 @@ export interface SessionContext {
   user: PublicUser;
   jti: string;
   exp: number;
+  impersonatorId?: number;  // id platform admin yang impersonate (Fase 7.1); undefined = sesi normal
 }
 
 /** Shared input shape for the session-consuming operations. */
@@ -399,6 +400,7 @@ export async function validateSession(
     },
     jti: payload.jti,
     exp: payload.exp,
+    impersonatorId: payload.imp,
   };
 }
 
@@ -513,6 +515,20 @@ async function revokeJti(
       // original revocation timestamp meaningfully.
       set: { jti },
     });
+}
+
+/**
+ * Exported wrapper for revokeJti to be used by impersonation.service.ts
+ * (Fase 7.1). Allows stopping impersonation to revoke the session jti.
+ */
+export async function revokeSessionJti(
+  db: DrizzleDb,
+  userId: number,
+  jti: string,
+  exp: number,
+  now: Date,
+): Promise<void> {
+  return revokeJti(db, userId, jti, exp, now);
 }
 
 // ───────────────────────────────────────────────────────────────────────────
