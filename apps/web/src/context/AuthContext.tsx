@@ -30,6 +30,8 @@ export interface PublicUser {
   role: 'admin' | 'staff';
   /** Effective feature access for this user, provided by the backend (/me, /login). */
   features?: string[];
+  /** Platform admin ID if this session is an impersonation (Fase 7.1). */
+  impersonatorId?: number;
 }
 
 export type AuthState =
@@ -49,6 +51,8 @@ export interface AuthApi {
     currentPassword: string,
     newPassword: string,
   ): Promise<{ ok: boolean; error?: string }>;
+  /** Stop impersonation and return to platform portal (Fase 7.1). */
+  stopImpersonation(): Promise<void>;
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -195,7 +199,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
     [],
   );
 
-  const value: AuthApi = { state, subscriptionBlocked, subscriptionActive, login, logout, refreshMe, changePassword };
+  // ── Stop impersonation ─────────────────────────────────────────────────────
+  const stopImpersonation = useCallback(async () => {
+    try {
+      await fetchApi('/api/platform/impersonation/stop', { method: 'POST' });
+    } catch {
+      // Best-effort
+    }
+    // Reload to platform portal.
+    window.location.href = '/platform';
+  }, []);
+
+  const value: AuthApi = { state, subscriptionBlocked, subscriptionActive, login, logout, refreshMe, changePassword, stopImpersonation };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

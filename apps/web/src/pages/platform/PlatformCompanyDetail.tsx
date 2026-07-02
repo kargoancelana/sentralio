@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { platformFetch, PlatformApiError } from '../../lib/platformApi';
+import { platformFetch, PlatformApiError, platformImpersonationApi } from '../../lib/platformApi';
 import { companyStatusBadge } from './companyStatus';
 import { Modal } from '../../components/ui/Modal';
 import { useToast } from '../../components/ui/Toast';
@@ -383,6 +383,21 @@ export function PlatformCompanyDetail() {
                     onClick={() => handleResetPassword(u)}
                   >
                     {resettingUserId === u.id ? 'Memproses...' : 'Reset password'}
+                  </button>
+                  {' '}
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    onClick={async () => {
+                      try {
+                        await platformImpersonationApi.start(Number(id), u.id);
+                        window.location.href = '/';
+                      } catch {
+                        toast('Gagal memulai impersonation.', 'error');
+                      }
+                    }}
+                  >
+                    Lihat sebagai
                   </button>
                 </td>
               </tr>
