@@ -32,6 +32,7 @@ import { ResetPassword } from './pages/ResetPassword';
 import { Register } from './pages/Register';
 import { Langganan } from './pages/Langganan';
 import { MaintenanceBanner } from './components/system/MaintenanceBanner';
+import { ImpersonationBanner } from './components/impersonation/ImpersonationBanner';
 import './styles/globals.css';
 import './styles/hpp-layout.css';
 
@@ -43,6 +44,7 @@ import './styles/hpp-layout.css';
 function TenantAuthLayout() {
   return (
     <AuthProvider>
+      <ImpersonationBanner />
       <MaintenanceBanner />
       <Outlet />
     </AuthProvider>

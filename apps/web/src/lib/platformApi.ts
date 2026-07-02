@@ -178,3 +178,11 @@ export const platformAuditApi = {
   },
   actions: () => platformFetch<AuditActionsResponse>('/audit/actions'),
 };
+
+// ─── Platform Impersonation API helpers (Fase 7.1) ──────────────────────────
+
+export const platformImpersonationApi = {
+  start: (companyId: number, userId: number) =>
+    platformFetch<{ ok: boolean }>(`/companies/${companyId}/users/${userId}/impersonate`, { method: 'POST' }),
+  stop: () => platformFetch<{ ok: boolean }>(`/impersonation/stop`, { method: 'POST' }),
+};

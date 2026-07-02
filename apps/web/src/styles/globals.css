@@ -436,6 +436,59 @@ h1, h2, h3, h4, h5, h6 { line-height: 1.3; }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { 100% { transform: rotate(360deg); } }
 
+/* ── IMPERSONATION BANNER (Fase 7.1) ── */
+.impersonation-banner {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);
+  border-bottom: 2px solid #F59E0B;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15);
+}
+.impersonation-banner__content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 16px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+.impersonation-banner__icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+.impersonation-banner__text {
+  font-size: 14px;
+  font-weight: 500;
+  color: #92400E;
+  flex: 1;
+  text-align: center;
+}
+.impersonation-banner__text strong {
+  font-weight: 600;
+  color: #78350F;
+}
+.impersonation-banner__btn {
+  padding: 6px 14px;
+  background: #FFFFFF;
+  border: 1px solid #F59E0B;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #D97706;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.impersonation-banner__btn:hover {
+  background: #FEF3C7;
+  border-color: #D97706;
+  color: #92400E;
+}
+
 /* ── RESPONSIVE helper ── */
 @media (max-width: 900px) {
   .sidebar { width: 60px; min-width: 60px; }

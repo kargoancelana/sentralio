@@ -20,6 +20,7 @@ import {
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchApi, ApiError } from '../lib/api';
+import { platformImpersonationApi } from '../lib/platformApi';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,6 +31,8 @@ export interface PublicUser {
   role: 'admin' | 'staff';
   /** Effective feature access for this user, provided by the backend (/me, /login). */
   features?: string[];
+  /** Platform admin ID if this session is an impersonation (Fase 7.1). null = not impersonating. */
+  impersonatorId: number | null;
 }
 
 export type AuthState =
@@ -49,6 +52,8 @@ export interface AuthApi {
     currentPassword: string,
     newPassword: string,
   ): Promise<{ ok: boolean; error?: string }>;
+  /** Stop impersonation and return to platform portal (Fase 7.1). */
+  stopImpersonation(): Promise<void>;
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -195,7 +200,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
     [],
   );
 
-  const value: AuthApi = { state, subscriptionBlocked, subscriptionActive, login, logout, refreshMe, changePassword };
+  // ── Stop impersonation ─────────────────────────────────────────────────────
+  const stopImpersonation = useCallback(async () => {
+    try {
+      await platformImpersonationApi.stop();
+    } catch {
+      // Best-effort
+    }
+    // Reload to platform portal.
+    window.location.href = '/platform';
+  }, []);
+
+  const value: AuthApi = { state, subscriptionBlocked, subscriptionActive, login, logout, refreshMe, changePassword, stopImpersonation };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
