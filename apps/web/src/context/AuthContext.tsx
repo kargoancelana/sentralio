@@ -20,6 +20,7 @@ import {
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchApi, ApiError } from '../lib/api';
+import { platformImpersonationApi } from '../lib/platformApi';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,8 +31,8 @@ export interface PublicUser {
   role: 'admin' | 'staff';
   /** Effective feature access for this user, provided by the backend (/me, /login). */
   features?: string[];
-  /** Platform admin ID if this session is an impersonation (Fase 7.1). */
-  impersonatorId?: number;
+  /** Platform admin ID if this session is an impersonation (Fase 7.1). null = not impersonating. */
+  impersonatorId: number | null;
 }
 
 export type AuthState =
@@ -202,7 +203,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // ── Stop impersonation ─────────────────────────────────────────────────────
   const stopImpersonation = useCallback(async () => {
     try {
-      await fetchApi('/api/platform/impersonation/stop', { method: 'POST' });
+      await platformImpersonationApi.stop();
     } catch {
       // Best-effort
     }
