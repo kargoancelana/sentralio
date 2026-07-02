@@ -236,7 +236,7 @@ export async function seedTwoTenants(
     shopName: "Shop A 555 (old, disconnected)",
     accessToken: "", // cleared on disconnect
     refreshToken: "",
-    expiresAt: new Date("1970-01-01T00:00:01Z"), // MySQL TIMESTAMP min (avoid new Date(0))
+    expiresAt: new Date("2000-01-01T00:00:00Z"), // Safe past date for disconnected (avoid MySQL TIMESTAMP min issues)
     status: "disconnected",
     disconnectedAt: new Date(),
     updatedAt: new Date(), // NEWER than company B's row
@@ -251,7 +251,7 @@ export async function seedTwoTenants(
     shopName: "Shop A 666 (only disconnected)",
     accessToken: "",
     refreshToken: "",
-    expiresAt: new Date("1970-01-01T00:00:01Z"),
+    expiresAt: new Date("2000-01-01T00:00:00Z"), // Safe past date for disconnected
     status: "disconnected",
     disconnectedAt: new Date(),
     updatedAt: new Date(),

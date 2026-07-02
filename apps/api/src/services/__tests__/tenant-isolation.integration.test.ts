@@ -45,7 +45,7 @@ beforeAll(async () => {
   console.log(`[tenant-isolation] Test DB ready: ${testDb.dbName}`);
   console.log(`[tenant-isolation] Company A: id=${companyA.id}`);
   console.log(`[tenant-isolation] Company B: id=${companyB.id}`);
-});
+}, 30000); // 30s timeout for DB creation + migrations + seed
 
 afterAll(async () => {
   if (testDb) {
