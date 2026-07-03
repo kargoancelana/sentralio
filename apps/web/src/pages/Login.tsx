@@ -176,6 +176,12 @@ export function LoginPage() {
         <p style={{ marginTop: '20px', textAlign: 'center', fontSize: '0.9rem', color: 'var(--text3)' }}>
           Belum punya akun? <Link to="/register">Daftar</Link>
         </p>
+
+        <p style={{ marginTop: '16px', textAlign: 'center', fontSize: '0.85rem', color: 'var(--text3)' }}>
+          <Link to="/keamanan" style={{ color: 'var(--text3)', textDecoration: 'underline' }}>
+            Keamanan &amp; privasi
+          </Link>
+        </p>
       </div>
     </main>
   );

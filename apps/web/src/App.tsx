@@ -31,6 +31,7 @@ import { AutoBoost } from './pages/AutoBoost';
 import { ResetPassword } from './pages/ResetPassword';
 import { Register } from './pages/Register';
 import { Langganan } from './pages/Langganan';
+import { Keamanan } from './pages/Keamanan';
 import { MaintenanceBanner } from './components/system/MaintenanceBanner';
 import { ImpersonationBanner } from './components/impersonation/ImpersonationBanner';
 import './styles/globals.css';
@@ -69,6 +70,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/keamanan" element={<Keamanan />} />
 
           {/* Portal Super Admin (/platform) - auth context terisolasi */}
           <Route element={<PlatformAuthLayout />}>
